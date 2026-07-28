@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily Escape</title>
+    <meta
+      name="description"
+      content="An endless arcade police pursuit. No finish line - every section brings more police, heavier police and spike strips. Drive until they box you in."
+    />
+    <meta name="theme-color" content="#05070c" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- Link previews, since the whole point of hosting this is sending someone the URL. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Daily Escape" />
+    <meta
+      property="og:description"
+      content="An endless arcade police pursuit. Drive until they box you in."
+    />
+    <meta name="twitter:card" content="summary" />
+    <style>
+      :root {
+        --accent: #ffd23f;
+        --danger: #ff4d4d;
+        --good: #4dff9e;
+        --panel: rgba(10, 12, 18, 0.72);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #05070c;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color: #eaf0ff;
+        user-select: none;
+      }
+      #renderCanvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        outline: none;
+      }
+
+      /* ---------- HUD ---------- */
+      #hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 10px 14px;
+        backdrop-filter: blur(6px);
+      }
+
+      #topLeft {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        min-width: 190px;
+      }
+      #timer {
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      #timer.warn { color: var(--danger); }
+      #objective {
+        margin-top: 8px;
+        font-size: 12px;
+        opacity: 0.8;
+        line-height: 1.6;
+        display: flex;
+        flex-direction: column;
+      }
+      #objective #bestValue { color: #4dff9e; font-size: 11px; }
+      #objective #sectionValue { opacity: 0.55; font-size: 11px; }
+      #distance { color: var(--good); }
+
+      #topRight {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        text-align: right;
+        min-width: 150px;
+      }
+      #speed {
+        font-size: 30px;
+        font-weight: 700;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      #speed span { font-size: 12px; opacity: 0.6; font-weight: 400; }
+      #heat {
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      #heat.hot { color: var(--danger); font-weight: 700; }
+
+      #bottomLeft {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        width: 230px;
+      }
+      .barLabel {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        opacity: 0.75;
+        margin-bottom: 5px;
+        letter-spacing: 0.5px;
+      }
+      .bar {
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.14);
+        overflow: hidden;
+      }
+      .barFill {
+        height: 100%;
+        width: 0%;
+        border-radius: 4px;
+        background: var(--accent);
+        transition: background-color 0.15s linear;
+      }
+      #boostFill.ready { background: var(--good); }
+      #boostFill.active { background: #6fd4ff; }
+
+      #rocketRow {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        opacity: 0.55;
+      }
+      #rocketRow.armed { opacity: 1; color: #ff9d3f; font-weight: 700; }
+      #rocketRow.spent { opacity: 0.4; text-decoration: line-through; }
+
+      #captureWrap { margin-top: 12px; opacity: 0; transition: opacity 0.15s linear; }
+      #captureWrap.show { opacity: 1; }
+      #captureFill { background: var(--danger); }
+
+      #bottomRight {
+        position: absolute;
+        bottom: 16px;
+        right: 16px;
+        text-align: right;
+        font-size: 11px;
+        line-height: 1.7;
+        opacity: 0.65;
+      }
+      kbd {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: inherit;
+      }
+
+      /* Section title card */
+      #sectionBanner {
+        position: absolute;
+        top: 19%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 27px;
+        font-weight: 800;
+        letter-spacing: 7px;
+        color: #eaf0ff;
+        text-shadow: 0 0 24px rgba(120, 170, 255, 0.7);
+        opacity: 0;
+        pointer-events: none;
+      }
+      #sectionBanner.show { animation: sectionPop 2.6s ease-out forwards; }
+      @keyframes sectionPop {
+        0% { opacity: 0; letter-spacing: 16px; }
+        14% { opacity: 1; letter-spacing: 7px; }
+        76% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      /* Course progress along the bottom edge */
+      #progressWrap {
+        position: absolute;
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 340px;
+        text-align: center;
+      }
+      #progressBar {
+        height: 5px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.14);
+        overflow: hidden;
+      }
+      #progressFill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #6fd4ff, #4dff9e);
+        border-radius: 3px;
+      }
+
+      #surfaceTag {
+        margin-top: 6px;
+        font-size: 10px;
+        letter-spacing: 2px;
+        opacity: 0.55;
+      }
+      #surfaceTag.rough { color: #ffb15c; opacity: 1; font-weight: 700; }
+
+      #captureText.urgent { color: #ff4d4d; font-weight: 800; }
+
+      /* Star row on the results card */
+      #overlayStars {
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 5px;
+        margin: 8px 0 0;
+        color: #4dff9e;
+      }
+      #overlayDetail {
+        font-size: 12px;
+        opacity: 0.7;
+        margin-bottom: 16px;
+      }
+
+      /* Transient centre-screen callout (rocket results) */
+      #banner {
+        position: absolute;
+        top: 31%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 40px;
+        font-weight: 800;
+        letter-spacing: 4px;
+        color: #ff9d3f;
+        text-shadow: 0 0 26px rgba(255, 120, 20, 0.85);
+        opacity: 0;
+        pointer-events: none;
+      }
+      #banner.good { color: #ffd23f; text-shadow: 0 0 30px rgba(255, 190, 40, 0.9); }
+      #banner.show { animation: bannerPop 1.4s ease-out forwards; }
+      @keyframes bannerPop {
+        0% { opacity: 0; transform: scale(0.75); }
+        12% { opacity: 1; transform: scale(1.12); }
+        28% { transform: scale(1); }
+        70% { opacity: 1; }
+        100% { opacity: 0; transform: scale(1.04); }
+      }
+
+      /* Direction arrow pointing on up the course */
+      #compass {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        transform: translate(-50%, -50%);
+      }
+      #compassArrow {
+        position: absolute;
+        left: -14px;
+        top: -150px;
+        width: 28px;
+        height: 28px;
+        opacity: 0.5;
+        transform-origin: 14px 164px;
+      }
+
+      /* ---------- Overlays ---------- */
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.94));
+        pointer-events: auto;
+      }
+      #overlay.show { display: flex; }
+      #overlayCard {
+        text-align: center;
+        padding: 34px 54px;
+        border-radius: 16px;
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+      }
+      #overlayTitle {
+        font-size: 44px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        margin: 0 0 6px;
+      }
+      #overlayTitle.win { color: var(--good); }
+      #overlayTitle.lose { color: var(--danger); }
+      #overlaySub { font-size: 15px; opacity: 0.85; margin-bottom: 4px; }
+      #overlayTime {
+        font-size: 26px;
+        font-weight: 700;
+        margin: 14px 0 20px;
+        font-variant-numeric: tabular-nums;
+      }
+      button {
+        pointer-events: auto;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #05070c;
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        padding: 12px 26px;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.1); }
+      #restartBtn {
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 11px;
+        padding: 8px 16px;
+        background: rgba(255, 255, 255, 0.14);
+        color: #eaf0ff;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+      }
+
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 220px rgba(255, 40, 40, 0);
+        transition: box-shadow 0.2s linear;
+      }
+      #vignette.danger { box-shadow: inset 0 0 220px rgba(255, 40, 40, 0.45); }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="hud">
+      <div id="vignette"></div>
+      <div id="flash"></div>
+
+      <div id="banner"></div>
+      <div id="sectionBanner"></div>
+
+      <div id="progressWrap">
+        <div id="progressBar"><div id="progressFill"></div></div>
+      </div>
+
+      <div id="compass">
+        <svg id="compassArrow" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2 L20 20 L12 15.5 L4 20 Z" fill="#4dff9e" />
+        </svg>
+      </div>
+
+      <div id="topLeft" class="panel">
+        <div id="timer">0</div>
+        <div id="objective">
+          <strong id="scoreValue">SECTION 1</strong>
+          <span id="bestValue"></span>
+          <span id="sectionValue">0s</span>
+        </div>
+      </div>
+
+      <div id="topRight" class="panel">
+        <div id="speed">0 <span>KM/H</span></div>
+        <div id="heat">Police nearby: <span id="heatCount">0</span></div>
+        <div id="surfaceTag">ASPHALT</div>
+      </div>
+
+      <div id="bottomLeft">
+        <div class="panel">
+          <div class="barLabel"><span>BOOST</span><span id="boostText">READY</span></div>
+          <div class="bar"><div id="boostFill" class="barFill ready" style="width: 100%"></div></div>
+          <div id="rocketRow" class="armed">
+            <span>ROCKET</span><span id="rocketText">ARMED — F</span>
+          </div>
+          <div id="captureWrap">
+            <div class="barLabel"><span>BEING SURROUNDED</span><span id="captureText">0%</span></div>
+            <div class="bar"><div id="captureFill" class="barFill"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="bottomRight" class="panel">
+        <kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse<br />
+        <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>Space</kbd> boost<br />
+        <kbd>F</kbd> fire rocket<br />
+        <kbd>R</kbd> restart &nbsp; <kbd>C</kbd> reset camera
+      </div>
+
+      <button id="restartBtn">RESTART (R)</button>
+    </div>
+
+    <div id="overlay">
+      <div id="overlayCard">
+        <h1 id="overlayTitle">BUSTED</h1>
+        <div id="overlaySub">They boxed you in.</div>
+        <div id="overlayStars"></div>
+        <div id="overlayTime">00.00</div>
+        <div id="overlayDetail"></div>
+        <button id="playAgainBtn">PLAY AGAIN (R)</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

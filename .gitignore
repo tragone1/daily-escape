@@ -1,0 +1,7 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Machine-local Claude Code permissions; nothing another checkout needs.
+.claude/settings.local.json

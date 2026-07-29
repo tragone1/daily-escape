@@ -374,7 +374,11 @@ export class Vehicle {
    * as obstacles. Easing lets the blast land and then bleed away.
    */
   private easeToLimit(vf: number, maxSpeed: number, maxReverse: number, dt: number): number {
-    const decay = Math.exp(-CONFIG.terrain.overspeedDecay * dt);
+    const t = CONFIG.terrain;
+    // Damaged tyres bleed the excess away fast; an undamaged car coasts down gently so a
+    // blast or a heavy ram still carries.
+    const rate = this.tireSpeed < 0.99 ? t.damagedOverspeedDecay : t.overspeedDecay;
+    const decay = Math.exp(-rate * dt);
     if (vf > maxSpeed) return maxSpeed + (vf - maxSpeed) * decay;
     if (vf < -maxReverse) return -maxReverse + (vf + maxReverse) * decay;
     return vf;

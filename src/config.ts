@@ -151,6 +151,16 @@ export const CONFIG = {
      * frame it landed. Easing instead lets a blast actually throw something.
      */
     overspeedDecay: 1.1,
+    /**
+     * Decay used instead when the tyres are shredded.
+     *
+     * Much faster, and this is the whole reason the spike strip did not feel like a
+     * punishment. The strip cuts top speed to a quarter, but the *gentle* overspeed decay
+     * meant a car at 44 took two and a half seconds just to get down to the new ceiling —
+     * so most of a six-second effect was spent coasting at a speed the strip was supposed
+     * to have taken away. Shredded tyres should scrub, not glide.
+     */
+    damagedOverspeedDecay: 7,
 
     /**
      * The wasteland past the barriers.
@@ -364,7 +374,7 @@ export const CONFIG = {
     /** Shared driving/AI values for every police car. */
     shared: {
       /** How often each unit re-plans its route through the street graph, seconds. */
-      replanInterval: 0.45,
+      replanInterval: 0.3,
       /** Distance at which a waypoint counts as reached, units. */
       waypointRadius: 11,
       /** Steering error (radians) that maps to full lock. */
@@ -416,7 +426,7 @@ export const CONFIG = {
        * the flats they should cut across the grass after you rather than politely
        * following the road while you take the short line.
        */
-      directPursuitRange: 105,
+      directPursuitRange: 135,
 
       /**
        * Closing speed for units that have been left behind.
@@ -441,11 +451,11 @@ export const CONFIG = {
        */
       box: {
         /** Units this close are assigned a station instead of chasing the player. */
-        range: 62,
+        range: 78,
         /** How many stations are handed out at once — one per direction. */
         maxAssigned: 8,
         /** Re-assign this often, seconds. Slower than the director so units commit. */
-        interval: 1.1,
+        interval: 0.7,
         /**
          * Stations, in order of preference — eight of them, one per enclosure sector.
          *
@@ -514,16 +524,16 @@ export const CONFIG = {
       /** Classes that can do it. */
       roles: ["rammer", "heavy", "elite", "juggernaut", "warden"],
       /** Range band to start one in. */
-      minRange: 9,
-      maxRange: 46,
+      minRange: 8,
+      maxRange: 58,
       /** Must be pointed within this many radians of the player. */
       maxHeadingError: 0.75,
       /** Lights-solid wind-up before it commits, seconds. */
-      telegraphTime: 0.45,
+      telegraphTime: 0.38,
       /** Length of the run itself, seconds. */
       chargeTime: 1.1,
       /** Gap before the same unit can charge again, seconds. */
-      cooldown: 6.5,
+      cooldown: 4.2,
       /** Speed and shove multipliers while charging. */
       speedBonus: 0.3,
       contactBoost: 2.3,
@@ -807,14 +817,14 @@ export const CONFIG = {
         roles: ["interceptor", "blocker"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
-        life: 14,
+        life: 18,
         /** Deliberately narrower than the road: there is always a way past. */
         halfWidth: 6.5,
         halfLength: 1.3,
         /** Tyre multipliers while shredded, easing back to 1 over `duration`. */
-        gripScale: 0.72,
-        speedScale: 0.5,
-        duration: 4.0,
+        gripScale: 0.5,
+        speedScale: 0.26,
+        duration: 6.5,
       },
 
       /**
@@ -836,9 +846,9 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.018,
-        speedScale: 0.95,
-        duration: 4.4,
+        gripScale: 0.008,
+        speedScale: 0.88,
+        duration: 5.5,
         /**
          * Extra grip loss while boosting through it.
          *
@@ -879,7 +889,7 @@ export const CONFIG = {
        */
       farSpawnDistance: 165,
       /** How often activation/repositioning decisions run, seconds. */
-      directorInterval: 0.4,
+      directorInterval: 0.28,
       /** Preferred spawn offsets along the route, in course units. */
       spawnAhead: 190,
       spawnBehind: 150,
@@ -1014,7 +1024,7 @@ export const CONFIG = {
        * is a better section, and it leaves the ceiling until section 19 instead of 12,
        * which is most of where the late game's escalation now lives.
        */
-      baseActive: 9,
+      baseActive: 7,
       activePerSection: 1.15,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
@@ -1191,7 +1201,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 2.8,
+    captureDuration: 2.2,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1227,9 +1237,9 @@ export const CONFIG = {
      */
     enclosureRadius: 15,
     enclosureSectors: 8,
-    minSectorsToPin: 4,
-    fullPinSectors: 7,
-    captureSpeed: 13,
+    minSectorsToPin: 3,
+    fullPinSectors: 6,
+    captureSpeed: 15,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *
@@ -1244,7 +1254,7 @@ export const CONFIG = {
      * Above 1 so escaping is always possible; not so far above that a moment of daylight
      * wipes out four seconds of being buried.
      */
-    captureRecovery: 1.7,
+    captureRecovery: 1.25,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

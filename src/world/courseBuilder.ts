@@ -23,6 +23,15 @@ export interface BuiltWorld {
   update(elapsed: number): void;
 }
 
+/**
+ * Thickness of the road slab and the grass apron.
+ *
+ * Both are positioned so their *top* face is the ground plane the terrain reports, which
+ * is the only arrangement where the car looks like it is standing on the road.
+ */
+const ROAD_THICKNESS = 0.5;
+const APRON_THICKNESS = 0.34;
+
 /** Deterministic hash so the course is identical on every run. */
 function hash2(x: number, z: number): number {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
@@ -143,14 +152,22 @@ export function buildWorld(r: Renderer): BuiltWorld {
     const tint = SECTION_TINT[seg.section] ?? [1, 1, 1];
     const base = SURFACE_COLOR[seg.surface];
     const road = r.createMesh(
-      { kind: "box", width: seg.halfWidth * 2, height: seg.overlay ? 0.62 : 0.5, depth: ribbonLength },
+      { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: ribbonLength },
       {
         color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
         emissive: 0.3,
         isStatic: true,
       },
     );
-    road.position.set(midX, midY + (seg.overlay ? 0.06 : 0), midZ);
+    /*
+     * Drop the slab so its *top face* lands on the height the terrain reports.
+     *
+     * `heightAt` returns the centre line of the segment, and the ribbon is a half-unit
+     * thick box centred on that, so the surface you can see was a quarter of a unit above
+     * the surface the simulation puts the car on. The car sits correctly and looks sunk:
+     * about half a wheel, everywhere, all the time.
+     */
+    road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), midZ);
     road.rotation.y = seg.heading;
     road.rotation.x = pitch;
 
@@ -197,7 +214,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
         { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2 + 1.5, height: skirtDepth, depth: ribbonLength * 1.04 },
         { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
       );
-      skirt.position.set(midX, midY - skirtDepth / 2 - 0.1, midZ);
+      skirt.position.set(midX, midY - skirtDepth / 2 - ROAD_THICKNESS / 2, midZ);
       skirt.rotation.y = seg.heading;
       skirt.rotation.x = pitch;
     }
@@ -207,10 +224,11 @@ export function buildWorld(r: Renderer): BuiltWorld {
     // Grass run-off either side, drawn flush with the road so the edge is not a cliff.
     if (seg.shoulder > 0) {
       const apron = r.createMesh(
-        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2, height: 0.34, depth: ribbonLength },
+        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2, height: APRON_THICKNESS, depth: ribbonLength },
         { color: [...SURFACE_COLOR.grass], emissive: 0.3, isStatic: true },
       );
-      apron.position.set(midX, midY - 0.09, midZ);
+      // Flush with the tarmac, a hair below so the kerb line still reads.
+      apron.position.set(midX, midY - APRON_THICKNESS / 2 - 0.04, midZ);
       apron.rotation.y = seg.heading;
       apron.rotation.x = pitch;
     }
@@ -372,7 +390,7 @@ function buildJointPatches(r: Renderer, segments: CourseSegment[]): void {
     const tint = SECTION_TINT[b.section] ?? [1, 1, 1];
     const base = SURFACE_COLOR[b.surface];
     const patch = r.createMesh(
-      { kind: "box", width, height: 0.5, depth },
+      { kind: "box", width, height: ROAD_THICKNESS, depth },
       {
         color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
         emissive: 0.3,
@@ -381,7 +399,7 @@ function buildJointPatches(r: Renderer, segments: CourseSegment[]): void {
     );
     // A hair above the ribbon: at the same height the two coplanar faces z-fight, which
     // is the other half of what "the ground glitches between sections" looks like.
-    patch.position.set(a.bx, a.by + 0.03, a.bz);
+    patch.position.set(a.bx, a.by - ROAD_THICKNESS / 2 + 0.03, a.bz);
     patch.rotation.y = a.heading + wrapTo(b.heading - a.heading) / 2;
     patch.rotation.x = -Math.atan((a.grade + b.grade) / 2);
   }

@@ -24,10 +24,10 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of ten runs | section **5** |
-| Quartiles | section **2** to section **6** |
-| Best | section **10** |
+| Quartiles | section **3** to section **6** |
+| Best | section **8** |
 | Died in the first 15 s | **0 of 10** |
-| At the moment of arrest | **6.2 of 8 directions blocked, 7 u/s** |
+| At the moment of arrest | **5.3 of 8 directions blocked, 6.8 u/s** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -223,6 +223,14 @@ a losing game, so the invariant is also enforced physically — outside the ribb
 velocity is cancelled and the car is pushed back toward the road. With that in place, 1
 probe in 120 was still outside after four seconds, longest spell 2.8 s. A firm shove rather
 than a teleport, so a leak costs a moment and your line instead of resetting the chase.
+
+### Cars sat in the road, not on it
+
+`heightAt` returns the *centre line* of a segment, and the road ribbon was a half-unit-thick
+slab centred on that — so the surface you could see was a quarter of a unit above the
+surface the simulation stood the car on. Every car in the game was sunk to about half a
+wheel, everywhere, for as long as the ribbon has existed. The slab, the grass apron and the
+junction patches are now positioned so their **top faces** are the ground plane.
 
 ### Filling the gaps
 
@@ -487,8 +495,8 @@ A run ends one way, and the rule is about **directions**, not cars:
 ```
 the circle around you is cut into 8 wedges
 a wedge is blocked when a live unit sits in it within 15 units
-below 5 blocked, nothing happens however slow you are
-at 7 blocked, the arrest runs at full speed
+below 4 blocked, nothing happens however slow you are
+at 6 blocked, the arrest runs at full speed - and it takes 2.2 s
 ```
 
 Counting cars was the wrong measure entirely. Two heavies leaning on your bumper is two
@@ -497,8 +505,12 @@ losing felt arbitrary, and the thing that should be the whole fantasy, being bur
 scrum and squeezing out through a gap, could never happen, because the meter had already
 run out. Directions are what "no way out" means.
 
-Measured at the moment of arrest, across ten runs: **6.2 of 8 directions blocked, player
-doing 7 u/s**. That is genuinely ringed and genuinely stopped.
+Measured at the moment of arrest, across ten runs: **5.3 of 8 directions blocked, player
+doing 6.8 u/s**. That is genuinely ringed and genuinely stopped.
+
+The bar moved down and the timer moved in, because at the previous settings a player could
+sit inside a closed scrum bumping around until the boost came back and then leave. If the
+box has shut, it should be over.
 
 The speed it tests is smoothed over 0.55 s. Being surrounded is a constant sequence of
 impacts and every impact spikes your speed for a few frames; tested instantaneously that
@@ -522,12 +534,16 @@ you** can lay one.
 
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
-| **Spike strip** | section 4 | Top speed ×0.5, grip ×0.72 | 4.0 s |
-| **Oil slick** | section 6 | Grip **×0.018** (×0.006 boosting), speed ×0.95 | 4.4 s |
+| **Spike strip** | section 4 | Top speed **×0.26**, grip ×0.5 | **6.5 s** |
+| **Oil slick** | section 6 | Grip **×0.008** (×0.003 boosting), speed ×0.88 | **5.5 s** |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
-pin you. Oil leaves you fast and unable to point the car, which is far worse going into a
+pin you. Measured: a car at 44 u/s is down to **11 u/s within a second** and held there for
+six and a half. That last part needed a separate fix — the strip always cut top speed to a
+quarter, but the *gentle* overspeed decay meant a fast car took two and a half seconds just
+to reach the new ceiling, so most of the effect was spent coasting at a speed the strip was
+supposed to have taken away. Shredded tyres now scrub rather than glide. Oil leaves you fast and unable to point the car, which is far worse going into a
 corner than on a straight.
 
 Oil's grip multiplier had to go almost to zero to mean anything. At 0.3 the lateral damping

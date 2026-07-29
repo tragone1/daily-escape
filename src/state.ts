@@ -32,6 +32,8 @@ export class GameState {
   worstCapture = 0;
   /** Best score seen on this device. */
   best = 0;
+  /** Smoothed speed, so a single bounce off a bumper does not read as an escape. */
+  private heldSpeed = 0;
 
   constructor() {
     this.best = this.loadBest();
@@ -76,6 +78,7 @@ export class GameState {
     this.maxProgress = 0;
     this.section = 0;
     this.worstCapture = 0;
+    this.heldSpeed = 0;
   }
 
   /**
@@ -121,12 +124,24 @@ export class GameState {
      * The floor matters as much as the slope. Scaling from the second car made ordinary
      * early-section traffic lethal; nothing should change until you are actually swarmed.
      */
+    /*
+     * Smooth the speed before testing it.
+     *
+     * Being surrounded is a constant sequence of impacts, and every impact spikes your
+     * speed for a few frames. Tested instantaneously, that read as "escaping" over and
+     * over — a player who had actually come to a stop watched the meter reset every time
+     * somebody hit them, and reported, correctly, that being surrounded did not seem to
+     * do anything. What matters is whether you are getting anywhere, not whether you are
+     * moving.
+     */
+    this.heldSpeed += (playerSpeed - this.heldSpeed) * Math.min(1, dt / run.captureSpeedSmoothing);
+
     const swarm = Math.max(0, policeNear - run.captureCrowdFloor);
     const threshold = Math.min(
       run.captureSpeedMax,
       run.captureSpeed + swarm * run.captureSpeedPerUnit,
     );
-    const pinned = policeNear > 0 && playerSpeed < threshold;
+    const pinned = policeNear > 0 && this.heldSpeed < threshold;
     // Being swarmed closes the run out fast; a single car nudging you does not.
     const crowd = 1 + run.captureCrowdBonus * Math.max(0, policeNear - 1);
     const rate = 1 / run.captureDuration;

@@ -14,7 +14,14 @@ import { generateCourse } from "./generator";
 
 export type Surface = "asphalt" | "dirt" | "gravel" | "mud" | "grass";
 
-export type SectionId = "downtown" | "construction" | "hills" | "offroad" | "final";
+export type SectionId =
+  | "downtown"
+  | "canyon"
+  | "construction"
+  | "hills"
+  | "industrial"
+  | "offroad"
+  | "final";
 
 /**
  * How a segment's edges are treated.

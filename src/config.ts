@@ -430,6 +430,15 @@ export const CONFIG = {
           { x: 7.5, z: -1 },
           { x: 0, z: -8 },
         ],
+        /**
+         * Pace held while on station, as a multiple of the player's own speed. Ahead of
+         * you they run slower and let you close — that is the brake-check; behind you they
+         * run faster and push.
+         */
+        leadPace: 0.9,
+        chasePace: 1.12,
+        /** Never crawl, however slowly the player is going. */
+        minPace: 14,
         /** Once a unit is within this of its station it starts pressing inward. */
         pressRange: 7,
         /** How hard it presses, as a fraction of the offset removed per second. */
@@ -771,9 +780,16 @@ export const CONFIG = {
         life: 10,
         halfWidth: 5.5,
         halfLength: 4.5,
-        gripScale: 0.3,
-        speedScale: 1.0,
-        duration: 2.8,
+        /*
+         * Near zero, and it needs to be. At 0.3 the lateral damping was still strong
+         * enough to pull the car straight within a corner's worth of time, so hitting a
+         * slick was something you could ignore. At 0.06 the velocity keeps pointing where
+         * it was pointing while the nose turns, which is what a slide actually is: you
+         * steer and nothing happens for a second and a half.
+         */
+        gripScale: 0.06,
+        speedScale: 0.95,
+        duration: 3.4,
       },
     },
 
@@ -789,7 +805,7 @@ export const CONFIG = {
        * begins read as a bug, not as pressure. These are coming the other way instead,
        * and any spur near the start gets one waiting in it.
        */
-      openingWave: [120, 190, 265],
+      openingWave: [190, 285, 380],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**
@@ -797,7 +813,7 @@ export const CONFIG = {
        * seconds are clean, close enough that the first thing to come at you sideways does
        * so within about ten seconds of the lights going green.
        */
-      openingSpurRange: [80, 620],
+      openingSpurRange: [260, 820],
       /**
        * Beyond this distance a unit may appear even in plain view. Requiring concealment
        * outright left the open sections completely empty, because there is nothing out
@@ -1053,7 +1069,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 4.2,
+    captureDuration: 3.6,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1071,7 +1087,9 @@ export const CONFIG = {
      * police and simply drive out of it — every ram bumped them back over the threshold,
      * so the meter never filled no matter how bad the situation looked.
      */
-    captureSpeed: 9,
+    /** Time constant for the smoothed speed the pin test uses, seconds. */
+    captureSpeedSmoothing: 0.7,
+    captureSpeed: 11,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *
@@ -1080,7 +1098,7 @@ export const CONFIG = {
      * threshold of 19 u/s meant any brief bog was an arrest. Nothing changes until you are
      * genuinely buried, and then it changes fast.
      */
-    captureCrowdFloor: 4,
+    captureCrowdFloor: 3,
     captureSpeedPerUnit: 3.2,
     captureSpeedMax: 30,
     /**
@@ -1088,7 +1106,7 @@ export const CONFIG = {
      * Above 1 so escaping is always possible; not so far above that a moment of daylight
      * wipes out four seconds of being buried.
      */
-    captureRecovery: 1.8,
+    captureRecovery: 1.3,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

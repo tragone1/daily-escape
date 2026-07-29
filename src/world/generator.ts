@@ -45,16 +45,28 @@ interface Theme {
 }
 
 /**
- * Section themes, cycled in order. Repeating a five-beat rhythm gives the run a shape you
- * can learn — you know roughly what is coming — while the difficulty ramp underneath
- * makes each pass through the cycle meaner than the last.
+ * Section themes, cycled in order.
+ *
+ * The rhythm matters as much as the contents, and the order is the rhythm. Total width
+ * across the cycle runs 34, 23, 18, 64, 15, 18, 24 — roomy to start, a first real squeeze
+ * at the third, the flats as relief at the fourth, then the canyon, which is the tightest
+ * road in the game and where good runs tend to end. Sections that are all the same width
+ * are all the same section, however differently they are painted.
+ *
+ * Width is the difficulty dial and it is used as one. The canyon and downtown are barely
+ * wider than three cars and are where runs end; the flats are genuinely open and are the
+ * one place you get to breathe. Everything used to sit somewhere between 42 and 90 units
+ * across, which made the whole course a motorway — nothing could trap you on it, so the
+ * heavy units and the roadblocks had nothing to work with.
  */
 const THEMES: Theme[] = [
-  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 12, shoulder: 9, hills: 0.0, ramps: 0.0 },
-  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 10, shoulder: 17, hills: 0.2, ramps: 0.8 },
-  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 24, hills: 1.0, ramps: 0.2 },
-  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 11, shoulder: 34, hills: 0.3, ramps: 0.7 },
-  { id: "final", surface: "gravel", wall: "fence", halfWidth: 10, shoulder: 19, hills: 0.4, ramps: 0.3 },
+  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 7, hills: 1.0, ramps: 0.25 },
+  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 8.5, shoulder: 3, hills: 0.25, ramps: 0.8 },
+  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 9, shoulder: 0, hills: 0.0, ramps: 0.0 },
+  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 12, shoulder: 20, hills: 0.35, ramps: 0.7 },
+  { id: "canyon", surface: "gravel", wall: "rock", halfWidth: 7.5, shoulder: 0, hills: 0.6, ramps: 0.2 },
+  { id: "industrial", surface: "asphalt", wall: "fence", halfWidth: 9, shoulder: 0, hills: 0.15, ramps: 0.3 },
+  { id: "final", surface: "gravel", wall: "barrier", halfWidth: 8, shoulder: 4, hills: 0.5, ramps: 0.35 },
 ];
 
 export interface GeneratedCourse {
@@ -101,9 +113,11 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     sectionStarts.push(progress);
     sectionNames.push(theme.id);
 
-    // Difficulty tightening: later sections are narrower and have less run-off.
-    const tighten = Math.min(0.35, s * 0.02);
-    const halfWidth = Math.max(7, theme.halfWidth * (1 - tighten));
+    // Difficulty tightening: later sections are narrower and have less run-off. Gentler
+    // than it was, because the themes now start tight enough that compounding a third off
+    // the top of them produced roads a car could not turn around in.
+    const tighten = Math.min(0.22, s * 0.014);
+    const halfWidth = Math.max(6.5, theme.halfWidth * (1 - tighten));
     const shoulder = theme.shoulder * (1 - tighten);
 
     // One ramp per section at most, placed on a middle leg.

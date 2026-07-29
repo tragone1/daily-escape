@@ -267,6 +267,8 @@ export class PoliceCar {
     if (this.role === "warden") this.updateWardenAttack(dt, ctx);
 
     let goal: Goal;
+    /** Pace to hold while boxing; Infinity when not on a station. */
+    let boxSpeedLimit = Infinity;
     if (this.charging) {
       // A committed charge overrides everything: it is already pointed at the player and
       // it is not going to reconsider halfway through.
@@ -281,6 +283,21 @@ export class PoliceCar {
       const atStation = dist(v.x, v.z, target.x, target.z) < box.pressRange;
       this.boxPress = clamp(this.boxPress + (atStation ? box.pressRate : -box.pressRate) * dt, 0, 0.8);
       goal = boxGoal(ctx, this.boxSlot, this.boxPress);
+
+      /*
+       * Match the player's pace rather than charging the station.
+       *
+       * This is what makes the front of the box a brake-check instead of a car that
+       * overshoots and has to come back. A unit ahead of you deliberately runs a little
+       * *slower* than you and lets you close on it; one behind runs a little faster and
+       * pushes. Without it the whole box read as ordinary traffic, because everybody
+       * arrived at their spot flat out and immediately left it again.
+       */
+      const ahead = this.boxSlot.z > 0;
+      boxSpeedLimit = Math.max(
+        box.minPace,
+        ctx.player.speed * (ahead ? box.leadPace : box.chasePace),
+      );
     } else {
       this.boxPress = 0;
       goal = goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
@@ -331,7 +348,14 @@ export class PoliceCar {
       }
     }
 
-    this.driveToward(steerTargetX, steerTargetZ, cornerLimit, parkDistance, dt, ctx);
+    this.driveToward(
+      steerTargetX,
+      steerTargetZ,
+      Math.min(cornerLimit, boxSpeedLimit),
+      parkDistance,
+      dt,
+      ctx,
+    );
     v.update(this.input, dt, ctx.terrain);
     // Swing across as soon as it has effectively arrived, rather than only inside the
     // park radius: a rig that coasts to a stop a metre short is still a roadblock, and it

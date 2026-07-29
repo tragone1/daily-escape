@@ -41,16 +41,31 @@ const SURFACE_COLOR: Record<Surface, Rgb> = {
   grass: [0.16, 0.26, 0.15],
 };
 
+/**
+ * Per-section tint on the road surface.
+ *
+ * Two sections built from the same surface should still not look like the same section.
+ * A cool grey-blue city and a warm sodium-lit industrial estate are both asphalt.
+ */
+const SECTION_TINT: Partial<Record<SectionId, Rgb>> = {
+  downtown: [0.92, 0.96, 1.12],
+  canyon: [1.15, 1.0, 0.86],
+  industrial: [1.18, 1.06, 0.82],
+  hills: [1.0, 1.02, 1.0],
+  final: [0.9, 0.9, 0.96],
+};
+
 /** Wall look per style: colour, height and how wide a chunk is. */
 const WALL_STYLE: Record<
   Exclude<WallStyle, "none">,
   { color: Rgb; minHeight: number; maxHeight: number; chunk: number; thickness: number }
 > = {
   building: { color: [0.24, 0.26, 0.33], minHeight: 14, maxHeight: 40, chunk: 16, thickness: 9 },
-  barrier: { color: [0.72, 0.58, 0.2], minHeight: 2.2, maxHeight: 2.6, chunk: 12, thickness: 3 },
+  barrier: { color: [0.76, 0.6, 0.18], minHeight: 2.4, maxHeight: 3.0, chunk: 10, thickness: 3 },
   rail: { color: [0.5, 0.53, 0.58], minHeight: 2.0, maxHeight: 2.2, chunk: 14, thickness: 2.2 },
-  rock: { color: [0.3, 0.28, 0.26], minHeight: 8, maxHeight: 20, chunk: 20, thickness: 8 },
-  fence: { color: [0.35, 0.36, 0.32], minHeight: 3.0, maxHeight: 3.4, chunk: 18, thickness: 2.4 },
+  // Canyon walls: tall, chunky and irregular, so the section reads as cut through rock.
+  rock: { color: [0.34, 0.29, 0.24], minHeight: 12, maxHeight: 30, chunk: 13, thickness: 10 },
+  fence: { color: [0.42, 0.44, 0.38], minHeight: 4.0, maxHeight: 5.2, chunk: 12, thickness: 2.4 },
   // Continuous, but low and far out at the edge of the run-off. Open means "a lot of
   // ground to drive on", not "you can leave the course" — gaps here let players skip
   // whole sections by cutting across country.
@@ -125,9 +140,15 @@ export function buildWorld(r: Renderer): BuiltWorld {
     // Slope makes the ribbon longer than its ground-plane footprint.
     const ribbonLength = seg.length * Math.hypot(1, seg.grade);
 
+    const tint = SECTION_TINT[seg.section] ?? [1, 1, 1];
+    const base = SURFACE_COLOR[seg.surface];
     const road = r.createMesh(
       { kind: "box", width: seg.halfWidth * 2, height: seg.overlay ? 0.62 : 0.5, depth: ribbonLength },
-      { color: [...SURFACE_COLOR[seg.surface]], emissive: 0.3, isStatic: true },
+      {
+        color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
+        emissive: 0.3,
+        isStatic: true,
+      },
     );
     road.position.set(midX, midY + (seg.overlay ? 0.06 : 0), midZ);
     road.rotation.y = seg.heading;
@@ -162,6 +183,25 @@ export function buildWorld(r: Renderer): BuiltWorld {
       lip.rotation.y = seg.heading;
     }
 
+    /*
+     * A skirt hanging under the ribbon.
+     *
+     * Consecutive legs meet at an angle and at different heights, and the ribbon is a
+     * flat slab, so every joint and every ramp landing left a vertical slot you could see
+     * straight through to the void. Dropping a deep apron under each piece fills all of
+     * them at once, and reads as the ground the road is cut into.
+     */
+    if (!seg.overlay) {
+      const skirtDepth = 14;
+      const skirt = r.createMesh(
+        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2 + 1.5, height: skirtDepth, depth: ribbonLength * 1.04 },
+        { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
+      );
+      skirt.position.set(midX, midY - skirtDepth / 2 - 0.1, midZ);
+      skirt.rotation.y = seg.heading;
+      skirt.rotation.x = pitch;
+    }
+
     // Overlay strips are surface only: they change grip underfoot, nothing else.
     if (seg.overlay) continue;
     // Grass run-off either side, drawn flush with the road so the edge is not a cliff.
@@ -176,12 +216,12 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
     if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments);
-    if (seg.shoulder > 0 && !seg.branch) buildKerb(r, seg, segments);
     if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);
   }
 
   buildJunctionCaps(r, segments, colliders, wallShades);
+  buildJointPatches(r, segments);
 
   // No gate: endless mode has no finish to build.
 
@@ -309,6 +349,50 @@ function buildWalls(
 }
 
 /**
+ * Fill the wedge between two consecutive road ribbons.
+ *
+ * The ribbons are rectangles, so where the course turns they meet along one edge and open
+ * a triangular notch on the outside of the bend — a jagged step with the void showing
+ * through it. A short patch laid over the joint at the mean heading covers it, and costs
+ * one flat box per junction.
+ */
+function buildJointPatches(r: Renderer, segments: CourseSegment[]): void {
+  const spine = segments.filter((s) => !s.branch && !s.overlay);
+
+  for (let i = 0; i < spine.length - 1; i++) {
+    const a = spine[i];
+    const b = spine[i + 1];
+    const turn = Math.abs(wrapTo(b.heading - a.heading));
+    if (turn < 0.03) continue;
+
+    const width = Math.max(a.halfWidth, b.halfWidth) * 2;
+    // Long enough to bridge the notch, which grows with both the width and the turn.
+    const depth = Math.max(3, width * Math.tan(Math.min(turn, 1.2) / 2) + 3);
+
+    const tint = SECTION_TINT[b.section] ?? [1, 1, 1];
+    const base = SURFACE_COLOR[b.surface];
+    const patch = r.createMesh(
+      { kind: "box", width, height: 0.5, depth },
+      {
+        color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
+        emissive: 0.3,
+        isStatic: true,
+      },
+    );
+    patch.position.set(a.bx, a.by, a.bz);
+    patch.rotation.y = a.heading + wrapTo(b.heading - a.heading) / 2;
+    patch.rotation.x = -Math.atan((a.grade + b.grade) / 2);
+  }
+}
+
+/** Shortest signed angle, for averaging two headings. */
+function wrapTo(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
  * Seal the wedge on the outside of every corner.
  *
  * Two consecutive legs each fence their own flank, and where they meet at an angle the
@@ -373,39 +457,6 @@ function buildJunctionCaps(
         mesh.rotation.y = heading;
         addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
       }
-    }
-  }
-}
-
-/**
- * Reflector posts along the edge of the tarmac.
- *
- * Purely a read: the kerb line has to be visible at speed so leaving the road is a choice
- * rather than a surprise, but it must not be a barrier — the grass beyond it is a lane you
- * are meant to be able to use, and both sides use it. Hence posts with wide gaps and no
- * colliders at all rather than a continuous kerb.
- */
-function buildKerb(r: Renderer, seg: CourseSegment, segments: CourseSegment[]): void {
-  const spacing = 13;
-  const count = Math.max(1, Math.floor(seg.length / spacing));
-  const rx = seg.dz;
-  const rz = -seg.dx;
-  const pitch = -Math.atan(seg.grade);
-
-  for (let side = -1; side <= 1; side += 2) {
-    for (let i = 0; i < count; i++) {
-      const along = (i + 0.5) * (seg.length / count);
-      const cx = seg.ax + seg.dx * along + rx * seg.halfWidth * side;
-      const cz = seg.az + seg.dz * along + rz * seg.halfWidth * side;
-      if (onOtherRoad(segments, seg, cx, cz, 1.0)) continue;
-
-      const post = r.createMesh(
-        { kind: "box", width: 0.4, height: 1.0, depth: 0.4 },
-        { color: side < 0 ? [0.95, 0.85, 0.3] : [0.9, 0.9, 0.95], emissive: 0.75, isStatic: true },
-      );
-      post.position.set(cx, seg.ay + seg.grade * along + 0.5, cz);
-      post.rotation.y = seg.heading;
-      post.rotation.x = pitch;
     }
   }
 }
@@ -479,12 +530,13 @@ function buildProps(
     const groundY = seg.ay + seg.grade * along;
     if (onOtherRoad(segments, seg, cx, cz, 2.0)) continue;
 
-    const size = seg.section === "offroad" ? 4.2 : 3.0;
-    const height = seg.section === "offroad" ? 3.4 : 2.0;
+    const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
+    const size = style.size;
+    const height = style.height;
 
     const mesh = r.createMesh(
       { kind: "box", width: size, height, depth: size * 1.4 },
-      { color: [0.9, 0.42, 0.08], emissive: 0.45, isStatic: true },
+      { color: [...style.color], emissive: 0.45, isStatic: true },
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
@@ -495,9 +547,21 @@ function buildProps(
 
 /** Distance between obstacles per section; sections not listed stay clear. */
 const PROP_SPACING: Partial<Record<SectionId, number>> = {
-  downtown: 90,
-  construction: 46,
+  downtown: 95,
+  construction: 44,
+  canyon: 58,
+  industrial: 50,
   offroad: 70,
-  final: 52,
+  final: 48,
+};
+
+/** Obstacle look per section, so a hazard tells you where you are. */
+const PROP_STYLE: Partial<Record<SectionId, { color: Rgb; size: number; height: number }>> = {
+  downtown: { color: [0.9, 0.42, 0.08], size: 3.0, height: 2.0 },
+  construction: { color: [0.95, 0.72, 0.1], size: 3.0, height: 2.2 },
+  canyon: { color: [0.36, 0.33, 0.3], size: 3.6, height: 3.0 },
+  industrial: { color: [0.2, 0.5, 0.55], size: 3.2, height: 2.6 },
+  offroad: { color: [0.55, 0.4, 0.22], size: 4.2, height: 3.4 },
+  final: { color: [0.9, 0.3, 0.2], size: 3.0, height: 2.2 },
 };
 

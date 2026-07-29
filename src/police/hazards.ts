@@ -170,6 +170,13 @@ export class HazardField {
       slot.life = k.life;
       slot.root.position.set(slot.x, slot.y + 0.06, slot.z);
       slot.root.rotation.y = slot.heading;
+      // Lie it *on* the road rather than level with the world. A flat strip on a gradient
+      // sinks half its length into the tarmac at one end and floats at the other.
+      const ground = this.terrain.sample(slot.x, slot.z);
+      const cos = Math.cos(slot.heading);
+      const sin = Math.sin(slot.heading);
+      slot.root.rotation.x = -Math.atan(ground.gradX * sin + ground.gradZ * cos);
+      slot.root.rotation.z = Math.atan(ground.gradX * cos - ground.gradZ * sin);
       slot.root.setEnabled(true);
 
       this.lastUsed.set(unit, this.clock);

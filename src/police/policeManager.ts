@@ -470,8 +470,16 @@ export class PoliceManager {
       const unit = patrols[placed];
       if (!unit) break;
       const node = nav.nodeAtProgress(offset);
-      // Facing back down the course: they are coming to meet you, not fleeing up it.
-      unit.placeAt(node.x, node.z, Math.PI, node.y);
+      const next = nav.nodeAtProgress(offset + 40);
+      /*
+       * Facing *up* the course, driving away from you.
+       *
+       * They turn and engage the moment you are on them, so the pressure is unchanged —
+       * but you arrive behind them rather than into them. Head-on was survivable on a
+       * fifty-unit road and is a wall on an eighteen-unit one: three cars abreast is the
+       * whole street, and a run that begins by driving into it is not a chase.
+       */
+      unit.placeAt(node.x, node.z, headingOf(next.x - node.x, next.z - node.z), node.y);
       placed++;
     }
   }

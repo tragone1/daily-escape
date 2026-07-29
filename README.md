@@ -23,8 +23,16 @@ never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of twelve runs | caught at **163 s**, section **10**, ~9,900 points |
-| Range | section **5** to section **13** |
+| Median of sixteen runs | section **5** |
+| Quartiles | section **2** to section **7** |
+| Best | section **9** |
+
+The driver was rewritten for this round and the old numbers are not comparable. It used to
+aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
+and useless on an eighteen-unit street — on the narrowed course it simply drove into a
+building at the second bend, with the police disabled. It now scales its look-ahead with
+speed, corrects toward the segment centre line and brakes into corners. It still never uses
+boost or the rocket, so a player has real headroom above these numbers.
 | Dropped into section 18 | caught in **13 s**, 20 police on it, ~17,000 points |
 
 Both are floors, not targets. Everything a player can do — boost, the rocket, braking,
@@ -121,16 +129,25 @@ promise the game does not keep; the number is the honest label for how far you g
 Themes still cycle underneath in a five-beat rhythm, so you learn roughly what is coming
 while the difficulty underneath makes each pass through the cycle meaner than the last:
 
-| Theme | Surface | Walls | Run-off | Character |
+| # | Theme | Total width | Walls | Character |
 | --- | --- | --- | --- | --- |
-| **Downtown** | asphalt | buildings | none | Tight walled corridor. |
-| **Construction** | dirt | barriers | 12 | Ramps, narrow lanes. |
-| **Hills** | asphalt | rails | 20 | Constant gradient changes. |
-| **Off-road** | dirt | open | 34 | Widest; road is the fast line, not the only line. |
-| **Final** | gravel | fence | 14 | Loose surface, moderate width. |
+| 1 | **Hills** | 34 | rails | Constant gradient changes. The roomiest of the tight ones. |
+| 2 | **Construction** | 23 | barriers | Ramps, narrow lanes, hazard yellow. |
+| 3 | **Downtown** | 18 | buildings | Cool blue-grey canyon of towers. The first real squeeze. |
+| 4 | **The flats** | 64 | open | Genuinely open. The one place you get to breathe. |
+| 5 | **Canyon** | 15 | rock | Warm tan rock, gravel underfoot. The tightest road in the game. |
+| 6 | **Industrial** | 18 | fence | Sodium-lit asphalt, teal plant. |
+| 7 | **Final** | 24 | barriers | Loose gravel, real elevation. |
 
-Difficulty tightens with depth as well as breadth: each section narrows the road and its
-run-off by 2%, to a floor of 35% narrower than the theme's base.
+
+Width **is** the difficulty dial, and the order is the rhythm: roomy, tighter, tight,
+open, tightest. Everything used to sit between 42 and 90 units across, which made the whole
+course a motorway — nothing could trap you on it, so the heavy units and the roadblocks had
+nothing to work with, and a run could coast through the mid-game without ever being in
+trouble.
+
+Difficulty tightens further with depth: each section narrows by 1.4%, to a floor of 22%
+below the theme's base.
 
 The generator's one hard job is staying drivable, which it does by construction: headings
 are clamped to a ±1.15 rad cone around "forward", every leg drifts back toward the course
@@ -164,27 +181,34 @@ is bounded by a continuous barrier at the outer edge of its run-off.
 
 ### There is no out of bounds
 
-Every section is now walled at the outer edge of its run-off, and the layout is uniform:
-**road, reflector posts, a lane of grass, then the wall.** The posts are purely a read —
-no colliders, wide gaps — because the grass is a lane both sides are meant to use, not a
-no-man's-land. Shoulders were widened to pay for the enclosure: downtown gained one where
-it had none, hills went 20 to 24, construction 12 to 17, final 14 to 19.
-
-The wall used to sit at the edge of the tarmac for every theme except the open one, which
-put the grass *outside* the fence — ground the terrain called drivable and the geometry
-made unreachable.
+Every section is walled, and the wall is the edge of the drivable world. Most themes have
+no run-off at all now — the grass lane was a literal reading of "some sections could have
+grass beside the road" applied to all of them, and it made everything uniformly wide and
+uniformly safe. Two themes keep a real shoulder (the flats at 20, hills at 7); the rest are
+walls at the kerb.
 
 Containment is verified rather than assumed. A car boosting straight at the boundary from
-every leg, at three angles, both sides, 324 probes: **3% got out** through individual gaps
-where two legs meet at a sharp bend. Hunting each one across twelve thousand wall pieces
-is a losing game, so the invariant is enforced physically as well — outside the ribbon,
-outward velocity is cancelled and the car is pushed back toward the road. With that in
-place, 1 probe in 120 was still outside after four seconds, and the longest anyone spent
-out there was 2.8 s. It is a firm shove rather than a teleport, so a leak costs a moment
-and your line instead of resetting the chase.
+every leg, at three angles, both sides, 324 probes: 3% got out through individual gaps
+where two legs meet at a sharp bend. Hunting each one across twelve thousand wall pieces is
+a losing game, so the invariant is also enforced physically — outside the ribbon, outward
+velocity is cancelled and the car is pushed back toward the road. With that in place, 1
+probe in 120 was still outside after four seconds, longest spell 2.8 s. A firm shove rather
+than a teleport, so a leak costs a moment and your line instead of resetting the chase.
 
-The old crawl-speed penalty survives, milder (0.62x rather than 0.32x), purely as the
-backstop for a leak. Progress still does not count out there.
+### Filling the gaps
+
+Two bits of geometry exist purely so the world does not look like flat panes leaning on
+each other:
+
+- **Skirts.** A deep apron hangs under every road piece. Consecutive legs meet at an angle
+  and at different heights, so every joint and every ramp landing used to leave a vertical
+  slot you could see straight through to the void.
+- **Joint patches.** The ribbons are rectangles, so where the course turns they open a
+  triangular notch on the outside of the bend — a jagged step with black behind it. One
+  flat patch per junction, laid at the mean of the two headings, covers it.
+
+Spike strips are also laid *on* the road rather than level with the world now. A flat strip
+on a gradient sank half its length into the tarmac at one end and floated at the other.
 
 #### The joint bug this found
 
@@ -363,6 +387,11 @@ the player instead — front, both front quarters, both flanks, rear — and the
 matching pace rather than charging, closing the offset once they are on it. The forward
 stations are a brake-check, and they are the reason a fast player has to slow down.
 
+Units on station **match your pace** rather than charging it: ahead of you they run at 0.9×
+your speed and let you close — that is the brake-check — and behind you they run at 1.12×
+and push. Without that the box read as ordinary traffic, because everyone arrived at their
+spot flat out and immediately left it again.
+
 Around four to five units are on station at any time in a busy section.
 
 Something is also always **behind** you. Ambush and side placements both tend to land in
@@ -398,8 +427,14 @@ A run ends exactly one way, and the rule for it has a floor as well as a slope:
 counts as pinned below   9 u/s + 3.2 x (cars within 12 units - 4)     capped at 30 u/s
 ```
 
-Up to four cars only have you if you are nearly stopped. Ten packed around you have you at
+Up to three cars only have you if you are nearly stopped. Ten packed around you have you at
 a good deal more than that — at that point you are not escaping, you are being carried.
+
+The speed it tests is **smoothed over 0.7 s**, and that mattered more than the threshold.
+Being surrounded is a constant sequence of impacts and every impact spikes your speed for a
+few frames; tested instantaneously that read as "escaping" over and over, so a player who
+had actually come to a stop watched the meter reset every time somebody hit them. What
+counts is whether you are getting anywhere, not whether you are moving.
 
 A flat threshold was why a player could be visibly buried in police and drive out anyway:
 every ram bumped them back over the line, so the meter never filled however bad it looked.
@@ -416,12 +451,18 @@ you** can lay one.
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
 | **Spike strip** | section 4 | Top speed ×0.5, grip ×0.72 | 4.0 s |
-| **Oil slick** | section 6 | Grip ×0.3, speed untouched | 2.8 s |
+| **Oil slick** | section 6 | Grip **×0.06**, speed ×0.95 | 3.4 s |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
 pin you. Oil leaves you fast and unable to point the car, which is far worse going into a
 corner than on a straight.
+
+Oil's grip multiplier had to go almost to zero to mean anything. At 0.3 the lateral damping
+still pulled the car straight inside a corner's worth of time, so a slick was something you
+could drive over and ignore. At 0.06 the velocity keeps pointing where it was pointing
+while the nose turns — measured, peak lateral slip goes from 12 u/s clean to **41 u/s**
+oiled. You steer and, for a second and a half, nothing happens.
 
 Both are answerable, which is the point — a hazard you cannot avoid is just damage. They
 cover most of the road and never all of it, they take a moment to arm, they glow, and you

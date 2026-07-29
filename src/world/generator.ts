@@ -120,15 +120,24 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     for (let i = 0; i < LEGS_PER_SECTION; i++) {
       const length = 70 + rnd() * 70;
 
-      // Turn, biased back toward +Z whenever the course drifts sideways.
-      const drift = x / LATERAL_LIMIT;
-      const turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
-      heading += turn;
-      // Keep every leg pointed broadly forward so the course always advances.
-      heading = Math.max(-1.15, Math.min(1.15, heading));
+
+      // The very first leg runs dead straight. The player is placed facing +Z, and a
+      // course that turns immediately means starting the run pointed off the road for no
+      // reason the player can see.
+      const opening = s === 0 && i === 0;
+      if (!opening) {
+        // Turn, biased back toward +Z whenever the course drifts sideways.
+        const drift = x / LATERAL_LIMIT;
+        const turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
+        heading += turn;
+        // Keep every leg pointed broadly forward so the course always advances.
+        heading = Math.max(-1.15, Math.min(1.15, heading));
+      }
 
       // Elevation: ease the gradient toward a new target rather than jumping to it.
-      if (rnd() < theme.hills) {
+      if (opening) {
+        grade = 0;
+      } else if (rnd() < theme.hills) {
         const target = (rnd() - 0.5) * 0.5;
         grade += (target - grade) * 0.55;
       } else {

@@ -114,6 +114,7 @@ export class PoliceCar {
     this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
     this.vehicle.contactBoost = roleCfg.contactBoost ?? 1;
     this.baseContactBoost = this.vehicle.contactBoost;
+    this.vehicle.offCourseImmune = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
     this.view = new CarView(
       r,
@@ -207,6 +208,14 @@ export class PoliceCar {
       this.input.steer = 0;
       this.input.boost = false;
       v.update(this.input, dt, ctx.terrain);
+      // Scrub the blast off hard, but only the blast: below `wreckCoastSpeed` this stops
+      // applying, so a hulk the player is shoving aside still moves freely.
+      const rocket = CONFIG.player.rocket;
+      if (v.speed > rocket.wreckCoastSpeed) {
+        const k = Math.exp(-rocket.wreckDrag * dt);
+        v.vx *= k;
+        v.vz *= k;
+      }
       return;
     }
 

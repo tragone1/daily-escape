@@ -23,8 +23,8 @@ never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of ten runs | caught at **89 s**, section **7**, ~6,200 points |
-| Best of ten | **159 s**, section **12**, ~11,700 points |
+| Median of twelve runs | caught at **96 s**, section **6**, ~5,500 points |
+| Best of twelve | **121 s**, section **7**, ~6,600 points |
 | Dropped into section 18 | caught in **13 s**, 20 police on it, ~17,000 points |
 
 Both are floors, not targets. Everything a player can do — boost, the rocket, braking,
@@ -105,7 +105,10 @@ Opens on <http://localhost:5173>. Also `npm run typecheck`, `npm run build`, `np
 | `C` | Snap the camera behind the car |
 
 The run does not start until you press a driving key (or hit **Start Run** on the shared
-build), so nothing is chasing you before you are at the wheel.
+build), so nothing is chasing you before you are at the wheel. The first leg of the course
+runs dead straight, so the car and the road agree about which way forward is — a generated
+opening that turned immediately meant starting the run pointed off the road for no reason
+you could see.
 
 ## The course
 
@@ -165,8 +168,19 @@ Past the barriers there is ground, and you can drive on it. You just should not 
 
 | | On the course | Outside it |
 | --- | --- | --- |
-| Top speed | 39 u/s | **10 u/s** |
+| Your top speed | 39 u/s | **9 u/s** |
+| Police top speed | 46 u/s | **42 u/s** |
 | Progress banked | yes | **none** |
+
+The penalty is one-sided on purpose. Slowing the police out there too just moved the
+stalemate past the barriers — everyone crawled, so leaving cost nothing. At a third of
+their pace with the whole squad still at full speed, the wasteland is somewhere you get
+caught, which is the entire point of it.
+
+It is also visible: warm scorched rust instead of the old near-black, which was the same
+colour as the empty background, so the boundary between "road" and "the part that ends
+your run" could not be seen until the HUD said so. Plus an amber vignette and an
+**OFF COURSE** tag while you are out there.
 
 Leaving used to be a free move, and the best one available: dip into the black, get
 teleported back a second and a half later by the containment backstop, and every pursuer
@@ -201,7 +215,14 @@ Every unit the run will ever need is built at startup and parked dormant. The di
 decides how many are awake and which classes they are drawn from, both as functions of the
 section you have reached.
 
-**Headcount**: `4 + 1.1 per section`, capped at **20**.
+**Headcount**: `6 + 1.15 per section`, capped at **20**.
+
+It used to be `4 + 1.1`, which asked for five units in section 2 and six in section 3 —
+and the opening wave already puts five on the board, so the two sections after the start
+woke *nothing*, and the game got quieter before it got louder. Measured, sections 2 and 3
+now carry 5.5 and 6.5 cars within 120 units of you, against 3.6 and 4.3 before. The fix is
+a higher base with a shallower slope rather than a steeper slope: raising the rate filled
+the early sections but compounded all the way up and cost a quarter of the median run.
 
 **The opening**: five units, and **none of them on the start line**. Three are up the road
 facing back down it, and two are already waiting in alleys within the first 600 units. Cars
@@ -314,17 +335,21 @@ What makes it worth saving is that it is the **answer to terrain**, not a generi
 button: while it burns you are fully impervious to surface penalty
 (`boostTerrainBypass: 1.0`) and 65% of a climb's speed penalty is cancelled.
 
-One direct hit wrecks a car outright and throws it **46 units at a peak of 133 u/s** —
-roughly three times your own top speed. It used to barely shift them, for a reason that
-had nothing to do with the blast: forward speed was hard-clamped to the engine's ceiling
-every single frame, which deleted the along-the-car component of any external impulse on
-the frame it landed. Blasts could throw a car sideways and nowhere else, so wrecks slumped
-where they died and firing the rocket at a roadblock built you a better one. The ceiling is
-now something the car settles back to rather than a wall it is snapped against.
+One direct hit wrecks a car outright and throws it **18 units at a peak of 58 u/s**. It used
+to barely shift them, for a reason that had nothing to do with the blast: forward speed was
+hard-clamped to the engine's ceiling every single frame, which deleted the along-the-car
+component of any external impulse on the frame it landed. Blasts could throw a car sideways
+and nowhere else, so wrecks slumped where they died and firing the rocket at a roadblock
+built you a better one. The ceiling is now something the car settles back to rather than a
+wall it is snapped against.
 
-A burnt-out hulk also stops being furniture: its `pushResistance` drops to 0.3 on death, so
-you can shove one out of the way (about 10 units in three seconds of pushing) instead of
-being walled in by your own kill.
+Three things keep it a kick rather than a launch. The blast damps hard above
+`wreckCoastSpeed` and not at all below it, so a hulk is thrown clear and then stops instead
+of sliding half a section. Its `pushResistance` drops to 0.1 on death, so you can shove one
+about 18 units in three seconds of pushing rather than being walled in by your own kill.
+And `selfImpulseScale` is **zero**: your own rocket does not knock you backwards. That was
+the one part of the explosion that punished you for using it well, in a game about not
+losing momentum. The camera shake sells the concussion instead.
 
 You start with one rocket and can carry two. Ammo turns up regularly, and **two out of
 every three sit out in the run-off**, well off the racing line: you have to leave the

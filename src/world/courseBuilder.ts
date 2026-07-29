@@ -101,9 +101,18 @@ export function buildWorld(r: Renderer): BuiltWorld {
     minZ = Math.min(minZ, seg.az - reach, seg.bz - reach);
     maxZ = Math.max(maxZ, seg.az + reach, seg.bz + reach);
   }
+  /*
+   * Scorched rust rather than near-black.
+   *
+   * The wasteland is a real decision now — you crawl out there and bank no progress — and
+   * a decision you cannot see is not one you get to make. At the old value it was the
+   * same colour as the empty background, so the boundary between "road" and "the part
+   * that ends your run" was invisible until the HUD told you. Warm and dark reads as
+   * ground you should not be on without lighting up the night palette.
+   */
   const floor = r.createMesh(
     { kind: "plane", width: maxX - minX, depth: maxZ - minZ },
-    { color: [0.05, 0.055, 0.07], emissive: 0.3, isStatic: true },
+    { color: [0.12, 0.06, 0.045], emissive: 0.34, isStatic: true },
   );
   floor.position.set((minX + maxX) / 2, -8, (minZ + maxZ) / 2);
 

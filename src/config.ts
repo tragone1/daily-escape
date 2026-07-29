@@ -161,6 +161,11 @@ export const CONFIG = {
      *
      * These are applied *after* the boost bypass, so a charge cannot paper over them the
      * way it does mud. Boost is the answer to terrain; it is not a licence to leave.
+     *
+     * They apply to the player alone. Slowing the police out there too made the wasteland
+     * a stalemate rather than a mistake — everyone crawled, so nothing was actually lost
+     * by going. Police at full pace against a player at a third of it is what makes the
+     * black genuinely somewhere you do not want to be.
      */
     offCourse: {
       maxSpeed: 0.32,
@@ -262,11 +267,28 @@ export const CONFIG = {
        * have to drive around, which turned firing the rocket into building your own
        * roadblock. Cars should leave the blast, not slump in it.
        */
-      blastImpulse: 265,
+      blastImpulse: 130,
       /** Spin imparted to caught vehicles, rad/s. */
       blastSpin: 7.0,
-      /** How easily a burnt-out hulk can be shoved aside afterwards (lower = easier). */
-      wreckPushResistance: 0.3,
+      /**
+       * How fast a hulk scrubs off blast speed, and the speed below which it stops doing
+       * so.
+       *
+       * A wreck has no driver and no brakes, so a big impulse used to carry it most of a
+       * section — dramatic for half a second and then just a car sliding into the
+       * distance. Damping only the blast-speed part gives the launch its punch back and
+       * lands the thing near where it died, while leaving a hulk that the player is
+       * nudging out of the way completely alone.
+       */
+      wreckDrag: 2.5,
+      wreckCoastSpeed: 6,
+      /**
+       * How easily a burnt-out hulk can be shoved aside afterwards (lower = easier).
+       *
+       * Very low: there should be enough resistance to feel the weight of the thing, and
+       * not enough for your own kill to become the roadblock it replaced.
+       */
+      wreckPushResistance: 0.1,
       /** Seconds a surviving police car is left spinning and driverless. */
       policeDisableTime: 4.2,
       /**
@@ -275,8 +297,14 @@ export const CONFIG = {
        */
       wardenKillRadius: 6,
       wardenDisableTime: 1.6,
-      /** Fraction of the blast the player takes — enough to feel, not to end a run. */
-      selfImpulseScale: 0.28,
+      /**
+       * Fraction of the blast the player takes.
+       *
+       * Zero. Your own rocket knocking you backwards is a self-inflicted wound in a game
+       * about not losing momentum, and it is the one part of the explosion that punished
+       * you for using it well. The camera shake sells the concussion instead.
+       */
+      selfImpulseScale: 0,
       /** Camera shake on detonation. */
       shake: 1.4,
       /** Lifetime of the core flash / fireball / shockwave, seconds. */
@@ -706,8 +734,14 @@ export const CONFIG = {
       sideShoulderMin: 9,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
-      /** Fall this far behind and the unit is recycled forward instead of trailing. */
-      retireBehind: 260,
+      /**
+       * Fall this far behind and the unit is recycled forward instead of trailing.
+       *
+       * Shortened, because headcount is only half of what "there are police here" means.
+       * Five cars strung out down the road behind you is an empty section; the same five
+       * picked up and put back in front of you is a busy one.
+       */
+      retireBehind: 170,
     },
 
     /**
@@ -719,9 +753,21 @@ export const CONFIG = {
      * The run always ends in a pile-up — the only question is when.
      */
     escalation: {
-      /** Active units at section 0, and how many more per section after that. */
-      baseActive: 4,
-      activePerSection: 1.1,
+      /**
+       * Active units at section 0, and how many more per section after that.
+       *
+       * The old 4 + 1.1 asked for 5 units in section 2 and 6 in section 3 — and the
+       * opening wave already has 5 on the board, so the first two sections after the
+       * start woke nothing at all and played out as a lull. The curve has to clear the
+       * opening wave immediately or the game gets quieter before it gets louder.
+       *
+       * The fix is a higher base with a shallower slope, not a steeper slope: raising the
+       * rate filled the early sections but compounded all the way up, and cost a quarter
+       * of the median run. This fills the lull and leaves the late game roughly where it
+       * was, which is where it was wanted.
+       */
+      baseActive: 6,
+      activePerSection: 1.15,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */

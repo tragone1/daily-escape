@@ -62,6 +62,14 @@ export class Vehicle {
   surface: Surface = "asphalt";
   /** True while past the course boundary, in the wasteland. */
   offCourse = false;
+  /**
+   * Set on police cars: they drive the wasteland at full pace.
+   *
+   * The penalty exists to stop the player using the black as an escape hatch. Applying it
+   * to the pursuit as well simply moved the stalemate outside the barriers — everyone
+   * crawled, so leaving cost nothing. One-sided, it is the deterrent it was meant to be.
+   */
+  offCourseImmune = false;
   /** Rise per unit travelled forward: positive uphill, negative downhill. */
   climb = 0;
   /** Rise per unit travelled to the right — the cross-slope the car sits across. */
@@ -236,7 +244,7 @@ export class Vehicle {
      * the wasteland is not a surface you can power through, it is somewhere you should
      * not be. Tyre damage is outside the bypass for the same reason.
      */
-    if (this.offCourse) {
+    if (this.offCourse && !this.offCourseImmune) {
       const off = t.offCourse;
       surf.grip *= off.grip;
       surf.drag *= off.drag;

@@ -158,6 +158,7 @@ export class Hud {
       frame.captureProgress > 0.66 ? "BREAK FREE!" : `${Math.round(frame.captureProgress * 100)}%`;
     this.captureText.classList.toggle("urgent", frame.captureProgress > 0.66);
     this.vignette.classList.toggle("danger", frame.captureProgress > 0.35);
+    this.vignette.classList.toggle("offcourse", frame.offCourse);
 
     this.compassArrow.style.transform = `rotate(${frame.escapeBearing}rad)`;
     this.progressFill.style.width = `${Math.round(frame.sectionProgress * 100)}%`;
@@ -212,6 +213,7 @@ export class Hud {
   hideResult(): void {
     this.overlay.classList.remove("show");
     this.vignette.classList.remove("danger");
+    this.vignette.classList.remove("offcourse");
     this.banner.classList.remove("show");
     this.sectionBanner.classList.remove("show");
     this.bannerTime = 0;

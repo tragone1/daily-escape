@@ -390,8 +390,11 @@ export class PoliceCar {
       const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
       const wantsFront = this.boxSlot.z > 0;
       const inPosition = wantsFront ? lead > this.boxSlot.z * 0.6 : lead < this.boxSlot.z * 0.6 + 2;
+      // The floor never exceeds the player's own pace by more than a little, so against
+      // a stopped player the box comes to rest around them instead of milling through.
+      const floor = Math.min(box.minPace, ctx.player.speed + box.paceOverrun);
       boxSpeedLimit = inPosition
-        ? Math.max(box.minPace, ctx.player.speed * (wantsFront ? box.leadPace : box.chasePace))
+        ? Math.max(floor, ctx.player.speed * (wantsFront ? box.leadPace : box.chasePace))
         : Infinity;
     } else {
       this.boxPress = 0;
@@ -748,7 +751,10 @@ export class PoliceCar {
     // stuck — otherwise the recovery logic would reverse it off its post and eventually
     // teleport it away, which is exactly the opposite of its job.
     const parked = parkDistance < this.parkRadius;
-    if (speed < shared.stuckSpeed && !parked) {
+    // Holding station on top of the player is the job, not a fault. Without this the
+    // stuck detector reversed the squad out of its own box and then teleported it away.
+    const pinning = this.distanceToPlayer(ctx.player) < shared.pinningRange;
+    if (speed < shared.stuckSpeed && !parked && !pinning) {
       this.stuckTimer += dt;
       this.stuckTotal += dt;
     } else {
@@ -760,7 +766,7 @@ export class PoliceCar {
     // scenery is both useless and ugly, so it gets recycled quickly. Unless the player is
     // out there too — following someone into the wasteland is the job, and recycling
     // units for doing it would hand the player a way to shake the whole squad.
-    if (!ctx.player.offCourse && !ctx.terrain.sample(v.x, v.z).onCourse) {
+    if (!pinning && !ctx.player.offCourse && !ctx.terrain.sample(v.x, v.z).onCourse) {
       this.stuckTotal += dt * 2;
     }
 
@@ -778,7 +784,7 @@ export class PoliceCar {
       return;
     }
 
-    if (this.reverseTimer <= 0 && this.stuckTimer > shared.stuckTime) {
+    if (this.reverseTimer <= 0 && this.stuckTimer > shared.stuckTime && !pinning) {
       this.reverseTimer = shared.reverseTime;
     }
 

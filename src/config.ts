@@ -419,6 +419,18 @@ export const CONFIG = {
        */
       stuckSpeed: 6,
       stuckTime: 1.1,
+      /**
+       * A unit this close to the player is never counted as stuck.
+       *
+       * This was the whole reason a stopped player could not be surrounded. A car pressed
+       * against a stationary target is, by definition, moving slowly — so the stuck
+       * detector fired, it reversed out of the sector it was blocking, and after three and
+       * a half seconds it teleported away entirely. The squad was dismantling its own
+       * ring as fast as it built it, which is exactly the "they get you close to pinned
+       * and then bounce all over" that kept being reported. Sitting on somebody is the
+       * job, not a fault.
+       */
+      pinningRange: 15,
       /** Length of the reverse-out manoeuvre, seconds. */
       reverseTime: 0.9,
       /**
@@ -529,8 +541,19 @@ export const CONFIG = {
          */
         leadPace: 0.9,
         chasePace: 1.12,
-        /** Never crawl, however slowly the player is going. */
+        /**
+         * Pace floor while holding station — but capped to just above the player's own
+         * speed.
+         *
+         * A flat floor was the single biggest reason a stationary player never got
+         * properly surrounded: every unit on station kept driving at 14 u/s into a car
+         * that was not moving, bounced off, and broke the ring it had just closed.
+         * Measured, sitting still produced 2.1 of 8 sectors blocked and the pin breaking
+         * twelve times in half a minute. Against a stopped player the box has to *stop*.
+         */
         minPace: 14,
+        /** How much faster than the player the floor is ever allowed to be. */
+        paceOverrun: 4,
         /** Once a unit is within this of its station it starts pressing inward. */
         pressRange: 7,
         /** How hard it presses, as a fraction of the offset removed per second. */
@@ -932,8 +955,16 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.002,
-        speedScale: 0.88,
+        /*
+         * Effectively no grip at all, and no speed penalty worth the name.
+         *
+         * The slick is not a slowing hazard - a liquid does not slow you down, it stops
+         * you steering. Taking pace off it as well muddled what it was for and made it
+         * feel like a weak spike strip. All of its weight is now in control: you keep
+         * every unit of speed you had and almost none of your ability to point the car.
+         */
+        gripScale: 0.0008,
+        speedScale: 1.0,
         duration: 5.5,
         /**
          * Extra grip loss while boosting through it.
@@ -952,8 +983,16 @@ export const CONFIG = {
          * you can genuinely spin, which is the difference between an inconvenience and a
          * thing you have to respect.
          */
-        spinPerSlip: 0.055,
-        maxSpin: 2.6,
+        spinPerSlip: 0.16,
+        maxSpin: 5.5,
+        /**
+         * Extra yaw per unit of steering input while oiled, rad/s.
+         *
+         * This is what makes it punish *aggression* specifically. Feather it and you
+         * slither in a straight line; snatch at the wheel or light the boost and the back
+         * end comes round and keeps coming.
+         */
+        spinPerSteer: 2.4,
       },
     },
 
@@ -997,7 +1036,7 @@ export const CONFIG = {
        * those two reads as a queue: you outrun the ones behind, then dodge the ones in
        * front one at a time. The threat has to be able to come from off to the side.
        */
-      spawnWeights: { ambush: 6, side: 2, behind: 2.5, ahead: 1 },
+      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 0.8 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.
@@ -1013,7 +1052,7 @@ export const CONFIG = {
 
       /** Ambush spurs are only used within this window ahead of the player. */
       ambushLeadMin: 85,
-      ambushLeadMax: 300,
+      ambushLeadMax: 340,
       /** How far down the spur the unit waits, as a fraction of its length. */
       ambushDepth: 0.72,
       /**
@@ -1053,7 +1092,7 @@ export const CONFIG = {
          * at cruising pace and it has you; light the charge after it has committed and you
          * are through the gap before it arrives.
          */
-        readRange: 190,
+        readRange: 210,
         /**
          * Re-aim at the player *after* launching, until this far from the mouth.
          *
@@ -1062,16 +1101,16 @@ export const CONFIG = {
          * for the first stretch turns the guess into a strike, and it is what makes the
          * hit land on the flank at any speed rather than only at the pace it predicted.
          */
-        homeDistance: 62,
+        homeDistance: 95,
         /**
          * How far *past* the intercept point to aim while springing.
          *
          * Arriving exactly at the intercept means arriving alongside, which is a scrape.
          * Aiming beyond it turns the same approach into a T-bone.
          */
-        strikeDepth: 7,
+        strikeDepth: 9,
         /** Extra pace while springing, so it arrives with weight behind it. */
-        launchSpeedBonus: 0.5,
+        launchSpeedBonus: 0.75,
         /** Once the player is past, come out anyway and join the chase from behind. */
         releaseBehindRange: 90,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
@@ -1212,6 +1251,17 @@ export const CONFIG = {
     buildingSpeedLoss: 0.42,
     /** Fraction of speed lost when cars trade paint. */
     carSpeedLoss: 0.3,
+    /**
+     * Below this player speed, car-on-car contact settles instead of bouncing.
+     *
+     * The fixed shove exists so that contact during a chase reads as forceful. Against a
+     * player who has already stopped it does the opposite of its job: it scatters the
+     * ring the squad just built, so a car that had you pinned punts itself back out of
+     * the sector it was blocking. Once you are stopped they should nestle in and stay.
+     */
+    pinSettleSpeed: 12,
+    pinShoveScale: 0.12,
+    pinRestitution: 0.05,
     /**
      * Ceiling on how much speed the player can lose to car contact in a single frame.
      *

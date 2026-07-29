@@ -24,11 +24,12 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of ten runs | section **5** |
-| Quartiles | section **3** to section **5** |
+| Quartiles | section **3** to section **6** |
 | Best | section **7** |
 | Died in the first 15 s | **0 of 10** |
-| At the moment of arrest | **4.5 of 8 directions blocked** |
-| Standing still from the line | arrested in **22 s** |
+| At the moment of arrest | **4.7 of 8 directions blocked** |
+| Standing still from the line | arrested in **17-28 s** |
+| From half meter to arrest | **0.9 s** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -112,15 +113,20 @@ Opens on <http://localhost:5173>. Also `npm run typecheck`, `npm run build`, `np
 | `A` `D` / `←` `→` | Steer |
 | `Space` | Boost |
 | `F` | Fire rocket |
-| `R` | Restart the run |
+| `Q` | Restart the run |
 | `C` | Snap the camera behind the car |
 
 There is no compass. There was an arrow above the car pointing at the escape gate, and the
 escape gate stopped existing when the game became endless — it had been pointing at nothing
 in particular for several versions.
 
-The run does not start until you press a driving key (or hit **Start Run** on the shared
-build), so nothing is chasing you before you are at the wheel. The first leg of the course
+The run does not start until you hit **Start Run** or press a driving key, so nothing is
+chasing you before you are at the wheel.
+
+The intro card lives in `index.html` and both builds share it — the shareable build used to
+inject its own copy, which is two places for the same words to drift apart. The card covers
+the canvas, so its button is wired in `Game` rather than in the build script; otherwise the
+hosted site had no way to start at all. The first leg of the course
 runs dead straight, so the car and the road agree about which way forward is — a generated
 opening that turned immediately meant starting the run pointed off the road for no reason
 you could see.
@@ -425,15 +431,22 @@ vetoes **36% of otherwise-valid spawn spots**.
 
 ### The rig
 
-A nine-metre armoured transport that does not chase you at all. It scouts the road ahead,
-picks the tightest point it can reach, drives there and parks **broadside across it**.
+A nine-metre armoured transport that does not chase you at all — and no longer *travels*
+to its post either. It is placed 260–700 units up your route, already in position and
+already broadside, out of sight. Waking it behind the player and having it race past to set
+up was both unconvincing for a transport and the reason three of them could end up stacked
+in the same pinch; **one blocks at a time**, and once you are 70 units past, it stands down.
+
+It picks the tightest point it can find with at least 19 units of free width, and it is
+slow (38 u/s) because it never has to catch anybody. Measured: **1 at a time**, **all of
+them first seen ahead of the player**, broadside **93%** of the time they are stopped.
 
 | | |
 | --- | --- |
 | Scouts | 210-620 units up your route |
 | Picks | the narrowest **free width**, measured by ray, not the section's nominal width |
 | Mass | 8.0, effective 17.6 against a shove — a wall at cruising speed |
-| Top speed | 51 u/s |
+| Top speed | 38 u/s — it never has to catch anybody |
 
 It will not park anywhere narrower than **19 units** of free width. Twelve metres of
 vehicle broadside across the fourteen-metre canyon sealed the road outright, and with no
@@ -447,13 +460,9 @@ do that job: at eight tonnes even a tenth left it heavier than the player, so bl
 roadblock produced a roadblock. Being stopped by geometry you have no answer to is the one
 kind of loss with no play in it.
 
-Two things had to be true before it worked. It has to be *faster than you*: at 41 against
-your 46 it could never get in front to set up, so it parked wherever it happened to be
-when you caught it, which is not a roadblock, it is a slow lorry. And "tight" has to mean
-the actual gap between the walls, cast by ray — a section's nominal width barely varies
-along its length, so scouting on that picked spots no better than at random. Measured, it
-now parks in free widths averaging 51 against a course average of 55, 82% of the time
-ahead of you, broadside two thirds of the time it is stopped.
+"Tight" has to mean the actual gap between the walls, cast by ray — a section's nominal
+width barely varies along its length, so scouting on that picked spots no better than at
+random.
 
 ### Boxing in
 
@@ -530,7 +539,7 @@ A run ends one way, and the rule is about **directions**, not cars:
 the circle around you is cut into 8 wedges
 a wedge is blocked when a live unit sits in it within 15 units
 below 4 blocked, nothing happens however slow you are
-at 6 blocked, the arrest runs at full speed - and it takes 2.2 s
+at 5 blocked, the arrest runs at full speed - and it takes 1.4 s
 ```
 
 Counting cars was the wrong measure entirely. Two heavies leaning on your bumper is two
@@ -542,9 +551,15 @@ run out. Directions are what "no way out" means.
 Measured at the moment of arrest, across ten runs: **5.3 of 8 directions blocked, player
 doing 6.8 u/s**. That is genuinely ringed and genuinely stopped.
 
-The bar moved down and the timer moved in, because at the previous settings a player could
-sit inside a closed scrum bumping around until the boost came back and then leave. If the
-box has shut, it should be over.
+**The bar did not want lowering; the clock did.** Dropping the threshold to two blocked
+directions produced arrests at 3.3 of 8 — a couple of cars on one side, which reads as
+arbitrary. Halving the *duration* instead keeps the same "genuinely ringed" requirement and
+removes the thing that was actually wrong: at 2.2 s you could let the scrum form around you,
+wait for everyone to settle, and then fire the rocket and walk out. The rocket has to be
+spent before the box closes or as it is closing, on a read rather than on a certainty.
+
+Measured: **0.9 seconds** from the meter passing halfway to the arrest, and arrests landing
+at **4.7 of 8 directions blocked**.
 
 The speed it tests is smoothed over 0.55 s. Being surrounded is a constant sequence of
 impacts and every impact spikes your speed for a few frames; tested instantaneously that

@@ -312,6 +312,131 @@
         cursor: pointer;
       }
       button:hover { filter: brightness(1.1); }
+
+      /* ---------------------------------------------------------------------
+         Intro card.
+         Deliberately single-theme: this is a night-time arcade screen, and the
+         panel matches the in-game HUD chrome exactly so starting the run feels
+         like the card getting out of the way rather than a scene change.
+         ------------------------------------------------------------------ */
+      #focusHint {
+        position: absolute;
+        inset: 0;
+        z-index: 50;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: radial-gradient(circle at 50% 42%, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.95));
+        overflow: auto;
+      }
+      #focusHint.hidden { display: none; }
+      #startCard {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 14px;
+        backdrop-filter: blur(8px);
+        padding: 14px 24px;
+        max-width: 760px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        /* Short viewports are the common case in an embedded frame, so the card scrolls
+           inside itself rather than pushing the button off the bottom of the screen. */
+        max-height: calc(100vh - 32px);
+        overflow: auto;
+      }
+      #startCard h2 {
+        margin: 0;
+        font-size: clamp(22px, 4.4vw, 32px);
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        color: var(--accent);
+        text-align: center;
+        text-shadow: 0 0 30px rgba(255, 210, 63, 0.32);
+      }
+      #startCard h2 + .tagline { margin-top: -4px; }
+      #startCard .tagline {
+        margin: 0;
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: #c3cade;
+        text-align: center;
+        text-wrap: balance;
+      }
+      #startCard .tagline strong { color: var(--good); font-weight: 700; }
+      #startBeats {
+        display: grid;
+        gap: 7px 24px;
+        grid-template-columns: 1fr;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 10px 0;
+      }
+      #startBeats div {
+        display: grid;
+        grid-template-columns: 68px 1fr;
+        gap: 10px;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: #a8b0c4;
+      }
+      #startBeats b {
+        color: var(--accent);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        font-size: 10px;
+        padding-top: 1px;
+        text-transform: uppercase;
+      }
+      #startBeats i { color: #dfe5f2; font-style: normal; }
+      /* Two columns as soon as there is room: four stacked rows plus the controls and the
+         button do not fit in a short embedded frame, and the button must never be the thing
+         that ends up below the fold. */
+      @media (min-width: 660px) {
+        #startBeats { grid-template-columns: 1fr 1fr; }
+      }
+      #startKeys {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+        gap: 7px 14px;
+        font-size: 11px;
+        color: #8b93a7;
+      }
+      #startKeys span { display: flex; align-items: center; gap: 7px; }
+      #startKeys b {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        padding: 2px 7px;
+        color: #eaf0ff;
+        font-weight: 600;
+        min-width: 34px;
+        text-align: center;
+      }
+      #startGo {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        color: #05070c;
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        padding: 10px 30px;
+        cursor: pointer;
+        align-self: center;
+      }
+      #startGo:hover { filter: brightness(1.08); }
+      #startGo:focus-visible { outline: 2px solid var(--good); outline-offset: 3px; }
+      #buildStamp {
+        margin: 0;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: #5d6579;
+      }
       #restartBtn {
         position: absolute;
         top: 16px;
@@ -393,10 +518,10 @@
         <kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse<br />
         <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>Space</kbd> boost<br />
         <kbd>F</kbd> fire rocket<br />
-        <kbd>R</kbd> restart &nbsp; <kbd>C</kbd> reset camera
+        <kbd>Q</kbd> restart &nbsp; <kbd>C</kbd> reset camera
       </div>
 
-      <button id="restartBtn">RESTART (R)</button>
+      <button id="restartBtn">RESTART (Q)</button>
     </div>
 
     <div id="overlay">
@@ -406,7 +531,52 @@
         <div id="overlayStars"></div>
         <div id="overlayTime">00.00</div>
         <div id="overlayDetail"></div>
-        <button id="playAgainBtn">PLAY AGAIN (R)</button>
+        <button id="playAgainBtn">PLAY AGAIN (Q)</button>
+      </div>
+    </div>
+
+
+    <div id="focusHint">
+      <div id="startCard">
+        <h2>DAILY ESCAPE</h2>
+        <p class="tagline">
+          A police pursuit with <strong>no finish line</strong>. Every section sends more cars,
+          heavier cars and new ways to stop you. Your score is how far you got.
+        </p>
+
+        <div id="startBeats">
+          <div>
+            <b>Losing</b>
+            <i>They must <em>box you in</em> &mdash; directions blocked, speed gone. Contact alone
+            never ends a run.</i>
+          </div>
+          <div>
+            <b>Boost</b>
+            <i>One charge, long cooldown. Answers rough ground, shredded tyres and a blocked
+            road &mdash; it barges gaps.</i>
+          </div>
+          <div>
+            <b>Rocket</b>
+            <i>One shot. Spend it <em>as</em> the box closes, not after.</i>
+          </div>
+          <div>
+            <b>Hazards</b>
+            <i>Spikes gut your speed, oil takes your steering. Both leave a gap to thread.</i>
+          </div>
+        </div>
+
+        <div id="startKeys">
+          <span><b>W A S D</b> drive</span>
+          <span><b>&larr; &rarr;</b> steer</span>
+          <span><b>S</b> brake</span>
+          <span><b>Space</b> boost</span>
+          <span><b>F</b> rocket</span>
+          <span><b>Q</b> restart</span>
+          <span><b>C</b> camera</span>
+        </div>
+
+        <button id="startGo" type="button">START RUN</button>
+        <p id="buildStamp"></p>
       </div>
     </div>
 

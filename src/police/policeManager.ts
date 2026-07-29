@@ -67,6 +67,11 @@ export class PoliceManager {
     this.retimeTimer = 0;
   }
 
+  /** Rigs currently holding a block. */
+  private get activeRigs(): number {
+    return this.units.filter((u) => u.role === "rig" && u.active && !u.destroyed).length;
+  }
+
   get activeCount(): number {
     return this.units.filter((u) => u.active && !u.destroyed).length;
   }
@@ -136,6 +141,11 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (!unit.active || unit.destroyed) continue;
       const unitProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
+      // A rig the player has driven past has done its job, one way or the other.
+      if (unit.role === "rig") {
+        if (playerProgress - unitProgress > CONFIG.police.rig.retirePast) unit.deactivate();
+        continue;
+      }
       if (playerProgress - unitProgress <= pacing.retireBehind) continue;
       // Never while the player can see it.
       if (this.onScreen(unit, ctx)) continue;
@@ -295,6 +305,39 @@ export class PoliceManager {
     }
   }
 
+  /**
+   * Put a rig on the road ahead, in position and across the carriageway.
+   *
+   * The old behaviour had it wake up behind the player and race past to set up, which is
+   * both unconvincing for a nine-metre transport and the reason three of them could end
+   * up stacked in the same place. It is now pre-positioned: it exists at the block, and
+   * when the player has gone past, it is done.
+   */
+  private placeRig(unit: PoliceCar, ctx: PursuitContext, playerProgress: number): boolean {
+    const cfg = CONFIG.police.rig;
+    let best: NavNode | null = null;
+    let bestScore = Infinity;
+
+    for (let d = cfg.scoutMin; d <= cfg.scoutMax; d += 16) {
+      const node = ctx.nav.nodeAtProgress(playerProgress + d);
+      const seg = this.terrain.sample(node.x, node.z).segment;
+      const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
+      if (width < cfg.minBlockWidth) continue;
+      if (this.occupied(node.x, node.z)) continue;
+      const score = width * 2 + d * 0.04 + (width < cfg.preferredWidth ? -25 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    }
+    if (!best) return false;
+
+    const seg = this.terrain.sample(best.x, best.z).segment;
+    unit.placeAt(best.x, best.z, seg.heading + Math.PI / 2, best.y);
+    unit.parkAt(best);
+    return true;
+  }
+
   /** Weighted pick over dormant units whose class has unlocked for this section. */
   private pickDormant(section: number): PoliceCar | null {
     const esc = CONFIG.police.escalation;
@@ -306,6 +349,9 @@ export class PoliceManager {
       // Past its retirement the class is simply no longer dispatched. Headcount is
       // capped, so the mix is what escalation has left to turn once the cap is reached.
       if (section > (esc.retire[unit.role] ?? 999)) continue;
+      // One roadblock at a time. Three of them stacked in the same pinch is not a
+      // roadblock, it is a wall with no play in it.
+      if (unit.role === "rig" && this.activeRigs >= CONFIG.police.rig.maxActive) continue;
       const weight = esc.weight[unit.role] ?? 1;
       candidates.push({ unit, weight });
       total += weight;
@@ -343,6 +389,10 @@ export class PoliceManager {
    * entirely — their own walls do the hiding.
    */
   private spawnUnit(unit: PoliceCar, ctx: PursuitContext, playerProgress: number): boolean {
+    // A rig is placed where it is going to block, already broadside, well out of sight.
+    // It never chases and never overtakes - it is simply there when you arrive.
+    if (unit.role === "rig") return this.placeRig(unit, ctx, playerProgress);
+
     // Try the preferred placement first, then fall through the rest: a spur may be out of
     // range, and a walled section has no run-off to sit in, but *something* has to spawn.
     const first = this.pickSpawnMode();
@@ -448,7 +498,12 @@ export class PoliceManager {
       }
 
       const d = Math.hypot(x - ctx.player.x, z - ctx.player.z);
-      if (d < pacing.minSpawnDistance) continue;
+      // A stopped player gets the chase brought to them, rather than waiting for it.
+      const near =
+        ctx.player.speed < pacing.slowPlayerSpeed
+          ? pacing.minSpawnDistance * pacing.slowSpawnScale
+          : pacing.minSpawnDistance;
+      if (d < near) continue;
       const hidden = !ctx.world.lineOfSight(ctx.player.x, ctx.player.z, x, z);
       if (!hidden && d < pacing.farSpawnDistance) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;

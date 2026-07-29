@@ -72,54 +72,6 @@ const out = `<style>
 /* The host supplies <html>/<body>, so the game claims the full viewport from here. */
 html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #05070c; }
 ${styles}
-/* Start card. Deliberately single-theme: this is a night-time arcade screen, and the
-   panel matches the in-game HUD chrome exactly (translucent, hairline, blurred). */
-#focusHint {
-  position: absolute; inset: 0; z-index: 50; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 50% 45%, rgba(5,7,12,.72), rgba(5,7,12,.94));
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: #eaf0ff; padding: 24px;
-}
-#focusHint.hidden { display: none; }
-#startCard {
-  background: rgba(10,12,18,.78);
-  border: 1px solid rgba(255,255,255,.13);
-  border-radius: 14px;
-  backdrop-filter: blur(8px);
-  padding: 34px 40px;
-  max-width: 520px; width: 100%;
-  display: flex; flex-direction: column; gap: 18px;
-  text-align: center;
-}
-#startCard h2 {
-  margin: 0; font-size: clamp(28px, 6vw, 42px); font-weight: 800;
-  letter-spacing: .16em; color: #ffd23f; text-wrap: balance;
-  text-shadow: 0 0 30px rgba(255,210,63,.35);
-}
-#startCard .tagline { margin: 0; font-size: 13px; line-height: 1.6; color: #b9c1d4; }
-#startCard .tagline strong { color: #4dff9e; font-weight: 700; }
-#startKeys {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px 14px; font-size: 11px; color: #8b93a7;
-  border-top: 1px solid rgba(255,255,255,.1); padding-top: 16px;
-}
-#startKeys span { display: flex; align-items: center; justify-content: center; gap: 6px; }
-#startKeys b {
-  background: rgba(255,255,255,.1); border-radius: 4px; padding: 2px 6px;
-  color: #eaf0ff; font-weight: 600;
-}
-#startGo {
-  font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .12em;
-  color: #05070c; background: #ffd23f; border: none; border-radius: 8px;
-  padding: 13px 30px; cursor: pointer; align-self: center;
-}
-#startGo:hover { filter: brightness(1.08); }
-#startGo:focus-visible { outline: 2px solid #4dff9e; outline-offset: 3px; }
-/* Build stamp. Present so a stale cached copy is identifiable at a glance rather than
-   being mistaken for a bug in the current one. */
-#buildStamp { margin: 0; font-size: 10px; letter-spacing: .1em; color: #5d6579; }
-
 /* Surfaces a boot failure instead of leaving a silent black canvas. */
 #bootError {
   position: absolute; inset: auto 16px 16px 16px; z-index: 60;
@@ -132,29 +84,10 @@ ${styles}
 #bootError b { color: #ff4d4d; }
 </style>
 
-${body}
+${body.replace('id="buildStamp">', `id="buildStamp">${stamp}`)}
 
 <div id="bootError" hidden></div>
 
-<div id="focusHint">
-  <div id="startCard">
-    <h2>DAILY ESCAPE</h2>
-    <p class="tagline">
-      There is no finish line. Every section brings <strong>more police,
-      heavier police and spike strips</strong> &mdash; drive until they box you in.
-    </p>
-    <div id="startKeys">
-      <span><b>W A S D</b> drive</span>
-      <span><b>Space</b> boost</span>
-      <span><b>F</b> rocket</span>
-      <span><b>R</b> restart</span>
-      <span><b>C</b> camera</span>
-      <span><b>Score</b> = how far you got</span>
-    </div>
-    <button id="startGo" type="button">START RUN</button>
-    <p id="buildStamp">${stamp}</p>
-  </div>
-</div>
 
 <script>
 /*

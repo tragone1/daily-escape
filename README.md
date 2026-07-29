@@ -23,10 +23,11 @@ never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of sixteen runs | section **5** |
-| Quartiles | section **2** to section **7** |
-| Best | section **12** |
-| Died in the first 15 s | 3 of 16 |
+| Median of ten runs | section **5** |
+| Quartiles | section **2** to section **6** |
+| Best | section **10** |
+| Died in the first 15 s | **0 of 10** |
+| At the moment of arrest | **6.2 of 8 directions blocked, 7 u/s** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -178,8 +179,14 @@ at the moment you do.
 The release is timed **late** on purpose. Arriving exactly with you means meeting nose to
 nose, which is a head-on and reads as a wall; a quarter-second behind that and it comes
 through your flank instead, which is the hit that actually spoils a line and puts you into
-the far wall. Measured over six runs: **60% of launches now connect**, and side impacts are
-the most common contact type at 44%, with head-ons down from 7 to 2.
+the far wall. It also **steers the strike** for the first 46 units out of the mouth. A timed launch is a
+prediction and a prediction is usually a near miss — it arrives behind you or ahead of you
+and either way you drive past it. Homing converts the guess into contact, and because it
+aims where you *will* be, the contact lands on the flank whatever speed you are doing.
+
+Measured over three runs: **92% of launches connect** and **half of all hits are side-on**,
+against a hit rate of roughly zero when they simply drove out and hit the far wall. The
+ambush spawn weight went from 2.5 to 6, so they arrive about three times as often.
 
 It reads your speed **once**, at 170 units out, and commits to that estimate. Re-timing
 every frame made the ambush *better* against a faster player, which is precisely backwards.
@@ -412,8 +419,15 @@ picks the tightest point it can reach, drives there and parks **broadside across
 | --- | --- |
 | Scouts | 210-620 units up your route |
 | Picks | the narrowest **free width**, measured by ray, not the section's nominal width |
-| Mass | 8.0, `pushResistance` 3.5 - going around it is the only play |
+| Mass | 8.0, effective 17.6 against a shove — a wall at cruising speed |
 | Top speed | 51 u/s |
+
+**It is not a dead end.** Boosting into one shoves at 2.6x, which is enough to barge a gap
+in a road it has closed; and wrecking it drops its effective mass from **17.6 to 0.22** —
+lighter than your own car — so the hulk can simply be pushed aside. A multiplier could not
+do that job: at eight tonnes even a tenth left it heavier than the player, so blowing up a
+roadblock produced a roadblock. Being stopped by geometry you have no answer to is the one
+kind of loss with no play in it.
 
 Two things had to be true before it worked. It has to be *faster than you*: at 41 against
 your 46 it could never get in front to set up, so it parked wherever it happened to be
@@ -437,7 +451,9 @@ your speed and let you close — that is the brake-check — and behind you they
 and push. Without that the box read as ordinary traffic, because everyone arrived at their
 spot flat out and immediately left it again.
 
-Around four to five units are on station at any time in a busy section.
+There are **eight** stations, one per enclosure sector, because the loss condition counts
+directions blocked and six stations could only ever close six of eight — a perfectly
+executed box still left two ways out and the arrest could not finish.
 
 Something is also always **behind** you. Ambush and side placements both tend to land in
 front and the recycler pulls stragglers forward, so deep sections could quietly end up with
@@ -466,26 +482,37 @@ not the run.
 
 ### Being surrounded
 
-A run ends exactly one way, and the rule for it has a floor as well as a slope:
+A run ends one way, and the rule is about **directions**, not cars:
 
 ```
-counts as pinned below   9 u/s + 3.2 x (cars within 12 units - 4)     capped at 30 u/s
+the circle around you is cut into 8 wedges
+a wedge is blocked when a live unit sits in it within 15 units
+below 5 blocked, nothing happens however slow you are
+at 7 blocked, the arrest runs at full speed
 ```
 
-Up to three cars only have you if you are nearly stopped. Ten packed around you have you at
-a good deal more than that — at that point you are not escaping, you are being carried.
+Counting cars was the wrong measure entirely. Two heavies leaning on your bumper is two
+cars and *one* direction, and it used to end runs while the road ahead was wide open — so
+losing felt arbitrary, and the thing that should be the whole fantasy, being buried in a
+scrum and squeezing out through a gap, could never happen, because the meter had already
+run out. Directions are what "no way out" means.
 
-The speed it tests is **smoothed over 0.7 s**, and that mattered more than the threshold.
-Being surrounded is a constant sequence of impacts and every impact spikes your speed for a
-few frames; tested instantaneously that read as "escaping" over and over, so a player who
-had actually come to a stop watched the meter reset every time somebody hit them. What
-counts is whether you are getting anywhere, not whether you are moving.
+Measured at the moment of arrest, across ten runs: **6.2 of 8 directions blocked, player
+doing 7 u/s**. That is genuinely ringed and genuinely stopped.
 
-A flat threshold was why a player could be visibly buried in police and drive out anyway:
-every ram bumped them back over the line, so the meter never filled however bad it looked.
-The floor matters as much as the slope, though — scaling from the *second* car instead
-made ordinary section-2 traffic lethal and killed a third of runs before section 4.
-Nothing changes until you are genuinely swarmed, and then it changes fast.
+The speed it tests is smoothed over 0.55 s. Being surrounded is a constant sequence of
+impacts and every impact spikes your speed for a few frames; tested instantaneously that
+read as "escaping" over and over, so a player who had actually come to a stop watched the
+meter reset every time somebody hit them.
+
+### Losing your speed is the punishment
+
+Nothing in the game kills you directly. Spikes, a slick, a heavy hit, a rig across a
+narrow pass — none of them end a run. What ends it is the ten seconds afterwards, while
+everything that was chasing you gets to arrive and stand somewhere you needed to be.
+
+That is wired explicitly: below 22 u/s the box closes **faster and further**, up to 92% of
+the way in. It is why the boost meter is the thing you find yourself watching.
 
 ## Police deployables
 
@@ -496,7 +523,7 @@ you** can lay one.
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
 | **Spike strip** | section 4 | Top speed ×0.5, grip ×0.72 | 4.0 s |
-| **Oil slick** | section 6 | Grip **×0.03** (×0.01 boosting), speed ×0.95 | 3.8 s |
+| **Oil slick** | section 6 | Grip **×0.018** (×0.006 boosting), speed ×0.95 | 4.4 s |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
@@ -507,6 +534,11 @@ Oil's grip multiplier had to go almost to zero to mean anything. At 0.3 the late
 still pulled the car straight inside a corner's worth of time, so a slick was something you
 could drive over and ignore. At **0.03** the velocity keeps pointing where it was pointing
 while the nose turns — you steer and, for the better part of two seconds, nothing happens.
+
+Slicks are half again as wide as they were, and they are built to be *seen*: a near-black
+puddle on near-black asphalt is invisible, which is how the slick spent several versions
+being something players drove over without ever learning why the car went sideways. It now
+reads by contrast — an iridescent sheen over the pool and a hard bright rim around it.
 
 **Boosting on oil does not rescue you.** Grip drops a further 65% while the charge burns:
 power with no traction is the definition of a slide, and this is the one moment in the game

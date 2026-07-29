@@ -523,6 +523,30 @@ export class PoliceManager {
     return n;
   }
 
+  /**
+   * How many directions around a point are blocked by a live unit.
+   *
+   * The circle is cut into `enclosureSectors` wedges and each is marked by the nearest
+   * unit inside `enclosureRadius`. This is the whole loss condition: it answers "is there
+   * a way out of here", where counting cars only ever answered "how many are touching me".
+   */
+  enclosure(x: number, z: number): number {
+    const run = CONFIG.run;
+    const covered = new Array<boolean>(run.enclosureSectors).fill(false);
+    const r2 = run.enclosureRadius * run.enclosureRadius;
+
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const dx = u.vehicle.x - x;
+      const dz = u.vehicle.z - z;
+      if (dx * dx + dz * dz > r2) continue;
+      let a = Math.atan2(dx, dz) / (Math.PI * 2);
+      a -= Math.floor(a);
+      covered[Math.min(run.enclosureSectors - 1, Math.floor(a * run.enclosureSectors))] = true;
+    }
+    return covered.reduce((n, c) => n + (c ? 1 : 0), 0);
+  }
+
   syncViews(dt: number, elapsed: number): void {
     for (const u of this.units) {
       if (!u.active) continue;

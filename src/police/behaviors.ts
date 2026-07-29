@@ -99,7 +99,7 @@ function leadPoint(player: Vehicle, seconds: number) {
  * Where to aim to actually collide with a moving player, given our own top speed.
  * Falls back to a modest lead when the player is simply uncatchable from here.
  */
-function interceptPoint(self: Vehicle, player: Vehicle, maxLead: number) {
+export function interceptPoint(self: Vehicle, player: Vehicle, maxLead: number) {
   const dx = player.x - self.x;
   const dz = player.z - self.z;
   // Use top speed rather than current speed: the unit will be accelerating into the hit.

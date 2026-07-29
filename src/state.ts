@@ -89,7 +89,7 @@ export class GameState {
   update(
     dt: number,
     playerSpeed: number,
-    policeNear: number,
+    sectors: number,
     progress: number,
     onCourse: boolean,
   ): void {
@@ -129,21 +129,26 @@ export class GameState {
      *
      * Being surrounded is a constant sequence of impacts, and every impact spikes your
      * speed for a few frames. Tested instantaneously, that read as "escaping" over and
-     * over — a player who had actually come to a stop watched the meter reset every time
-     * somebody hit them, and reported, correctly, that being surrounded did not seem to
-     * do anything. What matters is whether you are getting anywhere, not whether you are
-     * moving.
+     * over. What matters is whether you are getting anywhere, not whether you are moving.
      */
     this.heldSpeed += (playerSpeed - this.heldSpeed) * Math.min(1, dt / run.captureSpeedSmoothing);
 
-    const swarm = Math.max(0, policeNear - run.captureCrowdFloor);
-    const threshold = Math.min(
-      run.captureSpeedMax,
-      run.captureSpeed + swarm * run.captureSpeedPerUnit,
-    );
-    const pinned = policeNear > 0 && this.heldSpeed < threshold;
+    /*
+     * Pinned means *enclosed*, not crowded.
+     *
+     * `sectors` is how many directions around the player are blocked by a live unit. Below
+     * the floor nothing happens however slow you are: two heavies leaning on your bumper
+     * is two cars and one direction, and the road ahead is still open. At the ceiling the
+     * meter runs flat out, because there is genuinely nowhere to go.
+     */
+    const enclosed = Math.max(0, sectors - run.minSectorsToPin);
+    const span = Math.max(1, run.fullPinSectors - run.minSectorsToPin);
+    const squeeze = clamp(enclosed / span, 0, 1);
+    const pinned = sectors > run.minSectorsToPin && this.heldSpeed < run.captureSpeed;
     // Being swarmed closes the run out fast; a single car nudging you does not.
-    const crowd = 1 + run.captureCrowdBonus * Math.max(0, policeNear - 1);
+    // How fast the arrest closes scales with how boxed in you are, so the last gap
+    // shutting is the moment it becomes urgent.
+    const crowd = 0.55 + squeeze * run.captureCrowdBonus;
     const rate = 1 / run.captureDuration;
     this.captureProgress = clamp(
       this.captureProgress + (pinned ? rate * crowd : -rate * run.captureRecovery) * dt,

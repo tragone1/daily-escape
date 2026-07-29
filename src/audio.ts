@@ -56,13 +56,13 @@ export class GameAudio {
        */
       this.engineOsc = ctx.createOscillator();
       this.engineOsc.type = "triangle";
-      this.engineOsc.frequency.value = 70;
+      this.engineOsc.frequency.value = 128;
       this.engineSub = ctx.createOscillator();
       this.engineSub.type = "triangle";
-      this.engineSub.frequency.value = 35;
+      this.engineSub.frequency.value = 64;
       this.engineFilter = ctx.createBiquadFilter();
       this.engineFilter.type = "lowpass";
-      this.engineFilter.frequency.value = 420;
+      this.engineFilter.frequency.value = 900;
       this.engineGain = ctx.createGain();
       this.engineGain.gain.value = 0;
       this.engineOsc.connect(this.engineFilter);
@@ -112,10 +112,12 @@ export class GameAudio {
     if (!this.ctx || !this.engineOsc || !this.engineGain || !this.engineFilter) return;
     const t = this.ctx.currentTime;
 
-    const pitch = 70 + speedRatio * 130 + (boosting ? 34 : 0);
+    // Up an octave from where this sat: the low version read as a diesel idling rather
+    // than a car being driven, and there was nothing in it that rose when you did.
+    const pitch = 128 + speedRatio * 235 + (boosting ? 60 : 0);
     this.engineOsc.frequency.setTargetAtTime(pitch, t, 0.06);
     if (this.engineSub) this.engineSub.frequency.setTargetAtTime(pitch * 0.5, t, 0.06);
-    this.engineFilter.frequency.setTargetAtTime(320 + speedRatio * 700, t, 0.1);
+    this.engineFilter.frequency.setTargetAtTime(750 + speedRatio * 1500, t, 0.1);
     // Quieter than it was, and it stays quiet: the rush layer carries the sense of speed.
     this.engineGain.gain.setTargetAtTime(0.035 + speedRatio * 0.045, t, 0.12);
 

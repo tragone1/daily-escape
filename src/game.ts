@@ -198,6 +198,8 @@ export class Game {
 
     // --- Player ------------------------------------------------------------
     const input = this.controller.read(this.keys);
+    // A boosting car shoves much harder, which is what makes a blocked pass answerable.
+    this.player.contactBoost = this.player.boosting ? CONFIG.player.boost.shove : 1;
     this.player.update(input, dt, terrain);
 
     if (this.player.boostFired) {
@@ -309,12 +311,9 @@ export class Game {
     this.enforceCourse(dt, progress, ground);
 
     // --- Run state ---------------------------------------------------------
-    const nearForCapture = this.police.countNear(
-      this.player.x,
-      this.player.z,
-      CONFIG.run.captureRadius,
-    );
-    this.state.update(dt, this.player.speed, nearForCapture, progress, ground.onCourse);
+    // Directions blocked, not cars counted: the arrest is about having nowhere to go.
+    const boxedIn = this.police.enclosure(this.player.x, this.player.z);
+    this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
     if (section !== this.lastSection && !this.state.over) {

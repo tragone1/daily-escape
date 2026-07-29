@@ -109,7 +109,7 @@ export class HazardField {
       }
       // Pulse while arming, then fade out over the last second of life.
       const pulse = h.arm > 0 ? 0.35 + 0.65 * Math.abs(Math.sin(this.clock * 9)) : 1;
-      h.glow.alpha = Math.min(1, h.life) * pulse * (h.kind === "spike" ? 0.95 : 0.5);
+      h.glow.alpha = Math.min(1, h.life) * pulse * (h.kind === "spike" ? 0.95 : 0.85);
     }
 
     this.deploy(playerProgress, section, units);
@@ -271,20 +271,36 @@ function buildOilSlick(r: Renderer): { root: Node3D; glow: Mesh } {
   const k = CONFIG.police.hazards.oil;
   const root = r.createNode();
 
+  /*
+   * A near-black puddle on near-black asphalt is invisible, which is how the slick spent
+   * several versions being something players drove over without ever knowing why the car
+   * went sideways. It reads by *contrast* now: a bright iridescent sheen over the pool
+   * and a hard rim around it, so it stands out on tarmac the way the spike strip does.
+   */
   const pool = r.createMesh(
-    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.04, tessellation: 14 },
-    { color: [0.02, 0.02, 0.03], emissive: 0.1, alpha: 0.95 },
+    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.05, tessellation: 16 },
+    { color: [0.06, 0.05, 0.1], emissive: 0.3, alpha: 0.95 },
   );
   pool.scaling.set(k.halfWidth, 1, k.halfLength);
   pool.parent = root;
 
   const glow = r.createMesh(
-    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.02, tessellation: 14 },
-    { color: [0.35, 0.55, 0.9], emissive: 1, alpha: 0.45 },
+    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.03, tessellation: 16 },
+    { color: [0.5, 0.9, 1.0], emissive: 1, alpha: 0.8 },
   );
-  glow.scaling.set(k.halfWidth * 0.8, 1, k.halfLength * 0.8);
-  glow.position.y = 0.05;
+  glow.scaling.set(k.halfWidth * 0.86, 1, k.halfLength * 0.86);
+  glow.position.y = 0.06;
   glow.parent = root;
+
+  // Hard rim: an edge is what the eye actually picks up at speed.
+  const rim = r.createMesh(
+    { kind: "torus", diameter: 2, thickness: 0.22, tessellation: 18 },
+    { color: [0.75, 0.55, 1.0], emissive: 1, alpha: 0.95 },
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.scaling.set(k.halfWidth, k.halfLength, 1);
+  rim.position.y = 0.09;
+  rim.parent = root;
 
   return { root, glow };
 }

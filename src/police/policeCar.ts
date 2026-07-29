@@ -15,6 +15,7 @@ import { clamp, dist, forwardOf, headingOf, wrapAngle } from "../math";
 import { CarView, policeStyle } from "../vehicle/carView";
 import { Vehicle, type VehicleInput } from "../vehicle/vehicle";
 import type { NavGraph, NavNode } from "../world/navGraph";
+import { interceptPoint } from "./behaviors";
 import {
   boxGoal,
   goalFor,
@@ -91,6 +92,8 @@ export class PoliceCar {
   private ambushWait = 0;
   /** Player speed as read once on approach; the launch is timed against this, not live. */
   private ambushReadSpeed = 0;
+  /** Mouth of the spur it sprang from, held while it is still steering the strike. */
+  private springFrom: { x: number; z: number } | null = null;
   /** How far the station has been closed in, 0..1. */
   private boxPress = 0;
 
@@ -174,6 +177,7 @@ export class PoliceCar {
     this.ambushAt = null;
     this.ambushWait = 0;
     this.ambushReadSpeed = 0;
+    this.springFrom = null;
     this.rigPost = null;
     this.rigTimer = 0;
     this.rigScore = Infinity;
@@ -221,7 +225,11 @@ export class PoliceCar {
     // A hulk still has mass, but nobody is holding it in place any more. Without this a
     // wrecked heavy was a permanent wall, so spending the rocket on a roadblock could
     // build you a better one.
-    this.vehicle.pushResistance = CONFIG.player.rocket.wreckPushResistance;
+    // Set so that mass * pushResistance lands on `wreckMass` whatever the class weighed.
+    // A plain multiplier left the eight-tonne rig heavier than the player even at a tenth,
+    // so blowing up a roadblock produced a roadblock.
+    this.vehicle.pushResistance =
+      CONFIG.player.rocket.wreckMass / Math.max(0.1, this.vehicle.params.mass);
     this.disabledTimer = 0;
     this.path = [];
     this.committed = null;
@@ -272,6 +280,7 @@ export class PoliceCar {
     if (this.ambushAt) {
       this.ambushWait += dt;
       if (this.readyToSpring(ctx)) {
+        this.springFrom = this.ambushAt;
         this.ambushAt = null;
       } else {
         this.input.throttle = 0;
@@ -293,6 +302,38 @@ export class PoliceCar {
     let goal: Goal;
     /** Pace to hold while boxing; Infinity when not on a station. */
     let boxSpeedLimit = Infinity;
+
+    /*
+     * Still coming out of the alley: steer the strike rather than committing to the guess.
+     *
+     * A timed launch is a prediction, and a prediction is usually a near miss — it arrives
+     * behind the player, or ahead of them, and either way they drive past. Homing for the
+     * first stretch converts the guess into contact, and because it aims at where the
+     * player *will* be rather than where they are, that contact lands on the flank at
+     * whatever speed they happen to be doing. It is also what lets the ambush work on
+     * someone who boosts after it has already committed.
+     */
+    if (this.springFrom) {
+      const cfg = CONFIG.police.pacing.ambush;
+      if (dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
+        this.springFrom = null;
+      } else {
+        const aim = interceptPoint(v, ctx.player, 1.4);
+        this.input.throttle = 1;
+        this.input.brake = 0;
+        this.input.steer = clamp(
+          wrapAngle(headingOf(aim.x - v.x, aim.z - v.z) - v.heading) /
+            CONFIG.police.shared.steerFullLockAngle,
+          -1,
+          1,
+        );
+        this.input.boost = false;
+        v.drive = 1 + cfg.launchSpeedBonus;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
+    }
+
     if (this.charging) {
       // A committed charge overrides everything: it is already pointed at the player and
       // it is not going to reconsider halfway through.
@@ -305,7 +346,12 @@ export class PoliceCar {
       const box = CONFIG.police.shared.box;
       const target = boxGoal(ctx, this.boxSlot, this.boxPress);
       const atStation = dist(v.x, v.z, target.x, target.z) < box.pressRange;
-      this.boxPress = clamp(this.boxPress + (atStation ? box.pressRate : -box.pressRate) * dt, 0, 0.8);
+      // A slow player gets squeezed harder and further: the box shutting is the cost of
+      // having lost your speed, not a separate thing that happens to you.
+      const slow = clamp(1 - ctx.player.speed / box.slowPlayerSpeed, 0, 1);
+      const rate = box.pressRate * (1 + slow * 1.5);
+      const ceiling = box.pressMax + slow * box.slowPressBonus;
+      this.boxPress = clamp(this.boxPress + (atStation ? rate : -rate) * dt, 0, Math.min(0.92, ceiling));
       goal = boxGoal(ctx, this.boxSlot, this.boxPress);
 
       /*

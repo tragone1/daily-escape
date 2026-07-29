@@ -229,6 +229,15 @@ export const CONFIG = {
       cooldown: 7.5,
       /** Camera kick when boost fires. */
       shake: 0.55,
+      /**
+       * How much harder the car shoves other vehicles while the charge burns.
+       *
+       * Boost is the answer to terrain and to a blocked road alike: a rig parked across a
+       * narrow pass should be a wall at cruising speed and something you can barge a gap
+       * in if you spend the charge on it. Being completely stopped by geometry you cannot
+       * answer is the one kind of loss with no play in it.
+       */
+      shove: 2.6,
     },
     /** Body-lean visuals (radians at full effect). */
     lean: {
@@ -299,7 +308,15 @@ export const CONFIG = {
        * Very low: there should be enough resistance to feel the weight of the thing, and
        * not enough for your own kill to become the roadblock it replaced.
        */
-      wreckPushResistance: 0.1,
+      /**
+       * Effective mass of a burnt-out hulk, in absolute terms rather than as a multiplier.
+       *
+       * A multiplier does not work here: the rig masses eight, so even at a tenth it was
+       * still heavier than the player's car, and a destroyed rig across a narrow pass was
+       * as final as a live one. Killing something should always leave you better off than
+       * not killing it.
+       */
+      wreckMass: 0.22,
       /** Seconds a surviving police car is left spinning and driverless. */
       policeDisableTime: 4.2,
       /**
@@ -425,17 +442,27 @@ export const CONFIG = {
       box: {
         /** Units this close are assigned a station instead of chasing the player. */
         range: 62,
-        /** How many stations are handed out at once. */
-        maxAssigned: 6,
+        /** How many stations are handed out at once — one per direction. */
+        maxAssigned: 8,
         /** Re-assign this often, seconds. Slower than the director so units commit. */
         interval: 1.1,
-        /** Stations, in order of preference. */
+        /**
+         * Stations, in order of preference — eight of them, one per enclosure sector.
+         *
+         * The loss condition counts *directions blocked*, so the box has to be built to
+         * fill directions. Six stations could only ever close six of eight sectors, which
+         * meant a perfectly executed box still left two ways out and the arrest could not
+         * finish. Front first, because the front of the box is what makes losing speed
+         * expensive.
+         */
         slots: [
-          { x: 0, z: 10 },
-          { x: -7, z: 7 },
-          { x: 7, z: 7 },
-          { x: -7.5, z: -1 },
-          { x: 7.5, z: -1 },
+          { x: 0, z: 9 },
+          { x: -6.5, z: 6.5 },
+          { x: 6.5, z: 6.5 },
+          { x: -7, z: 0 },
+          { x: 7, z: 0 },
+          { x: -6, z: -6.5 },
+          { x: 6, z: -6.5 },
           { x: 0, z: -8 },
         ],
         /**
@@ -450,7 +477,19 @@ export const CONFIG = {
         /** Once a unit is within this of its station it starts pressing inward. */
         pressRange: 7,
         /** How hard it presses, as a fraction of the offset removed per second. */
-        pressRate: 0.55,
+        pressRate: 0.85,
+        /** Furthest the station can be closed in, as a fraction of the offset. */
+        pressMax: 0.72,
+        /**
+         * Below this speed the box closes all the way, fast.
+         *
+         * This is what makes losing your pace the real punishment. Spikes, a slick, a
+         * heavy hit — none of them end a run on their own; what ends it is the ten
+         * seconds afterwards, while everything that was chasing you gets to arrive and
+         * stand somewhere you needed to be.
+         */
+        slowPlayerSpeed: 22,
+        slowPressBonus: 0.55,
       },
 
       catchUp: {
@@ -667,7 +706,8 @@ export const CONFIG = {
         halfWidth: 1.85,
       }),
       impactResistance: 0.2,
-      pushResistance: 3.5,
+      /** Immovable at speed, shiftable with a boost behind you. */
+      pushResistance: 2.2,
       contactBoost: 1.0,
       /** Looks this far up the player's route for somewhere worth blocking. */
       scoutMin: 210,
@@ -784,10 +824,11 @@ export const CONFIG = {
       oil: {
         unlockSection: 5,
         roles: ["rammer", "elite"],
-        armTime: 0.35,
-        life: 10,
-        halfWidth: 5.5,
-        halfLength: 4.5,
+        armTime: 0.3,
+        life: 13,
+        /** Wide enough that threading it is a real line rather than a shrug. */
+        halfWidth: 7.5,
+        halfLength: 5.5,
         /*
          * Near zero, and it needs to be. At 0.3 the lateral damping was still strong
          * enough to pull the car straight within a corner's worth of time, so hitting a
@@ -795,9 +836,9 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.03,
+        gripScale: 0.018,
         speedScale: 0.95,
-        duration: 3.8,
+        duration: 4.4,
         /**
          * Extra grip loss while boosting through it.
          *
@@ -850,7 +891,7 @@ export const CONFIG = {
        * those two reads as a queue: you outrun the ones behind, then dodge the ones in
        * front one at a time. The threat has to be able to come from off to the side.
        */
-      spawnWeights: { ambush: 2.5, side: 2, behind: 2, ahead: 1 },
+      spawnWeights: { ambush: 6, side: 2, behind: 2.5, ahead: 1 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.
@@ -865,8 +906,8 @@ export const CONFIG = {
       behindDistance: 25,
 
       /** Ambush spurs are only used within this window ahead of the player. */
-      ambushLeadMin: 95,
-      ambushLeadMax: 230,
+      ambushLeadMin: 85,
+      ambushLeadMax: 300,
       /** How far down the spur the unit waits, as a fraction of its length. */
       ambushDepth: 0.72,
       /**
@@ -906,7 +947,18 @@ export const CONFIG = {
          * at cruising pace and it has you; light the charge after it has committed and you
          * are through the gap before it arrives.
          */
-        readRange: 170,
+        readRange: 190,
+        /**
+         * Re-aim at the player *after* launching, until this far from the mouth.
+         *
+         * The launch is a timed guess and a guess is usually a near miss — it came out
+         * behind, or in front, and either way the player drove past it. Steering the run
+         * for the first stretch turns the guess into a strike, and it is what makes the
+         * hit land on the flank at any speed rather than only at the pace it predicted.
+         */
+        homeDistance: 46,
+        /** Extra pace while springing, so it arrives with weight behind it. */
+        launchSpeedBonus: 0.35,
         /** Once the player is past, come out anyway and join the chase from behind. */
         releaseBehindRange: 90,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
@@ -962,8 +1014,8 @@ export const CONFIG = {
        * is a better section, and it leaves the ceiling until section 19 instead of 12,
        * which is most of where the late game's escalation now lives.
        */
-      baseActive: 5,
-      activePerSection: 0.8,
+      baseActive: 9,
+      activePerSection: 1.15,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */
@@ -1139,7 +1191,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 4.4,
+    captureDuration: 2.8,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1159,7 +1211,25 @@ export const CONFIG = {
      */
     /** Time constant for the smoothed speed the pin test uses, seconds. */
     captureSpeedSmoothing: 0.55,
-    captureSpeed: 9,
+    /**
+     * Being *surrounded*, measured as directions blocked rather than cars counted.
+     *
+     * The circle around the player is cut into `enclosureSectors` wedges and a wedge
+     * counts as blocked when a live unit sits in it within `enclosureRadius`. Below
+     * `minSectorsToPin` nothing happens at all, however slow you are; at `fullPinSectors`
+     * the meter runs at full rate.
+     *
+     * Counting cars was the wrong measure. Two heavies leaning on your bumper is two cars
+     * and one direction, and it used to end runs while the road ahead was wide open — so
+     * losing felt arbitrary, and the actual fantasy, being buried in a scrum and squeezing
+     * out of a gap, could never happen because the meter had already run out. Directions
+     * are what "no way out" means.
+     */
+    enclosureRadius: 15,
+    enclosureSectors: 8,
+    minSectorsToPin: 4,
+    fullPinSectors: 7,
+    captureSpeed: 13,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *
@@ -1168,8 +1238,6 @@ export const CONFIG = {
      * threshold of 19 u/s meant any brief bog was an arrest. Nothing changes until you are
      * genuinely buried, and then it changes fast.
      */
-    captureCrowdFloor: 4,
-    captureSpeedPerUnit: 2.4,
     captureSpeedMax: 30,
     /**
      * How fast the meter drains when you break free, as a multiple of the fill rate.

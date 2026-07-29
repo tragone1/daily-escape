@@ -257,9 +257,19 @@ export class Vehicle {
       surf.maxSpeed *= off.maxSpeed;
     }
 
+    /*
+     * Boost claws back part of any tyre damage. The strip still costs you dearly, but
+     * spending the charge to drag yourself out from under one is a real option rather
+     * than a rounding error.
+     */
+    const tyre =
+      this.boostTime > 0 && this.boostParams
+        ? this.tireSpeed + (1 - this.tireSpeed) * CONFIG.player.boost.damageBypass
+        : this.tireSpeed;
+
     let maxSpeed = p.maxSpeed * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
-    maxSpeed *= this.tireSpeed * this.drive;
+    maxSpeed *= tyre * this.drive;
 
     // --- Steering ----------------------------------------------------------
     this.steerInput += (clamp(input.steer, -1, 1) - this.steerInput) * damp(p.steerInputResponse, dt);
@@ -300,7 +310,7 @@ export class Vehicle {
         const headroom = clamp((1 - vf / maxSpeed) * 1.9, 0, 1);
         vf +=
           (p.accel * surf.accel * input.throttle + boostAccel) *
-          this.tireSpeed *
+          tyre *
           this.drive *
           headroom *
           dt;
@@ -338,6 +348,23 @@ export class Vehicle {
     } else {
       // Airborne: no traction, no engine. Momentum carries the jump.
       vf = this.easeToLimit(vf, maxSpeed + 10, p.maxReverseSpeed, dt);
+    }
+
+    /*
+     * Oil brings the car round.
+     *
+     * Grip alone only makes it understeer in a straightish line. Converting some of the
+     * sideways slide into yaw is what lets it actually spin, so driving hard - or
+     * boosting - on a slick has a genuine worst case rather than just being vague.
+     */
+    if (this.tireGrip < 0.2 && !this.airborne) {
+      const oil = CONFIG.police.hazards.oil;
+      const bite = 1 - this.tireGrip / 0.2;
+      this.yawRate = clamp(
+        this.yawRate + vl * oil.spinPerSlip * bite * dt,
+        -oil.maxSpin,
+        oil.maxSpin,
+      );
     }
 
     this.slip = vl;

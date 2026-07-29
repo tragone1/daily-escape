@@ -318,7 +318,22 @@ export class PoliceCar {
       if (dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
       } else {
-        const aim = interceptPoint(v, ctx.player, 1.4);
+        /*
+         * Aim *through* them, not at them.
+         *
+         * An intercept point sits where the player will be, and arriving exactly there
+         * means arriving alongside — a scrape, and then you are past each other. Aiming a
+         * few metres beyond turns the same approach into a T-bone that carries the player
+         * sideways, which is the whole reason the spurs exist.
+         */
+        const lead = interceptPoint(v, ctx.player, 1.4);
+        const tx = lead.x - v.x;
+        const tz = lead.z - v.z;
+        const tl = Math.hypot(tx, tz) || 1;
+        const aim = {
+          x: lead.x + (tx / tl) * CONFIG.police.pacing.ambush.strikeDepth,
+          z: lead.z + (tz / tl) * CONFIG.police.pacing.ambush.strikeDepth,
+        };
         this.input.throttle = 1;
         this.input.brake = 0;
         this.input.steer = clamp(
@@ -363,11 +378,21 @@ export class PoliceCar {
        * pushes. Without it the whole box read as ordinary traffic, because everybody
        * arrived at their spot flat out and immediately left it again.
        */
-      const ahead = this.boxSlot.z > 0;
-      boxSpeedLimit = Math.max(
-        box.minPace,
-        ctx.player.speed * (ahead ? box.leadPace : box.chasePace),
-      );
+      /*
+       * Pace matching only applies once you have *reached* your station.
+       *
+       * This was a real bug and the reason "they just push me from behind": a unit given a
+       * front station while still behind the player had its speed capped at 0.9x the
+       * player's, so it could never overtake, and spent the whole encounter shoving them
+       * along from the rear. Until it is in position it runs free — overtaking is the job.
+       */
+      const f = forwardOf(ctx.player.heading);
+      const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
+      const wantsFront = this.boxSlot.z > 0;
+      const inPosition = wantsFront ? lead > this.boxSlot.z * 0.6 : lead < this.boxSlot.z * 0.6 + 2;
+      boxSpeedLimit = inPosition
+        ? Math.max(box.minPace, ctx.player.speed * (wantsFront ? box.leadPace : box.chasePace))
+        : Infinity;
     } else {
       this.boxPress = 0;
       goal = goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);

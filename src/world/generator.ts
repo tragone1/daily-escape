@@ -63,7 +63,7 @@ const THEMES: Theme[] = [
   { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 7, hills: 1.0, ramps: 0.25 },
   { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 8.5, shoulder: 3, hills: 0.25, ramps: 0.8 },
   { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 9, shoulder: 0, hills: 0.0, ramps: 0.0 },
-  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 12, shoulder: 20, hills: 0.35, ramps: 0.7 },
+  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 11, shoulder: 11, hills: 0.35, ramps: 0.7 },
   { id: "canyon", surface: "gravel", wall: "rock", halfWidth: 7.5, shoulder: 0, hills: 0.6, ramps: 0.2 },
   { id: "industrial", surface: "asphalt", wall: "fence", halfWidth: 9, shoulder: 0, hills: 0.15, ramps: 0.3 },
   { id: "final", surface: "gravel", wall: "barrier", halfWidth: 8, shoulder: 4, hills: 0.5, ramps: 0.35 },

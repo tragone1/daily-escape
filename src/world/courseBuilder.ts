@@ -567,12 +567,15 @@ function buildProps(
 
 /** Distance between obstacles per section; sections not listed stay clear. */
 const PROP_SPACING: Partial<Record<SectionId, number>> = {
-  downtown: 95,
-  construction: 44,
-  canyon: 58,
-  industrial: 50,
-  offroad: 70,
-  final: 48,
+  downtown: 80,
+  construction: 40,
+  canyon: 52,
+  industrial: 44,
+  hills: 70,
+  // The widest section needs the most furniture: open road with nothing in it is the one
+  // place nothing can go wrong, and a stretch where nothing can go wrong is a rest.
+  offroad: 38,
+  final: 42,
 };
 
 /** Obstacle look per section, so a hazard tells you where you are. */

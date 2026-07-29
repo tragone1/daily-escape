@@ -24,10 +24,10 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of ten runs | section **5** |
-| Quartiles | section **5** to section **6** |
-| Best | section **10** |
+| Quartiles | section **3** to section **6** |
+| Best | section **6** |
 | Died in the first 15 s | **0 of 10** |
-| At the moment of arrest | **4.5 of 8 directions blocked, 6.6 u/s** |
+| At the moment of arrest | **5.0 of 8 directions blocked** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -461,7 +461,15 @@ stations are a brake-check, and they are the reason a fast player has to slow do
 
 Units on station **match your pace** rather than charging it: ahead of you they run at 0.9×
 your speed and let you close — that is the brake-check — and behind you they run at 1.12×
-and push. Without that the box read as ordinary traffic, because everyone arrived at their
+and push. Pace matching only applies **once a unit has reached its station**, which was a
+real bug and the reason the squad read as shoving you along from behind: a car given a
+front station while still behind you had its speed capped *below* yours, so it could never
+overtake to take the station it had been given.
+
+**When you slow below 22 u/s the front stations are filled first, by the units currently
+behind you** — they have to overtake to take them, which is exactly the manoeuvre that was
+missing. Measured, stopping dead in a corridor now leaves 4.4 units ahead of you against
+0.4 behind, and gets you arrested 11.8 seconds later. Without that the box read as ordinary traffic, because everyone arrived at their
 spot flat out and immediately left it again.
 
 There are **eight** stations, one per enclosure sector, because the loss condition counts
@@ -547,6 +555,15 @@ everything that was chasing you gets to arrive and stand somewhere you needed to
 That is wired explicitly: below 22 u/s the box closes **faster and further**, up to 92% of
 the way in. It is why the boost meter is the thing you find yourself watching.
 
+### Always a line to take
+
+A hazard is a decision, and a decision needs an alternative. Laid at a fixed width they
+covered the entire carriageway in the narrow sections, where there is no line to take and
+running one over is simply what happens - which is not a hazard, it is a toll. Every strip
+and slick is now clamped to 62% of the local road half-width with a minimum gap enforced on
+top. Measured across the course, the tightest gap any hazard leaves is **3.4 units** against
+a car 2.1 wide.
+
 ### Screen flash
 
 The white pop was designed for one-off moments — a boost, a detonation — and then contact
@@ -562,8 +579,8 @@ you** can lay one.
 
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
-| **Spike strip** | section 4 | Top speed **×0.26**, grip ×0.5 | **6.5 s** |
-| **Oil slick** | section 6 | Grip **×0.004** (×0.0014 boosting), speed ×0.88 | **5.5 s** |
+| **Spike strip** | section 4 | Top speed **×0.34**, grip ×0.55 | **6.0 s** |
+| **Oil slick** | section 6 | Grip **×0.002** (×0.0005 boosting) + spin, speed ×0.88 | **5.5 s** |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
@@ -588,6 +605,12 @@ They are half again as wide as they were, and built to be *seen*: a near-black
 puddle on near-black asphalt is invisible, which is how the slick spent several versions
 being something players drove over without ever learning why the car went sideways. It now
 reads by contrast — an iridescent sheen over the pool and a hard bright rim around it.
+
+Low grip alone only makes a car understeer in a straightish line. Some of the sideways
+slide is now converted into **yaw**, which is what lets it actually come round: measured,
+holding full lock on a slick turns the car **138 degrees**, and **180 - a complete spin -
+if you are boosting**. Drive gently and you slither; drive hard and you are facing the
+wrong way.
 
 **Boosting on oil does not rescue you.** Grip drops a further 65% while the charge burns:
 power with no traction is the definition of a slide, and this is the one moment in the game

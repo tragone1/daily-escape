@@ -34,6 +34,8 @@ interface Hazard {
   arm: number;
   /** Seconds of life left. */
   life: number;
+  /** Span across the road, clamped so a gap always remains. */
+  halfWidth: number;
   root: Node3D;
   glow: Mesh;
 }
@@ -60,6 +62,7 @@ export class HazardField {
           heading: 0,
           arm: 0,
           life: 0,
+          halfWidth: 1,
           ...built,
         });
       }
@@ -168,6 +171,10 @@ export class HazardField {
       if (!slot) continue;
 
       const k = CONFIG.police.hazards[kind];
+      // Never span the whole carriageway: a hazard has to leave a line to take.
+      const road = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment.halfWidth;
+      const room = Math.max(0, road - cfg.minGap * 0.5);
+      slot.halfWidth = Math.max(2.2, Math.min(k.halfWidth, room, road * cfg.maxRoadShare));
       slot.live = true;
       slot.x = unit.vehicle.x;
       slot.z = unit.vehicle.z;
@@ -184,6 +191,8 @@ export class HazardField {
       const sin = Math.sin(slot.heading);
       slot.root.rotation.x = -Math.atan(ground.gradX * sin + ground.gradZ * cos);
       slot.root.rotation.z = Math.atan(ground.gradX * cos - ground.gradZ * sin);
+      // Scale the mesh to match the span actually used.
+      slot.root.scaling.set(slot.halfWidth / k.halfWidth, 1, 1);
       slot.root.setEnabled(true);
 
       this.lastUsed.set(unit, this.clock);
@@ -207,7 +216,7 @@ export class HazardField {
       const along = dx * sin + dz * cos;
       const across = dx * cos - dz * sin;
       if (Math.abs(along) > k.halfLength + player.params.halfLength * 0.6) continue;
-      if (Math.abs(across) > k.halfWidth + player.params.halfWidth) continue;
+      if (Math.abs(across) > h.halfWidth + player.params.halfWidth) continue;
 
       // Spikes are consumed by the car that hits them; oil stays down and keeps working.
       if (h.kind === "spike") {

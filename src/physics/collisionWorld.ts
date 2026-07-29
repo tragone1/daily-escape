@@ -137,8 +137,12 @@ export class CollisionWorld {
     const hit = obbVsOBB(a.obb, b.obb);
     if (!hit) return null;
 
-    const ma = a.params.mass * a.pushResistance;
-    const mb = b.params.mass * b.pushResistance;
+    // A boosting player barges: whatever they are hitting keeps only a fraction of its
+    // mass for the exchange, which is what makes a parked roadblock answerable.
+    const aBarge = a.isPolice ? 1 : a.boosting ? c.boostBargeScale : 1;
+    const bBarge = b.isPolice ? 1 : b.boosting ? c.boostBargeScale : 1;
+    const ma = a.params.mass * a.pushResistance * bBarge;
+    const mb = b.params.mass * b.pushResistance * aBarge;
     const total = ma + mb;
     // Lighter car gets moved more.
     const shareA = mb / total;

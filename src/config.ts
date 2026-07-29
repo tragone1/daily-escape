@@ -229,6 +229,15 @@ export const CONFIG = {
       accel: 34,
       /** Temporary increase to max speed while boosting, u/s. */
       maxSpeedBonus: 15,
+      /**
+       * How much of a tyre-damage speed penalty the boost claws back, 0..1.
+       *
+       * Not all of it - the strip has to keep costing you - but enough that spending the
+       * charge on getting out from under one is a real option. At zero, boosting on
+       * shredded tyres produced almost nothing, so the answer to the worst situation in
+       * the game was to sit and wait for it to pass.
+       */
+      damageBypass: 0.55,
       /** How long a single boost lasts, seconds. */
       duration: 1.6,
       /**
@@ -538,6 +547,16 @@ export const CONFIG = {
          */
         slowPlayerSpeed: 22,
         slowPressBonus: 0.55,
+        /**
+         * Below `slowPlayerSpeed`, this many of the nearest units are pulled off whatever
+         * they were doing and sent to the stations *in front*.
+         *
+         * A player who has lost their speed - spiked, slicked, hit - is the moment the
+         * squad has been waiting for, and it should look like they know it. Left alone
+         * the cars behind simply kept pushing, which shoves you *along* your route and is
+         * closer to help than to an arrest.
+         */
+        slowFrontPriority: 4,
       },
 
       catchUp: {
@@ -830,6 +849,18 @@ export const CONFIG = {
      * path. Every value below exists to keep them answerable rather than arbitrary.
      */
     hazards: {
+      /**
+       * Fraction of the local road half-width a hazard may span, and the gap it must
+       * always leave.
+       *
+       * A strip is a decision, and a decision needs an alternative. Laid at a fixed width
+       * they covered the whole carriageway in the narrow sections, where there is no line
+       * to take and running one over is simply what happens - which is not a hazard, it
+       * is a toll.
+       */
+      maxRoadShare: 0.62,
+      minGap: 5.5,
+
       /** Live hazards allowed on the course at once, per kind. */
       maxLive: 5,
       /** Minimum gap between any two deployments at section 0, seconds. */
@@ -877,9 +908,9 @@ export const CONFIG = {
         halfWidth: 6.5,
         halfLength: 1.3,
         /** Tyre multipliers while shredded, easing back to 1 over `duration`. */
-        gripScale: 0.5,
-        speedScale: 0.26,
-        duration: 6.5,
+        gripScale: 0.55,
+        speedScale: 0.34,
+        duration: 6.0,
       },
 
       /**
@@ -901,7 +932,7 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.004,
+        gripScale: 0.002,
         speedScale: 0.88,
         duration: 5.5,
         /**
@@ -912,7 +943,17 @@ export const CONFIG = {
          * wild. It is the one moment in the game where the answer to everything else is
          * the wrong move, and it is worth having.
          */
-        boostGripScale: 0.35,
+        boostGripScale: 0.25,
+        /**
+         * Yaw the car picks up per unit of sideways slide while oiled, rad/s.
+         *
+         * Low grip alone makes the car understeer in a straight-ish line; it is this that
+         * makes it come round. Drive gently and you slither, drive hard - or boost - and
+         * you can genuinely spin, which is the difference between an inconvenience and a
+         * thing you have to respect.
+         */
+        spinPerSlip: 0.055,
+        maxSpin: 2.6,
       },
     },
 
@@ -1021,9 +1062,16 @@ export const CONFIG = {
          * for the first stretch turns the guess into a strike, and it is what makes the
          * hit land on the flank at any speed rather than only at the pace it predicted.
          */
-        homeDistance: 46,
+        homeDistance: 62,
+        /**
+         * How far *past* the intercept point to aim while springing.
+         *
+         * Arriving exactly at the intercept means arriving alongside, which is a scrape.
+         * Aiming beyond it turns the same approach into a T-bone.
+         */
+        strikeDepth: 7,
         /** Extra pace while springing, so it arrives with weight behind it. */
-        launchSpeedBonus: 0.35,
+        launchSpeedBonus: 0.5,
         /** Once the player is past, come out anyway and join the chase from behind. */
         releaseBehindRange: 90,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
@@ -1175,6 +1223,15 @@ export const CONFIG = {
     maxCarSpeedLossPerFrame: 0.5,
     /** Extra shove applied car-to-car so contact reads as forceful. */
     carImpulse: 12.0,
+    /**
+     * How much of its mass a vehicle keeps when barged by a boosting player.
+     *
+     * A parked rig is eight tonnes braced against the road, and in a corridor it cannot
+     * slide sideways either, so the ordinary mass ratio made boosting into one feel like
+     * boosting into the scenery. This makes the charge a genuine tool for getting through
+     * something rather than an extra ten units of speed you carry into it.
+     */
+    boostBargeScale: 0.22,
     /**
      * How much of that shove applies between two police cars.
      *

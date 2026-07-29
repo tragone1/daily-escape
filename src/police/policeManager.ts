@@ -258,8 +258,24 @@ export class PoliceManager {
       available.push(u);
     }
 
+    /*
+     * A player who has lost their speed is the moment the whole squad has been waiting
+     * for, and it should look like they know it. Below `slowPlayerSpeed` the front
+     * stations are filled first *by the units currently behind* — they have to overtake
+     * to take them, which is exactly the manoeuvre that was missing. Left to itself the
+     * tail simply kept pushing, which shoves the player along their own route and reads
+     * as help rather than as an arrest.
+     */
+    const slow = player.speed < cfg.slowPlayerSpeed;
+    const slots = cfg.slots.slice(0, cfg.maxAssigned);
+    const order = slow
+      ? [...slots].sort((s1, s2) => s2.z - s1.z).slice(0, cfg.slowFrontPriority).concat(
+          [...slots].sort((s1, s2) => s2.z - s1.z).slice(cfg.slowFrontPriority),
+        )
+      : slots;
+
     const taken = new Set<PoliceCar>();
-    for (const slot of cfg.slots.slice(0, cfg.maxAssigned)) {
+    for (const slot of order) {
       const wx = player.x + right.x * slot.x + fwd.x * slot.z;
       const wz = player.z + right.z * slot.x + fwd.z * slot.z;
 

@@ -264,24 +264,6 @@
         100% { opacity: 0; transform: scale(1.04); }
       }
 
-      /* Direction arrow pointing on up the course */
-      #compass {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 0;
-        height: 0;
-        transform: translate(-50%, -50%);
-      }
-      #compassArrow {
-        position: absolute;
-        left: -14px;
-        top: -150px;
-        width: 28px;
-        height: 28px;
-        opacity: 0.5;
-        transform-origin: 14px 164px;
-      }
 
       /* ---------- Overlays ---------- */
       #overlay {
@@ -377,11 +359,6 @@
         <div id="progressBar"><div id="progressFill"></div></div>
       </div>
 
-      <div id="compass">
-        <svg id="compassArrow" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2 L20 20 L12 15.5 L4 20 Z" fill="#4dff9e" />
-        </svg>
-      </div>
 
       <div id="topLeft" class="panel">
         <div id="timer">0</div>

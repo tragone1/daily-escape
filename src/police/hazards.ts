@@ -129,7 +129,13 @@ export class HazardField {
     }
     const k = CONFIG.police.hazards[this.effect.kind];
     const t = clamp(this.effect.timer / k.duration, 0, 1);
-    player.tireGrip = 1 + (k.gripScale - 1) * t;
+    // Boosting on oil does not rescue you: power with no traction is the definition of a
+    // slide, and this is the one moment where the answer to everything else is wrong.
+    const grip =
+      this.effect.kind === "oil" && player.boosting
+        ? k.gripScale * CONFIG.police.hazards.oil.boostGripScale
+        : k.gripScale;
+    player.tireGrip = 1 + (grip - 1) * t;
     player.tireSpeed = 1 + (k.speedScale - 1) * t;
   }
 

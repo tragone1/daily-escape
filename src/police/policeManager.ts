@@ -137,6 +137,8 @@ export class PoliceManager {
       if (!unit.active || unit.destroyed) continue;
       const unitProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
       if (playerProgress - unitProgress <= pacing.retireBehind) continue;
+      // Never while the player can see it.
+      if (this.onScreen(unit, ctx)) continue;
 
       // A straggler whose class has since retired is stood down rather than recycled, so
       // the wake loop below can replace it with something from the current tier.
@@ -185,6 +187,18 @@ export class PoliceManager {
     this.applySectionSpeed(section);
   }
 
+  /**
+   * Is this unit close enough and visible enough that moving it would be seen?
+   *
+   * Nothing the director does to a car should ever be witnessed. Recycling, retiring and
+   * rear-pressure repositioning are all teleports, and a teleport in view reads as the
+   * car vanishing — which is exactly what it is.
+   */
+  private onScreen(unit: PoliceCar, ctx: PursuitContext): boolean {
+    if (unit.distanceToPlayer(ctx.player) > CONFIG.police.pacing.keepVisibleRange) return false;
+    return ctx.world.lineOfSight(ctx.player.x, ctx.player.z, unit.vehicle.x, unit.vehicle.z);
+  }
+
   /** Live units genuinely at your back, rather than alongside. */
   private countBehind(ctx: PursuitContext): number {
     const player = ctx.player;
@@ -208,6 +222,8 @@ export class PoliceManager {
     let bestAlong = 0;
     for (const u of this.units) {
       if (!u.active || u.destroyed || u.role === "rig") continue;
+      // Only ever move one the player is not watching.
+      if (this.onScreen(u, ctx)) continue;
       const along = (u.vehicle.x - player.x) * fwd.x + (u.vehicle.z - player.z) * fwd.z;
       if (along > bestAlong) {
         bestAlong = along;

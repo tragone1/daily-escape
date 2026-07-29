@@ -24,8 +24,9 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of sixteen runs | section **5** |
-| Quartiles | section **2** to section **7** |
-| Best | section **9** |
+| Quartiles | section **3** to section **6** |
+| Best | section **11** |
+| Died in the first 15 s | **0 of 16** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -111,6 +112,10 @@ Opens on <http://localhost:5173>. Also `npm run typecheck`, `npm run build`, `np
 | `F` | Fire rocket |
 | `R` | Restart the run |
 | `C` | Snap the camera behind the car |
+
+There is no compass. There was an arrow above the car pointing at the escape gate, and the
+escape gate stopped existing when the game became endless — it had been pointing at nothing
+in particular for several versions.
 
 The run does not start until you press a driving key (or hit **Start Run** on the shared
 build), so nothing is chasing you before you are at the wheel. The first leg of the course
@@ -210,6 +215,13 @@ each other:
 Spike strips are also laid *on* the road rather than level with the world now. A flat strip
 on a gradient sank half its length into the tarmac at one end and floated at the other.
 
+And segments no longer fight over the joint between them. `JOINT_TOLERANCE` lets each leg
+claim a little past its own ends so a car on a joint is never off-course — but both legs
+then claimed it with near-identical margins and the winner flipped frame to frame, which
+reads as the ground shimmering between dirt and tarmac wherever two sections meet, and
+feels as the surface multipliers switching underneath you. A segment that needs the
+tolerance now ranks strictly below one that contains the point outright.
+
 #### The joint bug this found
 
 Consecutive legs share exactly one point, so a car sitting on a joint was — to floating
@@ -247,8 +259,11 @@ Every effect is a plain multiplier in `CONFIG.terrain`, so the cause is always r
 | Mud | 0.90 | 3.00 | 0.55 | 0.50 |
 
 Slopes change forward speed by `slopeAccel × grade` per second. Ramps are **explicit**, not
-emergent: crossing a marked lip above 17 u/s launches you, so a jump always happens for a
-reason you could see coming. Landing scrubs speed in proportion to the drop, capped at
+emergent: crossing a marked lip above 16 u/s launches you, so a jump always happens for a
+reason you could see coming. **Boosting into one multiplies the launch by 1.75**, which is
+the difference between a hop and a jump — measured, a boosted launch peaks at 9 units,
+hangs for 1.13 s and covers 57 units of ground, against roughly a third of that cold. The
+landing apron after every ramp was lengthened to 130 units to catch it. Landing scrubs speed in proportion to the drop, capped at
 32% — a jump costs tempo, never the run.
 
 ## Police
@@ -328,6 +343,19 @@ was permanent — police top speeds sit barely above yours, so a clean driver si
 away from the whole squad and only ever met the cars spawned in front. It is deliberately
 one-directional: a car coming the other way gets nothing, because handing an oncoming unit
 closing speed as well turns every head-on into an unavoidable wall.
+
+### Nothing vanishes
+
+Every reposition the director makes is a teleport — recycling a straggler, standing down a
+retired class, pulling a car back to cover your rear. The rules only ever checked where a
+car was *going*, never where it was coming from, so a unit could pull out of a spur beside
+you, drive for a second and blink out of existence while you watched.
+
+A unit within 190 units and in line of sight is now never moved, retired or stood down,
+whatever else the director wants; the stuck-recovery teleport is likewise held back while
+you can see the car, which keeps working the reverse-out instead. A car struggling against
+a wall is at worst untidy. The same car disappearing is plainly broken. Measured over three
+and a half minutes of driving: **74 repositions, 0 of them visible.**
 
 ### Where they come from
 
@@ -451,7 +479,7 @@ you** can lay one.
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
 | **Spike strip** | section 4 | Top speed ×0.5, grip ×0.72 | 4.0 s |
-| **Oil slick** | section 6 | Grip **×0.06**, speed ×0.95 | 3.4 s |
+| **Oil slick** | section 6 | Grip **×0.03** (×0.01 boosting), speed ×0.95 | 3.8 s |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
@@ -460,9 +488,12 @@ corner than on a straight.
 
 Oil's grip multiplier had to go almost to zero to mean anything. At 0.3 the lateral damping
 still pulled the car straight inside a corner's worth of time, so a slick was something you
-could drive over and ignore. At 0.06 the velocity keeps pointing where it was pointing
-while the nose turns — measured, peak lateral slip goes from 12 u/s clean to **41 u/s**
-oiled. You steer and, for a second and a half, nothing happens.
+could drive over and ignore. At **0.03** the velocity keeps pointing where it was pointing
+while the nose turns — you steer and, for the better part of two seconds, nothing happens.
+
+**Boosting on oil does not rescue you.** Grip drops a further 65% while the charge burns:
+power with no traction is the definition of a slide, and this is the one moment in the game
+where the answer to everything else is the wrong move.
 
 Both are answerable, which is the point — a hazard you cannot avoid is just damage. They
 cover most of the road and never all of it, they take a moment to arm, they glow, and you

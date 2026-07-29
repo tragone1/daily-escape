@@ -11,8 +11,11 @@ export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private engineOsc: OscillatorNode | null = null;
+  private engineSub: OscillatorNode | null = null;
   private engineGain: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
+  private rushGain: GainNode | null = null;
+  private rushFilter: BiquadFilterNode | null = null;
   private sirenOsc: OscillatorNode | null = null;
   private sirenGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
@@ -33,19 +36,58 @@ export class GameAudio {
       this.master.gain.value = CONFIG.audio.masterVolume;
       this.master.connect(ctx.destination);
 
-      // Engine: a filtered saw whose pitch tracks speed.
+      // Shared noise buffer for impacts, the boost whoosh and the tyre rush.
+      const frames = ctx.sampleRate * 0.5;
+      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+      this.noiseBuffer = buf;
+
+      /*
+       * Engine.
+       *
+       * Two detuned triangles and a band of filtered noise, rather than the raw sawtooth
+       * this started as. A saw swept through a lowpass across the exact band the ear is
+       * most sensitive in is the classic angry-wasp drone: correct in principle, tiring
+       * within about thirty seconds, and this is a game you are meant to sit in for
+       * minutes at a time. Triangles carry the pitch without the harmonic bite, and
+       * moving most of the loudness into the noise layer means speed reads as *rush*
+       * rather than as a louder buzz.
+       */
       this.engineOsc = ctx.createOscillator();
-      this.engineOsc.type = "sawtooth";
-      this.engineOsc.frequency.value = 60;
+      this.engineOsc.type = "triangle";
+      this.engineOsc.frequency.value = 70;
+      this.engineSub = ctx.createOscillator();
+      this.engineSub.type = "triangle";
+      this.engineSub.frequency.value = 35;
       this.engineFilter = ctx.createBiquadFilter();
       this.engineFilter.type = "lowpass";
-      this.engineFilter.frequency.value = 500;
+      this.engineFilter.frequency.value = 420;
       this.engineGain = ctx.createGain();
       this.engineGain.gain.value = 0;
       this.engineOsc.connect(this.engineFilter);
+      this.engineSub.connect(this.engineFilter);
       this.engineFilter.connect(this.engineGain);
       this.engineGain.connect(this.master);
       this.engineOsc.start();
+      this.engineSub.start();
+
+      // Tyre and wind rush: a looping noise bed opened up by speed.
+      if (this.noiseBuffer) {
+        const rush = ctx.createBufferSource();
+        rush.buffer = this.noiseBuffer;
+        rush.loop = true;
+        this.rushFilter = ctx.createBiquadFilter();
+        this.rushFilter.type = "bandpass";
+        this.rushFilter.frequency.value = 500;
+        this.rushFilter.Q.value = 0.7;
+        this.rushGain = ctx.createGain();
+        this.rushGain.gain.value = 0;
+        rush.connect(this.rushFilter);
+        this.rushFilter.connect(this.rushGain);
+        this.rushGain.connect(this.master);
+        rush.start();
+      }
 
       // Siren: single oscillator, frequency flipped between two tones.
       this.sirenOsc = ctx.createOscillator();
@@ -56,13 +98,6 @@ export class GameAudio {
       this.sirenOsc.connect(this.sirenGain);
       this.sirenGain.connect(this.master);
       this.sirenOsc.start();
-
-      // Shared noise buffer for impacts and the boost whoosh.
-      const frames = ctx.sampleRate * 0.5;
-      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
-      this.noiseBuffer = buf;
     } catch {
       this.ctx = null;
     }
@@ -77,10 +112,17 @@ export class GameAudio {
     if (!this.ctx || !this.engineOsc || !this.engineGain || !this.engineFilter) return;
     const t = this.ctx.currentTime;
 
-    const pitch = 62 + speedRatio * 190 + (boosting ? 45 : 0);
-    this.engineOsc.frequency.setTargetAtTime(pitch, t, 0.05);
-    this.engineFilter.frequency.setTargetAtTime(400 + speedRatio * 1600, t, 0.08);
-    this.engineGain.gain.setTargetAtTime(0.05 + speedRatio * 0.09, t, 0.1);
+    const pitch = 70 + speedRatio * 130 + (boosting ? 34 : 0);
+    this.engineOsc.frequency.setTargetAtTime(pitch, t, 0.06);
+    if (this.engineSub) this.engineSub.frequency.setTargetAtTime(pitch * 0.5, t, 0.06);
+    this.engineFilter.frequency.setTargetAtTime(320 + speedRatio * 700, t, 0.1);
+    // Quieter than it was, and it stays quiet: the rush layer carries the sense of speed.
+    this.engineGain.gain.setTargetAtTime(0.035 + speedRatio * 0.045, t, 0.12);
+
+    if (this.rushGain && this.rushFilter) {
+      this.rushFilter.frequency.setTargetAtTime(420 + speedRatio * 1500, t, 0.1);
+      this.rushGain.gain.setTargetAtTime(speedRatio * speedRatio * 0.075 + (boosting ? 0.03 : 0), t, 0.12);
+    }
 
     if (this.sirenOsc && this.sirenGain) {
       // Proximity-driven volume gives you an audible cue before you see them.

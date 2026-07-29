@@ -20,7 +20,6 @@ export interface HudFrame {
   policeNear: number;
   captureProgress: number;
   /** Screen-space bearing further up the course, radians, 0 = straight ahead. */
-  escapeBearing: number;
   rocketAmmo: number;
   rocketInFlight: boolean;
   score: number;
@@ -67,7 +66,6 @@ export class Hud {
   private captureText = el("captureText");
   private rocketRow = el("rocketRow");
   private rocketText = el("rocketText");
-  private compassArrow = el("compassArrow");
   private vignette = el("vignette");
   private flash = el("flash");
   private overlay = el("overlay");
@@ -160,7 +158,6 @@ export class Hud {
     this.vignette.classList.toggle("danger", frame.captureProgress > 0.35);
     this.vignette.classList.toggle("offcourse", frame.offCourse);
 
-    this.compassArrow.style.transform = `rotate(${frame.escapeBearing}rad)`;
     this.progressFill.style.width = `${Math.round(frame.sectionProgress * 100)}%`;
 
     // Being off the course outranks everything else the tag could say: it is the only one

@@ -178,9 +178,17 @@ export const CONFIG = {
     },
 
     /** Below this forward speed a ramp does not launch you at all. */
-    minLaunchSpeed: 17,
+    minLaunchSpeed: 16,
     /** Ceiling on launch speed so the big kicker cannot fling you off the map. */
-    maxLaunchSpeed: 30,
+    maxLaunchSpeed: 54,
+    /**
+     * Multiplier on launch speed when you hit the lip boosting.
+     *
+     * The ramps existed and did very little: a modest hop, over before you had registered
+     * it. Boosting into one is now a decision with a visible payoff — a long, slow arc
+     * that clears a chunk of road and everything the squad had arranged on it.
+     */
+    boostLaunchBonus: 1.75,
 
     landing: {
       /** Fraction of horizontal speed lost per unit of vertical impact speed. */
@@ -787,9 +795,18 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.06,
+        gripScale: 0.03,
         speedScale: 0.95,
-        duration: 3.4,
+        duration: 3.8,
+        /**
+         * Extra grip loss while boosting through it.
+         *
+         * Power with no traction is what a slide actually is, so lighting the boost on
+         * an oiled surface should not rescue you — it should make the car completely
+         * wild. It is the one moment in the game where the answer to everything else is
+         * the wrong move, and it is worth having.
+         */
+        boostGripScale: 0.35,
       },
     },
 
@@ -856,6 +873,16 @@ export const CONFIG = {
       sideShoulderMin: 9,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
+      /**
+       * A unit inside this range *and* in plain sight is never moved, recycled or stood
+       * down, whatever else the director wants.
+       *
+       * Every reposition in here is a teleport, and the rules only ever checked where a
+       * car was going, never where it was coming from — so a unit could pull out of a
+       * spur beside you, drive for a second and blink out of existence while you watched.
+       * Recycling is meant to be invisible bookkeeping; on screen it is just a bug.
+       */
+      keepVisibleRange: 190,
       /**
        * Fall this far behind and the unit is recycled forward instead of trailing.
        *
@@ -1069,7 +1096,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 3.6,
+    captureDuration: 4.4,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1088,8 +1115,8 @@ export const CONFIG = {
      * so the meter never filled no matter how bad the situation looked.
      */
     /** Time constant for the smoothed speed the pin test uses, seconds. */
-    captureSpeedSmoothing: 0.7,
-    captureSpeed: 11,
+    captureSpeedSmoothing: 0.55,
+    captureSpeed: 9,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *
@@ -1098,15 +1125,15 @@ export const CONFIG = {
      * threshold of 19 u/s meant any brief bog was an arrest. Nothing changes until you are
      * genuinely buried, and then it changes fast.
      */
-    captureCrowdFloor: 3,
-    captureSpeedPerUnit: 3.2,
+    captureCrowdFloor: 4,
+    captureSpeedPerUnit: 2.4,
     captureSpeedMax: 30,
     /**
      * How fast the meter drains when you break free, as a multiple of the fill rate.
      * Above 1 so escaping is always possible; not so far above that a moment of daylight
      * wipes out four seconds of being buried.
      */
-    captureRecovery: 1.3,
+    captureRecovery: 1.7,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

@@ -181,12 +181,13 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         wall: theme.wall,
         shoulder,
         // A ramp needs a rising lip; force a modest climb into it.
-        ...(isRamp ? { ramp: 0.3 + rnd() * 0.16 } : {}),
+        ...(isRamp ? { ramp: 0.56 + rnd() * 0.22 } : {}),
       });
 
       if (isRamp) {
         // Landing apron straight after the lip, so a jump always has somewhere to land.
-        const landLen = 90;
+        // Long, because a boosted launch covers a lot of ground before it comes down.
+        const landLen = 130;
         x += Math.sin(heading) * landLen;
         z += Math.cos(heading) * landLen;
         y = Math.max(0, y - 6);

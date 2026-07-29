@@ -379,7 +379,9 @@ function buildJointPatches(r: Renderer, segments: CourseSegment[]): void {
         isStatic: true,
       },
     );
-    patch.position.set(a.bx, a.by, a.bz);
+    // A hair above the ribbon: at the same height the two coplanar faces z-fight, which
+    // is the other half of what "the ground glitches between sections" looks like.
+    patch.position.set(a.bx, a.by + 0.03, a.bz);
     patch.rotation.y = a.heading + wrapTo(b.heading - a.heading) / 2;
     patch.rotation.x = -Math.atan((a.grade + b.grade) / 2);
   }

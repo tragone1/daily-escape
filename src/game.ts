@@ -9,7 +9,7 @@ import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
 import { CONFIG } from "./config";
 import { Input } from "./input";
-import { clamp, headingOf, wrapAngle } from "./math";
+import { clamp } from "./math";
 import { CollisionWorld } from "./physics/collisionWorld";
 import { PlayerController } from "./player/playerController";
 import type { PursuitContext } from "./police/behaviors";
@@ -436,12 +436,6 @@ export class Game {
   }
 
   private updateHud(dt: number): void {
-    // The compass points up the course rather than at a gate: the next route node a good
-    // way ahead of the player, which is "onward" in a game that has no destination.
-    const ahead = this.world.nav.nodeAtProgress(this.state.progress + 120);
-    const bearing = wrapAngle(
-      headingOf(ahead.x - this.player.x, ahead.z - this.player.z) - this.player.heading,
-    );
 
     let nearest = Infinity;
     for (const unit of this.police.units) {
@@ -457,7 +451,6 @@ export class Game {
         boosting: this.player.boosting,
         policeNear: this.police.countNear(this.player.x, this.player.z, CONFIG.run.heatRadius),
         captureProgress: this.state.captureProgress,
-        escapeBearing: bearing,
         rocketAmmo: this.rockets.ammo,
         rocketInFlight: this.rockets.inFlight,
         score: this.state.score,

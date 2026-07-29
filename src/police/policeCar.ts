@@ -607,7 +607,16 @@ export class PoliceCar {
       this.stuckTotal += dt * 2;
     }
 
-    if (this.stuckTotal > shared.respawnAfterStuck) {
+    /*
+     * Teleporting a wedged unit back into play is fine when nobody is looking and
+     * indefensible when they are. In view, it keeps working the reverse-out instead — a
+     * car struggling against a wall is at worst untidy, where the same car blinking out
+     * of existence is plainly broken.
+     */
+    const watched =
+      this.distanceToPlayer(ctx.player) < CONFIG.police.pacing.keepVisibleRange &&
+      ctx.world.lineOfSight(ctx.player.x, ctx.player.z, v.x, v.z);
+    if (this.stuckTotal > shared.respawnAfterStuck && !watched) {
       this.respawn(ctx);
       return;
     }

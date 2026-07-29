@@ -402,7 +402,9 @@ export class Vehicle {
       );
       if (launch > 0) {
         this.airborne = true;
-        this.vy = Math.min(launch, t.maxLaunchSpeed);
+        // Boosting into the lip is the difference between a hop and a jump.
+        const boosted = this.boostTime > 0 ? t.boostLaunchBonus : 1;
+        this.vy = Math.min(launch * boosted, t.maxLaunchSpeed);
         this.y = groundHere;
         this.justLaunched = true;
         return;

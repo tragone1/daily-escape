@@ -20,7 +20,6 @@ export interface HudFrame {
   policeNear: number;
   captureProgress: number;
   /** Screen-space bearing further up the course, radians, 0 = straight ahead. */
-  escapeBearing: number;
   rocketAmmo: number;
   rocketInFlight: boolean;
   score: number;
@@ -33,6 +32,8 @@ export interface HudFrame {
   airborne: boolean;
   /** Set while a police deployable is still hurting the car; overrides the surface tag. */
   tireWarning: string | null;
+  /** True past the course boundary, where the car crawls and progress stops counting. */
+  offCourse: boolean;
 }
 
 export interface RunSummary {
@@ -65,7 +66,6 @@ export class Hud {
   private captureText = el("captureText");
   private rocketRow = el("rocketRow");
   private rocketText = el("rocketText");
-  private compassArrow = el("compassArrow");
   private vignette = el("vignette");
   private flash = el("flash");
   private overlay = el("overlay");
@@ -94,7 +94,9 @@ export class Hud {
 
   /** Screen-wide white pop for boosts and heavy impacts. */
   punch(amount: number): void {
-    this.flashAmount = Math.min(0.55, this.flashAmount + amount);
+    // Ceiling lowered: the flash is a punctuation mark, and it cannot be allowed to
+    // accumulate into a wash when several things land in the same second.
+    this.flashAmount = Math.min(0.3, this.flashAmount + amount);
   }
 
   /** Big transient centre-screen callout — rocket results and pickups. */
@@ -156,15 +158,18 @@ export class Hud {
       frame.captureProgress > 0.66 ? "BREAK FREE!" : `${Math.round(frame.captureProgress * 100)}%`;
     this.captureText.classList.toggle("urgent", frame.captureProgress > 0.66);
     this.vignette.classList.toggle("danger", frame.captureProgress > 0.35);
+    this.vignette.classList.toggle("offcourse", frame.offCourse);
 
-    this.compassArrow.style.transform = `rotate(${frame.escapeBearing}rad)`;
     this.progressFill.style.width = `${Math.round(frame.sectionProgress * 100)}%`;
 
-    this.surfaceTag.textContent =
-      frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]);
+    // Being off the course outranks everything else the tag could say: it is the only one
+    // of these states that silently stops the score moving.
+    this.surfaceTag.textContent = frame.offCourse
+      ? "OFF COURSE"
+      : (frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]));
     this.surfaceTag.classList.toggle(
       "rough",
-      frame.tireWarning !== null || frame.airborne || frame.surface !== "asphalt",
+      frame.offCourse || frame.tireWarning !== null || frame.airborne || frame.surface !== "asphalt",
     );
 
     if (this.bannerTime > 0) {
@@ -177,7 +182,7 @@ export class Hud {
     }
 
     if (this.flashAmount > 0.001) {
-      this.flashAmount = Math.max(0, this.flashAmount - dt * 2.2);
+      this.flashAmount = Math.max(0, this.flashAmount - dt * 4.5);
       this.flash.style.opacity = String(this.flashAmount);
     } else if (this.flash.style.opacity !== "0") {
       this.flash.style.opacity = "0";
@@ -207,6 +212,7 @@ export class Hud {
   hideResult(): void {
     this.overlay.classList.remove("show");
     this.vignette.classList.remove("danger");
+    this.vignette.classList.remove("offcourse");
     this.banner.classList.remove("show");
     this.sectionBanner.classList.remove("show");
     this.bannerTime = 0;

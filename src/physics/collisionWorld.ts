@@ -57,6 +57,7 @@ export class CollisionWorld {
   /** Scratch buffers, reused so the per-frame collision work allocates nothing. */
   private readonly nearby: StaticCollider[] = [];
   private readonly nearbyRay: StaticCollider[] = [];
+  private readonly nearbyPath: StaticCollider[] = [];
 
   constructor(readonly colliders: StaticCollider[]) {
     this.occluders = colliders.filter((c) => c.occludes);
@@ -136,8 +137,12 @@ export class CollisionWorld {
     const hit = obbVsOBB(a.obb, b.obb);
     if (!hit) return null;
 
-    const ma = a.params.mass * a.pushResistance;
-    const mb = b.params.mass * b.pushResistance;
+    // A boosting player barges: whatever they are hitting keeps only a fraction of its
+    // mass for the exchange, which is what makes a parked roadblock answerable.
+    const aBarge = a.isPolice ? 1 : a.boosting ? c.boostBargeScale : 1;
+    const bBarge = b.isPolice ? 1 : b.boosting ? c.boostBargeScale : 1;
+    const ma = a.params.mass * a.pushResistance * bBarge;
+    const mb = b.params.mass * b.pushResistance * aBarge;
     const total = ma + mb;
     // Lighter car gets moved more.
     const shareA = mb / total;
@@ -153,8 +158,14 @@ export class CollisionWorld {
     const vn = rvx * hit.nx + rvz * hit.nz;
 
     // A fixed extra shove on top of the elastic response, so contact always reads as
-    // a hit even when both cars are travelling at similar speeds.
-    const shove = c.carImpulse * Math.max(a.contactBoost, b.contactBoost);
+    // a hit even when both cars are travelling at similar speeds — heavily damped when
+    // it is one police car hitting another, so a charging juggernaut cannot blow its own
+    // squad off you and hand the player the gap it was sent to close.
+    const friendly = a.isPolice && b.isPolice;
+    const shove =
+      c.carImpulse *
+      Math.max(a.contactBoost, b.contactBoost) *
+      (friendly ? c.policeImpulseScale : 1);
     if (vn < 0) {
       const j = (-vn * (1 + c.restitution) + shove) / total;
       a.vx += hit.nx * j * mb;
@@ -234,6 +245,72 @@ export class CollisionWorld {
       if (t !== null && t * maxDist < best) best = t * maxDist;
     }
     return best;
+  }
+
+  /**
+   * Distance to the first solid thing along a ray, capped at `maxDist`.
+   *
+   * Against *solid* colliders rather than tall occluders, because the question this
+   * answers is "how much room is there to drive through here", and a guard rail is very
+   * much in the way of that while being invisible to line-of-sight.
+   */
+  raySolid(x0: number, z0: number, dx: number, dz: number, maxDist: number, carHeight = 1.1): number {
+    const x1 = x0 + dx * maxDist;
+    const z1 = z0 + dz * maxDist;
+    let best = maxDist;
+    const candidates = this.solidGrid.query(
+      Math.min(x0, x1),
+      Math.min(z0, z1),
+      Math.max(x0, x1),
+      Math.max(z0, z1),
+      this.nearbyPath,
+    );
+    for (const solid of candidates) {
+      if (solid.topY < carHeight) continue;
+      const t = segmentVsOBB(x0, z0, x1, z1, solid.obb);
+      if (t !== null && t * maxDist < best) best = t * maxDist;
+    }
+    return best;
+  }
+
+  /**
+   * How much driveable room there is across the road at a point — the gap between the
+   * first solid thing to the left and the first to the right.
+   *
+   * This is what "tight" actually means, and it is a local property: a section's nominal
+   * width barely varies along its length, but junction caps, props, spur mouths and the
+   * inside of a bend all pinch the real gap. Scouting on nominal width picked spots no
+   * better than at random; scouting on this picks the pinch points.
+   */
+  freeWidth(x: number, z: number, heading: number, maxDist = 70): number {
+    const rx = Math.cos(heading);
+    const rz = -Math.sin(heading);
+    return this.raySolid(x, z, rx, rz, maxDist) + this.raySolid(x, z, -rx, -rz, maxDist);
+  }
+
+  /**
+   * Can a car actually drive from A to B, or is there something solid across the line?
+   *
+   * Distinct from `lineOfSight`, which only considers tall occluders — a guard rail is
+   * two units high, so it blocks a car completely while blocking sight not at all. That
+   * gap is what let police spawn in the run-off on the far side of a rail: the spot was
+   * clear, the player was visible, and the unit spent the whole encounter driving into a
+   * fence. This is the test that question actually needed.
+   */
+  canReach(x0: number, z0: number, x1: number, z1: number, carHeight = 1.1): boolean {
+    const candidates = this.solidGrid.query(
+      Math.min(x0, x1),
+      Math.min(z0, z1),
+      Math.max(x0, x1),
+      Math.max(z0, z1),
+      this.nearbyPath,
+    );
+    for (const solid of candidates) {
+      // Kerbs and low debris are driveable over; anything taller is a wall to this car.
+      if (solid.topY < carHeight) continue;
+      if (segmentVsOBB(x0, z0, x1, z1, solid.obb) !== null) return false;
+    }
+    return true;
   }
 
   /** Nearest free spot for a respawn: true when nothing solid is within `radius`. */

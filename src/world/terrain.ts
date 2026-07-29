@@ -25,6 +25,28 @@ export interface TerrainSample {
 /** Margin bonus that makes sealed road outrank any shoulder in sampling. */
 const ROAD_PRIORITY = 1000;
 
+/**
+ * How far each segment is treated as extending past its own ends.
+ *
+ * Consecutive legs share exactly one point, so a car sitting on a joint is, to floating
+ * point, a fraction past the end of one and a fraction before the start of the next —
+ * outside both, and therefore "off the course". Harmless when off-course meant nothing;
+ * a real defect once it meant a speed penalty, a frozen score and a warning on the HUD,
+ * because the course has some two hundred joints and you cross every one of them.
+ */
+const JOINT_TOLERANCE = 1.5;
+
+/**
+ * Penalty applied to a segment that only contains the point via `JOINT_TOLERANCE`.
+ *
+ * The tolerance is a safety net, not a claim. Without this, both legs at a joint report
+ * the point as inside with near-identical margins, and the winner flips frame to frame —
+ * which the player sees as the ground shimmering between dirt and tarmac wherever two
+ * sections meet, and feels as the surface multipliers switching underneath them. Making
+ * the overlap strictly worse than genuine containment settles it.
+ */
+const TOLERANCE_PENALTY = 500;
+
 export class Terrain {
   /** Cumulative distance to the START of each main-spine segment. */
   private readonly spineStart: number[] = [];
@@ -89,7 +111,11 @@ export class Terrain {
         acrossAbs <= seg.halfWidth
           ? seg.halfWidth - acrossAbs + ROAD_PRIORITY
           : seg.halfWidth + seg.shoulder - acrossAbs;
-      const insideAlong = Math.min(along, seg.length - along);
+      const rawAlong = Math.min(along, seg.length - along);
+      // Only lean on the tolerance when the point is genuinely off the end, and rank any
+      // segment that needs it below one that contains the point outright.
+      const insideAlong =
+        rawAlong >= 0 ? rawAlong : rawAlong + JOINT_TOLERANCE - TOLERANCE_PENALTY;
       // A point past the segment's ends is outside regardless of the road bonus.
       const margin = insideAlong < 0 ? insideAlong : Math.min(insideAcross, insideAlong + ROAD_PRIORITY);
       // Priority first: a narrow rut laid over a wide mud lane must win, even though the

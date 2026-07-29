@@ -9,7 +9,7 @@ import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
 import { CONFIG } from "./config";
 import { Input } from "./input";
-import { clamp, headingOf, wrapAngle } from "./math";
+import { clamp } from "./math";
 import { CollisionWorld } from "./physics/collisionWorld";
 import { PlayerController } from "./player/playerController";
 import type { PursuitContext } from "./police/behaviors";
@@ -21,6 +21,7 @@ import { CarView, PLAYER_STYLE } from "./vehicle/carView";
 import { Vehicle } from "./vehicle/vehicle";
 import { RocketSystem } from "./weapons/rocket";
 import { buildWorld, type BuiltWorld } from "./world/courseBuilder";
+import type { TerrainSample } from "./world/terrain";
 import { COURSE_START, SECTION_STARTS, START_HEADING, sectionIndexAt } from "./world/course";
 import { PickupSystem } from "./world/pickups";
 
@@ -197,11 +198,13 @@ export class Game {
 
     // --- Player ------------------------------------------------------------
     const input = this.controller.read(this.keys);
+    // A boosting car shoves much harder, which is what makes a blocked pass answerable.
+    this.player.contactBoost = this.player.boosting ? CONFIG.player.boost.shove : 1;
     this.player.update(input, dt, terrain);
 
     if (this.player.boostFired) {
       this.camera.addShake(CONFIG.player.boost.shake);
-      this.hud.punch(0.18);
+      this.hud.punch(0.1);
       this.audio.boost();
     }
     if (this.player.justLaunched) {
@@ -258,10 +261,14 @@ export class Game {
     );
     if (hazard) {
       this.camera.addShake(hazard === "spike" ? 0.7 : 0.3);
-      this.hud.punch(hazard === "spike" ? 0.3 : 0.15);
+      // No flash for either. The white pop was designed for one-off moments and the
+      // hazards are not that any more; on a slick it fired every time you clipped one and
+      // read as the screen glitching rather than as an event.
+      if (hazard === "spike") this.hud.punch(0.12);
       this.audio.impact(hazard === "spike" ? 0.9 : 0.4);
       this.hud.announce(hazard === "spike" ? "SPIKE STRIP!" : "OIL SLICK!", false);
     }
+
 
     // --- Collisions --------------------------------------------------------
     const playerHit = this.collision.resolveStatic(this.player);
@@ -298,20 +305,20 @@ export class Game {
     if (strongest) {
       const severity = clamp(strongest.speed / this.player.params.maxSpeed, 0, 1);
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
-      this.hud.punch(severity * 0.22);
+      // Barely a flicker. Contact is now near-constant by design, and at the old weight
+      // the screen sat under a permanent white veil for the whole back half of a run.
+      this.hud.punch(severity * 0.05);
       this.audio.impact(severity);
     }
 
     // --- Containment -------------------------------------------------------
-    this.enforceCourse(dt, progress);
+    const ground = terrain.sample(this.player.x, this.player.z);
+    this.enforceCourse(dt, progress, ground);
 
     // --- Run state ---------------------------------------------------------
-    const nearForCapture = this.police.countNear(
-      this.player.x,
-      this.player.z,
-      CONFIG.run.captureRadius,
-    );
-    this.state.update(dt, this.player.speed, nearForCapture, progress);
+    // Directions blocked, not cars counted: the arrest is about having nowhere to go.
+    const boxedIn = this.police.enclosure(this.player.x, this.player.z);
+    this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
     if (section !== this.lastSection && !this.state.over) {
@@ -336,15 +343,19 @@ export class Game {
   }
 
   /**
-   * Geometry alone should keep the player on the course, but a single gap anywhere in
-   * ~350 wall pieces would let someone cut across country and skip whole sections. This
-   * is the guarantee: leave the drivable ribbon for more than a moment and you are put
-   * back where you left it, having gained nothing.
+   * Last-resort recovery for a player stranded outside the course.
+   *
+   * This used to be the containment mechanism, on a 1.6 s fuse, and it was the loophole:
+   * dip into the black, get teleported back a moment later, and every pursuer you had was
+   * now somewhere else. Containment is the wasteland's own doing now — out there you
+   * crawl and you bank no progress — so this only exists for the case where geometry has
+   * genuinely put someone somewhere they cannot drive out of, and it waits long enough
+   * that it can never be the faster option.
    */
-  private enforceCourse(dt: number, progress: number): void {
-    const sample = this.world.terrain.sample(this.player.x, this.player.z);
+  private enforceCourse(dt: number, progress: number, ground: TerrainSample): void {
+    if (!ground.onCourse) this.pushBackOnCourse(dt, ground);
 
-    if (sample.onCourse) {
+    if (ground.onCourse) {
       this.offCourseTimer = 0;
       // Remember a known-good spot, but only when actually driving, so the recovery
       // point is never a wall the player was scraping.
@@ -360,7 +371,10 @@ export class Game {
     }
 
     this.offCourseTimer += dt;
+    // Only rescue someone who is genuinely stuck out there. A player still driving is
+    // paying the wasteland's price and can find their own way back.
     if (this.offCourseTimer < CONFIG.run.offCourseGrace) return;
+    if (this.player.speed > 4) return;
 
     // Prefer the remembered spot; fall back to the nearest route node.
     const node = this.world.nav.nodeAtProgress(progress);
@@ -371,7 +385,49 @@ export class Game {
     this.player.reset(back.x, back.z, back.heading, back.y);
     this.camera.reset(this.player);
     this.offCourseTimer = 0;
-    this.hud.announce("BACK ON COURSE", false);
+    this.hud.announce("TOWED BACK", false);
+  }
+
+  /**
+   * The invisible wall.
+   *
+   * Every section is fenced at the outer edge of its run-off, and measured, that geometry
+   * turns away 97% of a deliberately adversarial escape sweep — boosting straight at the
+   * boundary from every angle at every leg. The remaining few percent are individual gaps
+   * where two legs meet at a sharp bend, and hunting each one across twelve thousand wall
+   * pieces is a losing game.
+   *
+   * So the invariant is enforced physically instead: outside the ribbon, whatever velocity
+   * is carrying you further out is cancelled and you are pushed back toward the road. It
+   * is a firm shove rather than a teleport, so a leak costs you a moment and your line
+   * instead of resetting the chase — which is what made the old backstop worth abusing.
+   */
+  private pushBackOnCourse(dt: number, ground: TerrainSample): void {
+    const seg = ground.segment;
+    const p = this.player;
+
+    // Closest point on this segment's centre line.
+    const rx = p.x - seg.ax;
+    const rz = p.z - seg.az;
+    const along = clamp(rx * seg.dx + rz * seg.dz, 0, seg.length);
+    const cx = seg.ax + seg.dx * along;
+    const cz = seg.az + seg.dz * along;
+
+    const dx = cx - p.x;
+    const dz = cz - p.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const nx = dx / d;
+    const nz = dz / d;
+
+    // Cancel anything still carrying the car outward, then push it back in.
+    const outward = p.vx * nx + p.vz * nz;
+    if (outward < 0) {
+      p.vx -= nx * outward;
+      p.vz -= nz * outward;
+    }
+    const shove = CONFIG.run.offCourseShove * dt;
+    p.vx += nx * shove;
+    p.vz += nz * shove;
   }
 
   /** How far through the current section the player is, 0..1, for the HUD bar. */
@@ -384,12 +440,6 @@ export class Game {
   }
 
   private updateHud(dt: number): void {
-    // The compass points up the course rather than at a gate: the next route node a good
-    // way ahead of the player, which is "onward" in a game that has no destination.
-    const ahead = this.world.nav.nodeAtProgress(this.state.progress + 120);
-    const bearing = wrapAngle(
-      headingOf(ahead.x - this.player.x, ahead.z - this.player.z) - this.player.heading,
-    );
 
     let nearest = Infinity;
     for (const unit of this.police.units) {
@@ -405,7 +455,6 @@ export class Game {
         boosting: this.player.boosting,
         policeNear: this.police.countNear(this.player.x, this.player.z, CONFIG.run.heatRadius),
         captureProgress: this.state.captureProgress,
-        escapeBearing: bearing,
         rocketAmmo: this.rockets.ammo,
         rocketInFlight: this.rockets.inFlight,
         score: this.state.score,
@@ -415,6 +464,7 @@ export class Game {
         surface: this.player.surface,
         airborne: this.player.airborne,
         tireWarning: this.hazards.warning,
+        offCourse: this.player.offCourse,
       },
       dt,
     );

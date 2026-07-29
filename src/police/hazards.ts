@@ -34,6 +34,8 @@ interface Hazard {
   arm: number;
   /** Seconds of life left. */
   life: number;
+  /** Span across the road, clamped so a gap always remains. */
+  halfWidth: number;
   root: Node3D;
   glow: Mesh;
 }
@@ -60,6 +62,7 @@ export class HazardField {
           heading: 0,
           arm: 0,
           life: 0,
+          halfWidth: 1,
           ...built,
         });
       }
@@ -109,7 +112,7 @@ export class HazardField {
       }
       // Pulse while arming, then fade out over the last second of life.
       const pulse = h.arm > 0 ? 0.35 + 0.65 * Math.abs(Math.sin(this.clock * 9)) : 1;
-      h.glow.alpha = Math.min(1, h.life) * pulse * (h.kind === "spike" ? 0.95 : 0.5);
+      h.glow.alpha = Math.min(1, h.life) * pulse * (h.kind === "spike" ? 0.95 : 0.85);
     }
 
     this.deploy(playerProgress, section, units);
@@ -129,7 +132,13 @@ export class HazardField {
     }
     const k = CONFIG.police.hazards[this.effect.kind];
     const t = clamp(this.effect.timer / k.duration, 0, 1);
-    player.tireGrip = 1 + (k.gripScale - 1) * t;
+    // Boosting on oil does not rescue you: power with no traction is the definition of a
+    // slide, and this is the one moment where the answer to everything else is wrong.
+    const grip =
+      this.effect.kind === "oil" && player.boosting
+        ? k.gripScale * CONFIG.police.hazards.oil.boostGripScale
+        : k.gripScale;
+    player.tireGrip = 1 + (grip - 1) * t;
     player.tireSpeed = 1 + (k.speedScale - 1) * t;
   }
 
@@ -152,7 +161,8 @@ export class HazardField {
       if (!kind) continue;
 
       const last = this.lastUsed.get(unit) ?? -999;
-      if (this.clock - last < cfg.unitCooldown * rate) continue;
+      const kindScale = kind === "oil" ? cfg.oilCooldownScale : 1;
+      if (this.clock - last < cfg.unitCooldown * rate * kindScale) continue;
 
       const lead = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z) - playerProgress;
       if (lead < cfg.minLead || lead > cfg.maxLead) continue;
@@ -161,6 +171,10 @@ export class HazardField {
       if (!slot) continue;
 
       const k = CONFIG.police.hazards[kind];
+      // Never span the whole carriageway: a hazard has to leave a line to take.
+      const road = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment.halfWidth;
+      const room = Math.max(0, road - cfg.minGap * 0.5);
+      slot.halfWidth = Math.max(2.2, Math.min(k.halfWidth, room, road * cfg.maxRoadShare));
       slot.live = true;
       slot.x = unit.vehicle.x;
       slot.z = unit.vehicle.z;
@@ -170,10 +184,19 @@ export class HazardField {
       slot.life = k.life;
       slot.root.position.set(slot.x, slot.y + 0.06, slot.z);
       slot.root.rotation.y = slot.heading;
+      // Lie it *on* the road rather than level with the world. A flat strip on a gradient
+      // sinks half its length into the tarmac at one end and floats at the other.
+      const ground = this.terrain.sample(slot.x, slot.z);
+      const cos = Math.cos(slot.heading);
+      const sin = Math.sin(slot.heading);
+      slot.root.rotation.x = -Math.atan(ground.gradX * sin + ground.gradZ * cos);
+      slot.root.rotation.z = Math.atan(ground.gradX * cos - ground.gradZ * sin);
+      // Scale the mesh to match the span actually used.
+      slot.root.scaling.set(slot.halfWidth / k.halfWidth, 1, 1);
       slot.root.setEnabled(true);
 
       this.lastUsed.set(unit, this.clock);
-      this.cooldown = cfg.globalCooldown * rate;
+      this.cooldown = cfg.globalCooldown * rate * (kind === "oil" ? 1.6 : 1);
       return;
     }
   }
@@ -193,7 +216,7 @@ export class HazardField {
       const along = dx * sin + dz * cos;
       const across = dx * cos - dz * sin;
       if (Math.abs(along) > k.halfLength + player.params.halfLength * 0.6) continue;
-      if (Math.abs(across) > k.halfWidth + player.params.halfWidth) continue;
+      if (Math.abs(across) > h.halfWidth + player.params.halfWidth) continue;
 
       // Spikes are consumed by the car that hits them; oil stays down and keeps working.
       if (h.kind === "spike") {
@@ -258,20 +281,36 @@ function buildOilSlick(r: Renderer): { root: Node3D; glow: Mesh } {
   const k = CONFIG.police.hazards.oil;
   const root = r.createNode();
 
+  /*
+   * A near-black puddle on near-black asphalt is invisible, which is how the slick spent
+   * several versions being something players drove over without ever knowing why the car
+   * went sideways. It reads by *contrast* now: a bright iridescent sheen over the pool
+   * and a hard rim around it, so it stands out on tarmac the way the spike strip does.
+   */
   const pool = r.createMesh(
-    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.04, tessellation: 14 },
-    { color: [0.02, 0.02, 0.03], emissive: 0.1, alpha: 0.95 },
+    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.05, tessellation: 16 },
+    { color: [0.06, 0.05, 0.1], emissive: 0.3, alpha: 0.95 },
   );
   pool.scaling.set(k.halfWidth, 1, k.halfLength);
   pool.parent = root;
 
   const glow = r.createMesh(
-    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.02, tessellation: 14 },
-    { color: [0.35, 0.55, 0.9], emissive: 1, alpha: 0.45 },
+    { kind: "cylinder", diameterTop: 2, diameterBottom: 2, height: 0.03, tessellation: 16 },
+    { color: [0.5, 0.9, 1.0], emissive: 1, alpha: 0.8 },
   );
-  glow.scaling.set(k.halfWidth * 0.8, 1, k.halfLength * 0.8);
-  glow.position.y = 0.05;
+  glow.scaling.set(k.halfWidth * 0.86, 1, k.halfLength * 0.86);
+  glow.position.y = 0.06;
   glow.parent = root;
+
+  // Hard rim: an edge is what the eye actually picks up at speed.
+  const rim = r.createMesh(
+    { kind: "torus", diameter: 2, thickness: 0.22, tessellation: 18 },
+    { color: [0.75, 0.55, 1.0], emissive: 1, alpha: 0.95 },
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.scaling.set(k.halfWidth, k.halfLength, 1);
+  rim.position.y = 0.09;
+  rim.parent = root;
 
   return { root, glow };
 }

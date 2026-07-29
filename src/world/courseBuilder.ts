@@ -23,6 +23,15 @@ export interface BuiltWorld {
   update(elapsed: number): void;
 }
 
+/**
+ * Thickness of the road slab and the grass apron.
+ *
+ * Both are positioned so their *top* face is the ground plane the terrain reports, which
+ * is the only arrangement where the car looks like it is standing on the road.
+ */
+const ROAD_THICKNESS = 0.5;
+const APRON_THICKNESS = 0.34;
+
 /** Deterministic hash so the course is identical on every run. */
 function hash2(x: number, z: number): number {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
@@ -41,16 +50,31 @@ const SURFACE_COLOR: Record<Surface, Rgb> = {
   grass: [0.16, 0.26, 0.15],
 };
 
+/**
+ * Per-section tint on the road surface.
+ *
+ * Two sections built from the same surface should still not look like the same section.
+ * A cool grey-blue city and a warm sodium-lit industrial estate are both asphalt.
+ */
+const SECTION_TINT: Partial<Record<SectionId, Rgb>> = {
+  downtown: [0.92, 0.96, 1.12],
+  canyon: [1.15, 1.0, 0.86],
+  industrial: [1.18, 1.06, 0.82],
+  hills: [1.0, 1.02, 1.0],
+  final: [0.9, 0.9, 0.96],
+};
+
 /** Wall look per style: colour, height and how wide a chunk is. */
 const WALL_STYLE: Record<
   Exclude<WallStyle, "none">,
   { color: Rgb; minHeight: number; maxHeight: number; chunk: number; thickness: number }
 > = {
   building: { color: [0.24, 0.26, 0.33], minHeight: 14, maxHeight: 40, chunk: 16, thickness: 9 },
-  barrier: { color: [0.72, 0.58, 0.2], minHeight: 2.2, maxHeight: 2.6, chunk: 12, thickness: 3 },
+  barrier: { color: [0.76, 0.6, 0.18], minHeight: 2.4, maxHeight: 3.0, chunk: 10, thickness: 3 },
   rail: { color: [0.5, 0.53, 0.58], minHeight: 2.0, maxHeight: 2.2, chunk: 14, thickness: 2.2 },
-  rock: { color: [0.3, 0.28, 0.26], minHeight: 8, maxHeight: 20, chunk: 20, thickness: 8 },
-  fence: { color: [0.35, 0.36, 0.32], minHeight: 3.0, maxHeight: 3.4, chunk: 18, thickness: 2.4 },
+  // Canyon walls: tall, chunky and irregular, so the section reads as cut through rock.
+  rock: { color: [0.34, 0.29, 0.24], minHeight: 12, maxHeight: 30, chunk: 13, thickness: 10 },
+  fence: { color: [0.42, 0.44, 0.38], minHeight: 4.0, maxHeight: 5.2, chunk: 12, thickness: 2.4 },
   // Continuous, but low and far out at the edge of the run-off. Open means "a lot of
   // ground to drive on", not "you can leave the course" — gaps here let players skip
   // whole sections by cutting across country.
@@ -101,9 +125,18 @@ export function buildWorld(r: Renderer): BuiltWorld {
     minZ = Math.min(minZ, seg.az - reach, seg.bz - reach);
     maxZ = Math.max(maxZ, seg.az + reach, seg.bz + reach);
   }
+  /*
+   * Scorched rust rather than near-black.
+   *
+   * The wasteland is a real decision now — you crawl out there and bank no progress — and
+   * a decision you cannot see is not one you get to make. At the old value it was the
+   * same colour as the empty background, so the boundary between "road" and "the part
+   * that ends your run" was invisible until the HUD told you. Warm and dark reads as
+   * ground you should not be on without lighting up the night palette.
+   */
   const floor = r.createMesh(
     { kind: "plane", width: maxX - minX, depth: maxZ - minZ },
-    { color: [0.05, 0.055, 0.07], emissive: 0.3, isStatic: true },
+    { color: [0.12, 0.06, 0.045], emissive: 0.34, isStatic: true },
   );
   floor.position.set((minX + maxX) / 2, -8, (minZ + maxZ) / 2);
 
@@ -116,11 +149,25 @@ export function buildWorld(r: Renderer): BuiltWorld {
     // Slope makes the ribbon longer than its ground-plane footprint.
     const ribbonLength = seg.length * Math.hypot(1, seg.grade);
 
+    const tint = SECTION_TINT[seg.section] ?? [1, 1, 1];
+    const base = SURFACE_COLOR[seg.surface];
     const road = r.createMesh(
-      { kind: "box", width: seg.halfWidth * 2, height: seg.overlay ? 0.62 : 0.5, depth: ribbonLength },
-      { color: [...SURFACE_COLOR[seg.surface]], emissive: 0.3, isStatic: true },
+      { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: ribbonLength },
+      {
+        color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
+        emissive: 0.3,
+        isStatic: true,
+      },
     );
-    road.position.set(midX, midY + (seg.overlay ? 0.06 : 0), midZ);
+    /*
+     * Drop the slab so its *top face* lands on the height the terrain reports.
+     *
+     * `heightAt` returns the centre line of the segment, and the ribbon is a half-unit
+     * thick box centred on that, so the surface you can see was a quarter of a unit above
+     * the surface the simulation puts the car on. The car sits correctly and looks sunk:
+     * about half a wheel, everywhere, all the time.
+     */
+    road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), midZ);
     road.rotation.y = seg.heading;
     road.rotation.x = pitch;
 
@@ -153,15 +200,35 @@ export function buildWorld(r: Renderer): BuiltWorld {
       lip.rotation.y = seg.heading;
     }
 
+    /*
+     * A skirt hanging under the ribbon.
+     *
+     * Consecutive legs meet at an angle and at different heights, and the ribbon is a
+     * flat slab, so every joint and every ramp landing left a vertical slot you could see
+     * straight through to the void. Dropping a deep apron under each piece fills all of
+     * them at once, and reads as the ground the road is cut into.
+     */
+    if (!seg.overlay) {
+      const skirtDepth = 14;
+      const skirt = r.createMesh(
+        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2 + 1.5, height: skirtDepth, depth: ribbonLength * 1.04 },
+        { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
+      );
+      skirt.position.set(midX, midY - skirtDepth / 2 - ROAD_THICKNESS / 2, midZ);
+      skirt.rotation.y = seg.heading;
+      skirt.rotation.x = pitch;
+    }
+
     // Overlay strips are surface only: they change grip underfoot, nothing else.
     if (seg.overlay) continue;
     // Grass run-off either side, drawn flush with the road so the edge is not a cliff.
     if (seg.shoulder > 0) {
       const apron = r.createMesh(
-        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2, height: 0.34, depth: ribbonLength },
+        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2, height: APRON_THICKNESS, depth: ribbonLength },
         { color: [...SURFACE_COLOR.grass], emissive: 0.3, isStatic: true },
       );
-      apron.position.set(midX, midY - 0.09, midZ);
+      // Flush with the tarmac, a hair below so the kerb line still reads.
+      apron.position.set(midX, midY - APRON_THICKNESS / 2 - 0.04, midZ);
       apron.rotation.y = seg.heading;
       apron.rotation.x = pitch;
     }
@@ -170,6 +237,9 @@ export function buildWorld(r: Renderer): BuiltWorld {
     if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);
   }
+
+  buildJunctionCaps(r, segments, colliders, wallShades);
+  buildJointPatches(r, segments);
 
   // No gate: endless mode has no finish to build.
 
@@ -239,9 +309,15 @@ function buildWalls(
   // Right-hand perpendicular of the segment direction.
   const rx = seg.dz;
   const rz = -seg.dx;
-  const isOpen = seg.wall === "open";
-  // Open sections fence the far edge of the run-off, not the edge of the tarmac.
-  const offset = seg.halfWidth + (isOpen ? seg.shoulder : 0) + style.thickness / 2;
+  /*
+   * The wall always sits at the far edge of the run-off.
+   *
+   * It used to sit at the edge of the tarmac for every theme except the open one, which
+   * put the grass *outside* the fence — ground the terrain called drivable and the
+   * geometry made unreachable. Now the layout is uniform everywhere: road, kerb markers,
+   * a lane of grass, then the wall. There is nothing beyond it to drive to.
+   */
+  const offset = seg.halfWidth + seg.shoulder + style.thickness / 2;
 
   for (let side = -1; side <= 1; side += 2) {
     for (let i = 0; i < count; i++) {
@@ -286,6 +362,121 @@ function buildWalls(
         seg.heading,
         groundY + height,
       );
+    }
+  }
+}
+
+/**
+ * Fill the wedge between two consecutive road ribbons.
+ *
+ * The ribbons are rectangles, so where the course turns they meet along one edge and open
+ * a triangular notch on the outside of the bend — a jagged step with the void showing
+ * through it. A short patch laid over the joint at the mean heading covers it, and costs
+ * one flat box per junction.
+ */
+function buildJointPatches(r: Renderer, segments: CourseSegment[]): void {
+  const spine = segments.filter((s) => !s.branch && !s.overlay);
+
+  for (let i = 0; i < spine.length - 1; i++) {
+    const a = spine[i];
+    const b = spine[i + 1];
+    const turn = Math.abs(wrapTo(b.heading - a.heading));
+    if (turn < 0.03) continue;
+
+    const width = Math.max(a.halfWidth, b.halfWidth) * 2;
+    // Long enough to bridge the notch, which grows with both the width and the turn.
+    const depth = Math.max(3, width * Math.tan(Math.min(turn, 1.2) / 2) + 3);
+
+    const tint = SECTION_TINT[b.section] ?? [1, 1, 1];
+    const base = SURFACE_COLOR[b.surface];
+    const patch = r.createMesh(
+      { kind: "box", width, height: ROAD_THICKNESS, depth },
+      {
+        color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
+        emissive: 0.3,
+        isStatic: true,
+      },
+    );
+    // A hair above the ribbon: at the same height the two coplanar faces z-fight, which
+    // is the other half of what "the ground glitches between sections" looks like.
+    patch.position.set(a.bx, a.by - ROAD_THICKNESS / 2 + 0.03, a.bz);
+    patch.rotation.y = a.heading + wrapTo(b.heading - a.heading) / 2;
+    patch.rotation.x = -Math.atan((a.grade + b.grade) / 2);
+  }
+}
+
+/** Shortest signed angle, for averaging two headings. */
+function wrapTo(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
+ * Seal the wedge on the outside of every corner.
+ *
+ * Two consecutive legs each fence their own flank, and where they meet at an angle the
+ * two wall lines stop short of each other on the outside of the turn. The gap is
+ * proportional to how far out the wall sits, so it was a rounding error while walls hugged
+ * the tarmac and a driveable hole the moment they moved to the far edge of the run-off —
+ * measured, 14% of junction probes escaped through one.
+ *
+ * Each gap is bridged with short chunks, trimmed individually against other roads so that
+ * spur mouths and junctions stay open. A single long chunk would either seal an alley or
+ * leave the whole corner open.
+ */
+function buildJunctionCaps(
+  r: Renderer,
+  segments: CourseSegment[],
+  colliders: StaticCollider[],
+  wallShades: Record<string, Rgb[]>,
+): void {
+  const spine = segments.filter((s) => !s.branch && !s.overlay);
+
+  for (let i = 0; i < spine.length - 1; i++) {
+    const a = spine[i];
+    const b = spine[i + 1];
+    if (a.wall === "none" || b.wall === "none") continue;
+
+    const style = WALL_STYLE[a.wall as Exclude<WallStyle, "none">];
+    const shades = wallShades[a.wall];
+    const offA = a.halfWidth + a.shoulder + style.thickness / 2;
+    const offB = b.halfWidth + b.shoulder + WALL_STYLE[b.wall as Exclude<WallStyle, "none">].thickness / 2;
+
+    for (let side = -1; side <= 1; side += 2) {
+      // Wall endpoints either side of the joint, on this flank.
+      const ax = a.bx + a.dz * offA * side;
+      const az = a.bz - a.dx * offA * side;
+      const bx = b.ax + b.dz * offB * side;
+      const bz = b.az - b.dx * offB * side;
+
+      const dx = bx - ax;
+      const dz = bz - az;
+      const span = Math.hypot(dx, dz);
+      if (span < 1.5) continue;
+
+      const heading = Math.atan2(dx, dz);
+      const chunks = Math.max(1, Math.round(span / 8));
+      const chunkLen = span / chunks;
+
+      for (let c = 0; c < chunks; c++) {
+        const t = (c + 0.5) / chunks;
+        const cx = ax + dx * t;
+        const cz = az + dz * t;
+        // Leave openings where a road actually passes through, so spur mouths survive.
+        if (onOtherRoad(segments, a, cx, cz, JUNCTION_CLEARANCE)) continue;
+
+        const rnd = hash2(cx, cz);
+        const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
+        const mesh = r.createMesh(
+          { kind: "box", width: style.thickness, height, depth: chunkLen * 1.15 },
+          { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
+        );
+        const groundY = a.by;
+        mesh.position.set(cx, groundY + height / 2, cz);
+        mesh.rotation.y = heading;
+        addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
+      }
     }
   }
 }
@@ -359,12 +550,13 @@ function buildProps(
     const groundY = seg.ay + seg.grade * along;
     if (onOtherRoad(segments, seg, cx, cz, 2.0)) continue;
 
-    const size = seg.section === "offroad" ? 4.2 : 3.0;
-    const height = seg.section === "offroad" ? 3.4 : 2.0;
+    const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
+    const size = style.size;
+    const height = style.height;
 
     const mesh = r.createMesh(
       { kind: "box", width: size, height, depth: size * 1.4 },
-      { color: [0.9, 0.42, 0.08], emissive: 0.45, isStatic: true },
+      { color: [...style.color], emissive: 0.45, isStatic: true },
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
@@ -375,9 +567,24 @@ function buildProps(
 
 /** Distance between obstacles per section; sections not listed stay clear. */
 const PROP_SPACING: Partial<Record<SectionId, number>> = {
-  downtown: 90,
-  construction: 46,
-  offroad: 70,
-  final: 52,
+  downtown: 80,
+  construction: 40,
+  canyon: 52,
+  industrial: 44,
+  hills: 70,
+  // The widest section needs the most furniture: open road with nothing in it is the one
+  // place nothing can go wrong, and a stretch where nothing can go wrong is a rest.
+  offroad: 38,
+  final: 42,
+};
+
+/** Obstacle look per section, so a hazard tells you where you are. */
+const PROP_STYLE: Partial<Record<SectionId, { color: Rgb; size: number; height: number }>> = {
+  downtown: { color: [0.9, 0.42, 0.08], size: 3.0, height: 2.0 },
+  construction: { color: [0.95, 0.72, 0.1], size: 3.0, height: 2.2 },
+  canyon: { color: [0.36, 0.33, 0.3], size: 3.6, height: 3.0 },
+  industrial: { color: [0.2, 0.5, 0.55], size: 3.2, height: 2.6 },
+  offroad: { color: [0.55, 0.4, 0.22], size: 4.2, height: 3.4 },
+  final: { color: [0.9, 0.3, 0.2], size: 3.0, height: 2.2 },
 };
 

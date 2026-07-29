@@ -21,7 +21,7 @@
 
 import type { Renderer } from "../gfx/renderer";
 import { CONFIG, type PoliceRole } from "../config";
-import { headingOf } from "../math";
+import { forwardOf, headingOf, rightOf } from "../math";
 import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import type { Terrain } from "../world/terrain";
@@ -38,6 +38,7 @@ export class PoliceManager {
   /** Distance along the spine the squad currently plans against. */
   private goalProgress = POLICE_LOOKAHEAD;
   private speedBonus = -1;
+  private boxTimer = 0;
 
   constructor(r: Renderer, nav: NavGraph, private terrain: Terrain) {
     // Build the whole pool up front so meshes exist before the first frame; the director
@@ -104,6 +105,12 @@ export class PoliceManager {
       this.director(ctx, playerProgress, section);
     }
 
+    this.boxTimer -= dt;
+    if (this.boxTimer <= 0) {
+      this.boxTimer = CONFIG.police.shared.box.interval;
+      this.assignBox(ctx);
+    }
+
     for (const u of this.units) {
       if (u.active) u.update(dt, ctx);
     }
@@ -129,9 +136,20 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (!unit.active || unit.destroyed) continue;
       const unitProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
-      if (playerProgress - unitProgress > pacing.retireBehind) {
-        this.spawnUnit(unit, ctx, playerProgress);
+      if (playerProgress - unitProgress <= pacing.retireBehind) continue;
+      // Never while the player can see it.
+      if (this.onScreen(unit, ctx)) continue;
+
+      // A straggler whose class has since retired is stood down rather than recycled, so
+      // the wake loop below can replace it with something from the current tier.
+      // Recycling reuses the same car and never re-picks its class, so without this a
+      // patrol woken in section 2 was still being sent back at you in section 33 and
+      // retirement did nothing at all.
+      if (section > (esc.retire[unit.role] ?? 999)) {
+        unit.deactivate();
+        continue;
       }
+      this.spawnUnit(unit, ctx, playerProgress);
     }
 
     let active = this.activeCount;
@@ -145,7 +163,136 @@ export class PoliceManager {
       budget--;
     }
 
+    /*
+     * Ambush and side placements both tend to land in front, and the recycler pulls
+     * stragglers forward, so a deep section could end up with the entire squad ahead of
+     * the player and nothing at their back at all. Something is always behind you.
+     *
+     * Crucially this *moves* a car rather than adding one. Waking a fresh unit here ran
+     * every director tick with no reference to the headcount target, which is a spawn
+     * leak: section 3 was carrying fifteen cars against a target of six, and the whole
+     * difficulty curve went with it. The unit furthest up the road is the one doing least,
+     * so it is the one that gets sent back.
+     */
+    if (this.countBehind(ctx) < pacing.minBehind) {
+      const spare = this.furthestAhead(ctx);
+      if (spare) {
+        this.spawnOnRoute(spare, ctx, playerProgress, "behind");
+      } else if (active < target) {
+        const unit = this.pickDormant(section);
+        if (unit && this.spawnOnRoute(unit, ctx, playerProgress, "behind")) active++;
+      }
+    }
+
     this.applySectionSpeed(section);
+  }
+
+  /**
+   * Is this unit close enough and visible enough that moving it would be seen?
+   *
+   * Nothing the director does to a car should ever be witnessed. Recycling, retiring and
+   * rear-pressure repositioning are all teleports, and a teleport in view reads as the
+   * car vanishing — which is exactly what it is.
+   */
+  private onScreen(unit: PoliceCar, ctx: PursuitContext): boolean {
+    if (unit.distanceToPlayer(ctx.player) > CONFIG.police.pacing.keepVisibleRange) return false;
+    return ctx.world.lineOfSight(ctx.player.x, ctx.player.z, unit.vehicle.x, unit.vehicle.z);
+  }
+
+  /** Live units genuinely at your back, rather than alongside. */
+  private countBehind(ctx: PursuitContext): number {
+    const player = ctx.player;
+    const fwd = forwardOf(player.heading);
+    let n = 0;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const dx = u.vehicle.x - player.x;
+      const dz = u.vehicle.z - player.z;
+      const along = dx * fwd.x + dz * fwd.z;
+      if (along < -CONFIG.police.pacing.behindDistance) n++;
+    }
+    return n;
+  }
+
+  /** The unit furthest up the road, when there is no dormant one left to send. */
+  private furthestAhead(ctx: PursuitContext): PoliceCar | null {
+    const player = ctx.player;
+    const fwd = forwardOf(player.heading);
+    let best: PoliceCar | null = null;
+    let bestAlong = 0;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed || u.role === "rig") continue;
+      // Only ever move one the player is not watching.
+      if (this.onScreen(u, ctx)) continue;
+      const along = (u.vehicle.x - player.x) * fwd.x + (u.vehicle.z - player.z) * fwd.z;
+      if (along > bestAlong) {
+        bestAlong = along;
+        best = u;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Hand the nearest units a station around the player.
+   *
+   * Each slot goes to whichever unassigned unit is closest to it, so the box forms from
+   * whatever happens to be around rather than every car converging on the same corner.
+   * Rigs, wardens and anything mid-charge are left out: they have jobs that a station
+   * would only interrupt.
+   */
+  private assignBox(ctx: PursuitContext): void {
+    const cfg = CONFIG.police.shared.box;
+    const player = ctx.player;
+    const right = rightOf(player.heading);
+    const fwd = forwardOf(player.heading);
+
+    const available: PoliceCar[] = [];
+    for (const u of this.units) {
+      u.boxSlot = null;
+      if (!u.active || u.destroyed || u.disabled) continue;
+      if (u.role === "rig" || u.role === "warden") continue;
+      // A unit lying in wait is not available for a station.
+      if (u.ambushAt) continue;
+      if (u.distanceToPlayer(player) > cfg.range) continue;
+      available.push(u);
+    }
+
+    /*
+     * A player who has lost their speed is the moment the whole squad has been waiting
+     * for, and it should look like they know it. Below `slowPlayerSpeed` the front
+     * stations are filled first *by the units currently behind* — they have to overtake
+     * to take them, which is exactly the manoeuvre that was missing. Left to itself the
+     * tail simply kept pushing, which shoves the player along their own route and reads
+     * as help rather than as an arrest.
+     */
+    const slow = player.speed < cfg.slowPlayerSpeed;
+    const slots = cfg.slots.slice(0, cfg.maxAssigned);
+    const order = slow
+      ? [...slots].sort((s1, s2) => s2.z - s1.z).slice(0, cfg.slowFrontPriority).concat(
+          [...slots].sort((s1, s2) => s2.z - s1.z).slice(cfg.slowFrontPriority),
+        )
+      : slots;
+
+    const taken = new Set<PoliceCar>();
+    for (const slot of order) {
+      const wx = player.x + right.x * slot.x + fwd.x * slot.z;
+      const wz = player.z + right.z * slot.x + fwd.z * slot.z;
+
+      let best: PoliceCar | null = null;
+      let bestD = Infinity;
+      for (const u of available) {
+        if (taken.has(u)) continue;
+        const d = Math.hypot(u.vehicle.x - wx, u.vehicle.z - wz);
+        if (d < bestD) {
+          bestD = d;
+          best = u;
+        }
+      }
+      if (!best) break;
+      taken.add(best);
+      best.boxSlot = slot;
+    }
   }
 
   /** Weighted pick over dormant units whose class has unlocked for this section. */
@@ -156,6 +303,9 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (unit.active || unit.destroyed) continue;
       if (section < (esc.unlock[unit.role] ?? 0)) continue;
+      // Past its retirement the class is simply no longer dispatched. Headcount is
+      // capped, so the mix is what escalation has left to turn once the cap is reached.
+      if (section > (esc.retire[unit.role] ?? 999)) continue;
       const weight = esc.weight[unit.role] ?? 1;
       candidates.push({ unit, weight });
       total += weight;
@@ -243,9 +393,15 @@ export class PoliceManager {
       const z = spur.az + (spur.bz - spur.az) * t;
       if (this.occupied(x, z)) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
+      // The spur mouth is on the spine, so this should always hold - but a spur that has
+      // been clipped by other geometry is a car parked in a box, not an ambush.
+      if (!ctx.world.canReach(x, z, spur.ax, spur.az)) continue;
 
-      // Facing the mouth, so it comes out forwards rather than reversing into the road.
+      // Facing the mouth, so it comes out forwards rather than reversing into the road —
+      // and holding there until the player's own timing says go. `placeAt` resets the
+      // unit, so the ambush has to be armed after it.
       unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
+      unit.ambushAt = { x: spur.ax, z: spur.az };
       return true;
     }
     return false;
@@ -284,7 +440,11 @@ export class PoliceManager {
         const lateral = seg.halfWidth + seg.shoulder * 0.65;
         x = node.x + seg.dz * lateral * side;
         z = node.z - seg.dx * lateral * side;
+        // It has to be able to get *out* again. Run-off is fenced at its outer edge and
+        // split by the rails of neighbouring legs, so "clear ground with the player in
+        // sight" is not the same as "somewhere a car can drive from".
         if (!this.terrain.sample(x, z).onCourse) continue;
+        if (!ctx.world.canReach(x, z, node.x, node.z)) continue;
       }
 
       const d = Math.hypot(x - ctx.player.x, z - ctx.player.z);
@@ -312,18 +472,53 @@ export class PoliceManager {
   }
 
   /**
-   * The opening wave: cars already on you when the lights go green. Placed directly
-   * rather than through the spawn rules, because at the start line the player has made
-   * no progress and there is nowhere "behind" for the director to use.
+   * The opening wave: the cars that are already out looking for you when the lights go
+   * green. Placed directly rather than through the spawn rules, because at zero progress
+   * there is no "behind" for the director to work with.
+   *
+   * Every one of them is somewhere you have to *arrive* at — up the road, or waiting in
+   * an alley off it. None are on the start line. Two patrol cars sitting alongside you
+   * before you have touched a key reads as a bug rather than as pressure, and it was one:
+   * the two negative offsets this list used to carry both clamped to the first node on
+   * the spine, which is exactly where the player is.
    */
   private spawnOpeningWave(nav: NavGraph): void {
-    const wave = CONFIG.police.pacing.openingWave;
+    const pacing = CONFIG.police.pacing;
+    const wave = pacing.openingWave;
+    const patrols = this.units.filter((u) => u.role === "patrol");
     let placed = 0;
-    for (const unit of this.units) {
-      if (placed >= wave.length) break;
-      if (unit.role !== "patrol") continue;
-      const node = nav.nodeAtProgress(wave[placed]);
-      unit.placeAt(node.x, node.z, node.progress < 0 ? 0 : 0, node.y);
+
+    // Anyone waiting in an early spur comes at you from the side rather than head-on,
+    // which is the whole reason the spurs exist.
+    const [spurFrom, spurTo] = pacing.openingSpurRange;
+    const nearSpurs = SPURS.filter(
+      (sp) => sp.progress > spurFrom && sp.progress < spurTo,
+    ).slice(0, pacing.openingAmbushes);
+
+    for (const spur of nearSpurs) {
+      const unit = patrols[placed];
+      if (!unit) break;
+      const t = pacing.ambushDepth;
+      const x = spur.ax + (spur.bx - spur.ax) * t;
+      const z = spur.az + (spur.bz - spur.az) * t;
+      unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
+      placed++;
+    }
+
+    for (const offset of wave) {
+      const unit = patrols[placed];
+      if (!unit) break;
+      const node = nav.nodeAtProgress(offset);
+      const next = nav.nodeAtProgress(offset + 40);
+      /*
+       * Facing *up* the course, driving away from you.
+       *
+       * They turn and engage the moment you are on them, so the pressure is unchanged —
+       * but you arrive behind them rather than into them. Head-on was survivable on a
+       * fifty-unit road and is a wall on an eighteen-unit one: three cars abreast is the
+       * whole street, and a run that begins by driving into it is not a chase.
+       */
+      unit.placeAt(node.x, node.z, headingOf(next.x - node.x, next.z - node.z), node.y);
       placed++;
     }
   }
@@ -342,6 +537,30 @@ export class PoliceManager {
       if (dx * dx + dz * dz <= r2) n++;
     }
     return n;
+  }
+
+  /**
+   * How many directions around a point are blocked by a live unit.
+   *
+   * The circle is cut into `enclosureSectors` wedges and each is marked by the nearest
+   * unit inside `enclosureRadius`. This is the whole loss condition: it answers "is there
+   * a way out of here", where counting cars only ever answered "how many are touching me".
+   */
+  enclosure(x: number, z: number): number {
+    const run = CONFIG.run;
+    const covered = new Array<boolean>(run.enclosureSectors).fill(false);
+    const r2 = run.enclosureRadius * run.enclosureRadius;
+
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const dx = u.vehicle.x - x;
+      const dz = u.vehicle.z - z;
+      if (dx * dx + dz * dz > r2) continue;
+      let a = Math.atan2(dx, dz) / (Math.PI * 2);
+      a -= Math.floor(a);
+      covered[Math.min(run.enclosureSectors - 1, Math.floor(a * run.enclosureSectors))] = true;
+    }
+    return covered.reduce((n, c) => n + (c ? 1 : 0), 0);
   }
 
   syncViews(dt: number, elapsed: number): void {

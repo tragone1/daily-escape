@@ -15,9 +15,14 @@ import { clamp, dist, forwardOf, headingOf, wrapAngle } from "../math";
 import { CarView, policeStyle } from "../vehicle/carView";
 import { Vehicle, type VehicleInput } from "../vehicle/vehicle";
 import type { NavGraph, NavNode } from "../world/navGraph";
+import { interceptPoint } from "./behaviors";
 import {
+  boxGoal,
   goalFor,
+  rigGoal,
   type BehaviorTuning,
+  type BoxSlot,
+  type Goal,
   type PursuitContext,
   type WardenAttack,
 } from "./behaviors";
@@ -35,6 +40,8 @@ const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
   // Hot amber on charcoal: the keeper has to be identifiable at a glance, at speed,
   // against a night palette — you need to know which one you cannot simply shove aside.
   warden: [1.0, 0.5, 0.02],
+  // Hazard yellow on charcoal, like a works vehicle. It is not chasing anybody.
+  rig: [0.98, 0.78, 0.06],
 };
 
 export class PoliceCar {
@@ -78,6 +85,23 @@ export class PoliceCar {
 
   private input: VehicleInput = { throttle: 0, brake: 0, steer: 0, boost: false };
 
+  /** Station handed out by the director; null means "chase normally". */
+  boxSlot: BoxSlot | null = null;
+  /** While set, the unit is holding in a spur waiting to launch. The mouth it faces. */
+  ambushAt: { x: number; z: number } | null = null;
+  private ambushWait = 0;
+  /** Player speed as read once on approach; the launch is timed against this, not live. */
+  private ambushReadSpeed = 0;
+  /** Mouth of the spur it sprang from, held while it is still steering the strike. */
+  private springFrom: { x: number; z: number } | null = null;
+  /** How far the station has been closed in, 0..1. */
+  private boxPress = 0;
+
+  /** RIG: the spot it is blocking, and when it may pick a different one. */
+  private rigPost: NavNode | null = null;
+  private rigTimer = 0;
+  private rigScore = Infinity;
+
   /** Units stay dormant until the director wakes them. */
   active = false;
 
@@ -114,10 +138,14 @@ export class PoliceCar {
     this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
     this.vehicle.contactBoost = roleCfg.contactBoost ?? 1;
     this.baseContactBoost = this.vehicle.contactBoost;
+    this.vehicle.isPolice = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
     this.view = new CarView(
       r,
-      policeStyle(ROLE_ACCENT[role], role === "warden" || role === "juggernaut"),
+      policeStyle(
+        ROLE_ACCENT[role],
+        role === "warden" || role === "juggernaut" || role === "rig",
+      ),
       params.halfLength,
       params.halfWidth,
     );
@@ -125,9 +153,9 @@ export class PoliceCar {
 
   /** The warden sits on a wider post than the light blockers do. */
   private get parkRadius(): number {
-    return this.role === "warden"
-      ? CONFIG.police.warden.parkRadius
-      : CONFIG.police.blocker.parkRadius;
+    if (this.role === "warden") return CONFIG.police.warden.parkRadius;
+    if (this.role === "rig") return CONFIG.police.rig.parkRadius;
+    return CONFIG.police.blocker.parkRadius;
   }
 
   reset(): void {
@@ -144,6 +172,15 @@ export class PoliceCar {
     this.chargeTimer = 0;
     this.chargeCooldown = 0;
     this.charging = false;
+    this.boxSlot = null;
+    this.boxPress = 0;
+    this.ambushAt = null;
+    this.ambushWait = 0;
+    this.ambushReadSpeed = 0;
+    this.springFrom = null;
+    this.rigPost = null;
+    this.rigTimer = 0;
+    this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
     this.vehicle.drive = 1;
     this.disabledTimer = 0;
@@ -155,6 +192,8 @@ export class PoliceCar {
       this.wrecked = false;
       this.view.setWrecked(false);
     }
+    const roleCfg = CONFIG.police[this.role] as { pushResistance?: number };
+    this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
   }
 
   distanceToPlayer(player: Vehicle): number {
@@ -183,6 +222,14 @@ export class PoliceCar {
   destroy(): void {
     if (this.wrecked) return;
     this.wrecked = true;
+    // A hulk still has mass, but nobody is holding it in place any more. Without this a
+    // wrecked heavy was a permanent wall, so spending the rocket on a roadblock could
+    // build you a better one.
+    // Set so that mass * pushResistance lands on `wreckMass` whatever the class weighed.
+    // A plain multiplier left the eight-tonne rig heavier than the player even at a tenth,
+    // so blowing up a roadblock produced a roadblock.
+    this.vehicle.pushResistance =
+      CONFIG.player.rocket.wreckMass / Math.max(0.1, this.vehicle.params.mass);
     this.disabledTimer = 0;
     this.path = [];
     this.committed = null;
@@ -201,6 +248,14 @@ export class PoliceCar {
       this.input.steer = 0;
       this.input.boost = false;
       v.update(this.input, dt, ctx.terrain);
+      // Scrub the blast off hard, but only the blast: below `wreckCoastSpeed` this stops
+      // applying, so a hulk the player is shoving aside still moves freely.
+      const rocket = CONFIG.player.rocket;
+      if (v.speed > rocket.wreckCoastSpeed) {
+        const k = Math.exp(-rocket.wreckDrag * dt);
+        v.vx *= k;
+        v.vz *= k;
+      }
       return;
     }
 
@@ -221,17 +276,127 @@ export class PoliceCar {
       return;
     }
 
+    // Waiting in an alley: sit still, engine running, until the moment is right.
+    if (this.ambushAt) {
+      this.ambushWait += dt;
+      if (this.readyToSpring(ctx)) {
+        this.springFrom = this.ambushAt;
+        this.ambushAt = null;
+      } else {
+        this.input.throttle = 0;
+        this.input.brake = v.speed > 1 ? 1 : 0;
+        this.input.steer = 0;
+        this.input.boost = false;
+        this.view.setCharge(0);
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
+    }
+
     this.replanTimer -= dt;
     this.repostTimer -= dt;
     this.updateCharge(dt, ctx);
     this.updateCatchUp(ctx);
     if (this.role === "warden") this.updateWardenAttack(dt, ctx);
 
-    // A committed charge overrides goal selection entirely: it is already pointed at the
-    // player and it is not going to reconsider halfway through.
-    const goal = this.charging
-      ? ({ kind: "direct", x: ctx.player.x + ctx.player.vx * 0.3, z: ctx.player.z + ctx.player.vz * 0.3 } as const)
-      : goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
+    let goal: Goal;
+    /** Pace to hold while boxing; Infinity when not on a station. */
+    let boxSpeedLimit = Infinity;
+
+    /*
+     * Still coming out of the alley: steer the strike rather than committing to the guess.
+     *
+     * A timed launch is a prediction, and a prediction is usually a near miss — it arrives
+     * behind the player, or ahead of them, and either way they drive past. Homing for the
+     * first stretch converts the guess into contact, and because it aims at where the
+     * player *will* be rather than where they are, that contact lands on the flank at
+     * whatever speed they happen to be doing. It is also what lets the ambush work on
+     * someone who boosts after it has already committed.
+     */
+    if (this.springFrom) {
+      const cfg = CONFIG.police.pacing.ambush;
+      if (dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
+        this.springFrom = null;
+      } else {
+        /*
+         * Aim *through* them, not at them.
+         *
+         * An intercept point sits where the player will be, and arriving exactly there
+         * means arriving alongside — a scrape, and then you are past each other. Aiming a
+         * few metres beyond turns the same approach into a T-bone that carries the player
+         * sideways, which is the whole reason the spurs exist.
+         */
+        const lead = interceptPoint(v, ctx.player, 1.4);
+        const tx = lead.x - v.x;
+        const tz = lead.z - v.z;
+        const tl = Math.hypot(tx, tz) || 1;
+        const aim = {
+          x: lead.x + (tx / tl) * CONFIG.police.pacing.ambush.strikeDepth,
+          z: lead.z + (tz / tl) * CONFIG.police.pacing.ambush.strikeDepth,
+        };
+        this.input.throttle = 1;
+        this.input.brake = 0;
+        this.input.steer = clamp(
+          wrapAngle(headingOf(aim.x - v.x, aim.z - v.z) - v.heading) /
+            CONFIG.police.shared.steerFullLockAngle,
+          -1,
+          1,
+        );
+        this.input.boost = false;
+        v.drive = 1 + cfg.launchSpeedBonus;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
+    }
+
+    if (this.charging) {
+      // A committed charge overrides everything: it is already pointed at the player and
+      // it is not going to reconsider halfway through.
+      goal = { kind: "direct", x: ctx.player.x + ctx.player.vx * 0.3, z: ctx.player.z + ctx.player.vz * 0.3 };
+    } else if (this.role === "rig") {
+      this.updateRigPost(dt, ctx);
+      goal = rigGoal(ctx, this.rigPost);
+    } else if (this.boxSlot) {
+      // On a station: hold it, then close it.
+      const box = CONFIG.police.shared.box;
+      const target = boxGoal(ctx, this.boxSlot, this.boxPress);
+      const atStation = dist(v.x, v.z, target.x, target.z) < box.pressRange;
+      // A slow player gets squeezed harder and further: the box shutting is the cost of
+      // having lost your speed, not a separate thing that happens to you.
+      const slow = clamp(1 - ctx.player.speed / box.slowPlayerSpeed, 0, 1);
+      const rate = box.pressRate * (1 + slow * 1.5);
+      const ceiling = box.pressMax + slow * box.slowPressBonus;
+      this.boxPress = clamp(this.boxPress + (atStation ? rate : -rate) * dt, 0, Math.min(0.92, ceiling));
+      goal = boxGoal(ctx, this.boxSlot, this.boxPress);
+
+      /*
+       * Match the player's pace rather than charging the station.
+       *
+       * This is what makes the front of the box a brake-check instead of a car that
+       * overshoots and has to come back. A unit ahead of you deliberately runs a little
+       * *slower* than you and lets you close on it; one behind runs a little faster and
+       * pushes. Without it the whole box read as ordinary traffic, because everybody
+       * arrived at their spot flat out and immediately left it again.
+       */
+      /*
+       * Pace matching only applies once you have *reached* your station.
+       *
+       * This was a real bug and the reason "they just push me from behind": a unit given a
+       * front station while still behind the player had its speed capped at 0.9x the
+       * player's, so it could never overtake, and spent the whole encounter shoving them
+       * along from the rear. Until it is in position it runs free — overtaking is the job.
+       */
+      const f = forwardOf(ctx.player.heading);
+      const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
+      const wantsFront = this.boxSlot.z > 0;
+      const inPosition = wantsFront ? lead > this.boxSlot.z * 0.6 : lead < this.boxSlot.z * 0.6 + 2;
+      boxSpeedLimit = inPosition
+        ? Math.max(box.minPace, ctx.player.speed * (wantsFront ? box.leadPace : box.chasePace))
+        : Infinity;
+    } else {
+      this.boxPress = 0;
+      goal = goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
+    }
 
     let steerTargetX: number;
     let steerTargetZ: number;
@@ -271,15 +436,88 @@ export class PoliceCar {
         // Slow down on the approach. Arriving at 40+ meant sailing straight past the
         // post and then having to turn around, which repeatedly wedged units against
         // walls and took them out of the run entirely.
-        const cfg = CONFIG.police.blocker;
+        const cfg = this.role === "rig" ? CONFIG.police.rig : CONFIG.police.blocker;
         if (parkDistance < cfg.approachDistance) {
           cornerLimit = Math.min(cornerLimit, cfg.approachSpeed);
         }
       }
     }
 
-    this.driveToward(steerTargetX, steerTargetZ, cornerLimit, parkDistance, dt, ctx);
+    /*
+     * Closing for a hit: match pace and turn in, rather than driving through at full tilt.
+     */
+    let strikeLimit = Infinity;
+    if (goal.kind === "direct" && this.role !== "rig") {
+      const st = CONFIG.police.shared.strike;
+      const d = this.distanceToPlayer(ctx.player);
+      if (d < st.range) {
+        const f = forwardOf(ctx.player.heading);
+        const playerAlong = ctx.player.vx * f.x + ctx.player.vz * f.z;
+        // Only a unit that has genuinely got past and is pulling away is held back.
+        // Capping anyone in range instead cost a third of all contact: reined in, they
+        // stopped arriving at all.
+        const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
+        if (lead > -st.chaseGrace) {
+          strikeLimit = Math.max(st.minPace, playerAlong + st.maxOvertake);
+        }
+
+        // The last car length is a turn into them, not a pass beside them: aim at a point
+        // beyond the player, on the far side from us.
+        if (d < st.turnInRange) {
+          const nx = (ctx.player.x - v.x) / Math.max(1, d);
+          const nz = (ctx.player.z - v.z) / Math.max(1, d);
+          steerTargetX = ctx.player.x + nx * st.turnInDepth;
+          steerTargetZ = ctx.player.z + nz * st.turnInDepth;
+        }
+      }
+    }
+
+    this.driveToward(
+      steerTargetX,
+      steerTargetZ,
+      Math.min(cornerLimit, boxSpeedLimit, strikeLimit),
+      parkDistance,
+      dt,
+      ctx,
+    );
     v.update(this.input, dt, ctx.terrain);
+    // Swing across as soon as it has effectively arrived, rather than only inside the
+    // park radius: a rig that coasts to a stop a metre short is still a roadblock, and it
+    // should look like one.
+    if (this.role === "rig" && v.speed < 4 && parkDistance < this.parkRadius * 1.8) {
+      this.parkBroadside(dt, ctx);
+    }
+  }
+
+  /**
+   * Is the player close enough that pulling out now puts us across their nose?
+   *
+   * Both sides of the comparison are estimates of time-to-the-mouth: theirs from their
+   * current speed, ours from a standing start. Matching the two is what turns a car
+   * leaving a side road into an interception rather than an obstacle already spent.
+   */
+  private readyToSpring(ctx: PursuitContext): boolean {
+    const cfg = CONFIG.police.pacing.ambush;
+    if (this.ambushWait > cfg.maxWait) return true;
+
+    const mouth = this.ambushAt as { x: number; z: number };
+    const v = this.vehicle;
+    const player = ctx.player;
+
+    const toPlayer = dist(player.x, player.z, mouth.x, mouth.z);
+    // Past us already: come out and give chase rather than sitting in a dead end.
+    const closing = (mouth.x - player.x) * player.vx + (mouth.z - player.z) * player.vz > 0;
+    if (!closing) return toPlayer < cfg.releaseBehindRange;
+
+    // Read their pace once, on the way in, and commit to it.
+    if (this.ambushReadSpeed === 0 && toPlayer < cfg.readRange) {
+      this.ambushReadSpeed = player.speed;
+    }
+    const assumed = this.ambushReadSpeed || player.speed;
+
+    const ourEta = dist(v.x, v.z, mouth.x, mouth.z) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
+    const theirEta = toPlayer / Math.max(8, assumed);
+    return theirEta <= ourEta + cfg.leadTime;
   }
 
   /**
@@ -355,6 +593,71 @@ export class PoliceCar {
     const d = this.distanceToPlayer(player);
     const t = clamp((d - cfg.nearDistance) / (cfg.farDistance - cfg.nearDistance), 0, 1);
     v.drive = 1 + t * cfg.maxBonus + charge;
+  }
+
+  /**
+   * Pick somewhere worth blocking: the narrowest point on the player's route inside the
+   * scouting window.
+   *
+   * Width is the whole heuristic, and it is the difference between a roadblock and a
+   * parked lorry. Nine metres across the middle of the wide off-road section leaves two
+   * lanes either side and reads as scenery; the same nine metres across a downtown block
+   * is most of the road.
+   */
+  private updateRigPost(dt: number, ctx: PursuitContext): void {
+    const cfg = CONFIG.police.rig;
+    this.rigTimer -= dt;
+    const playerProgress = ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+    // A block the player has already driven past is not a block. Re-scout immediately
+    // rather than sitting behind them until the timer happens to come round.
+    const passed =
+      this.rigPost !== null &&
+      ctx.terrain.progressAt(this.rigPost.x, this.rigPost.z) < playerProgress + 20;
+    if (this.rigPost && this.rigTimer > 0 && !passed) return;
+    if (passed) this.rigScore = Infinity;
+    this.rigTimer = cfg.repickInterval;
+    let best: NavNode | null = null;
+    let bestScore = Infinity;
+
+    for (let d = cfg.scoutMin; d <= cfg.scoutMax; d += 14) {
+      const node = ctx.nav.nodeAtProgress(playerProgress + d);
+      const seg = ctx.terrain.sample(node.x, node.z).segment;
+      // Real room to drive through, not the section's nominal width - the latter barely
+      // varies inside a section, so scouting on it chose spots no better than at random.
+      const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
+      // Somewhere it can block, not somewhere it can seal.
+      if (width < cfg.minBlockWidth) continue;
+      // Width dominates, heavily: the whole unit is the choice of where to stand, and a
+      // rig across the wide off-road flats is scenery. Distance is only a tiebreak, but
+      // it has to count for something, because a rig that never arrives has blocked
+      // nothing either.
+      const score = width * 2 + d * 0.04 + (width < cfg.preferredWidth ? -25 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    }
+    // Do not abandon a good spot for a marginally better one once committed.
+    if (best && (!this.rigPost || bestScore < this.rigScore - 6)) {
+      this.rigPost = best;
+      this.rigScore = bestScore;
+    }
+  }
+
+  /**
+   * Swing broadside once parked. A rig pointing down the road is a car in your lane; a
+   * rig across it is a wall.
+   */
+  private parkBroadside(dt: number, ctx: PursuitContext): void {
+    const v = this.vehicle;
+    const seg = ctx.terrain.sample(v.x, v.z).segment;
+    // Either perpendicular will do; take whichever is the shorter swing from here.
+    const across = seg.heading + Math.PI / 2;
+    const a = wrapAngle(across - v.heading);
+    const b = wrapAngle(across + Math.PI - v.heading);
+    const err = Math.abs(a) < Math.abs(b) ? a : b;
+    const step = CONFIG.police.rig.turnRate * dt;
+    v.heading += clamp(err, -step, step);
   }
 
   /**
@@ -454,10 +757,23 @@ export class PoliceCar {
     }
 
     // Wandering off the drivable ribbon counts double: a unit ploughing through the
-    // scenery is both useless and ugly, so it gets recycled quickly.
-    if (!ctx.terrain.sample(v.x, v.z).onCourse) this.stuckTotal += dt * 2;
+    // scenery is both useless and ugly, so it gets recycled quickly. Unless the player is
+    // out there too — following someone into the wasteland is the job, and recycling
+    // units for doing it would hand the player a way to shake the whole squad.
+    if (!ctx.player.offCourse && !ctx.terrain.sample(v.x, v.z).onCourse) {
+      this.stuckTotal += dt * 2;
+    }
 
-    if (this.stuckTotal > shared.respawnAfterStuck) {
+    /*
+     * Teleporting a wedged unit back into play is fine when nobody is looking and
+     * indefensible when they are. In view, it keeps working the reverse-out instead — a
+     * car struggling against a wall is at worst untidy, where the same car blinking out
+     * of existence is plainly broken.
+     */
+    const watched =
+      this.distanceToPlayer(ctx.player) < CONFIG.police.pacing.keepVisibleRange &&
+      ctx.world.lineOfSight(ctx.player.x, ctx.player.z, v.x, v.z);
+    if (this.stuckTotal > shared.respawnAfterStuck && !watched) {
       this.respawn(ctx);
       return;
     }

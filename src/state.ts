@@ -3,8 +3,9 @@
  *
  * There is no finish. A run ends exactly one way — the police pin you long enough to make
  * the arrest — and the only question is how far up the course you got before they managed
- * it. Score is therefore *furthest forward progress*, never distance driven: doubling
- * back, circling or taking the scenic line earns nothing.
+ * it. Score is therefore *furthest forward progress on the course*, never distance
+ * driven: doubling back, circling, taking the scenic line, or cutting across the
+ * wasteland outside the barriers all earn nothing.
  */
 
 import { CONFIG } from "./config";
@@ -31,6 +32,8 @@ export class GameState {
   worstCapture = 0;
   /** Best score seen on this device. */
   best = 0;
+  /** Smoothed speed, so a single bounce off a bumper does not read as an escape. */
+  private heldSpeed = 0;
 
   constructor() {
     this.best = this.loadBest();
@@ -75,6 +78,7 @@ export class GameState {
     this.maxProgress = 0;
     this.section = 0;
     this.worstCapture = 0;
+    this.heldSpeed = 0;
   }
 
   /**
@@ -82,20 +86,69 @@ export class GameState {
    * closely surrounded for a sustained period — a single hard hit never ends a run,
    * and breaking free drains the meter faster than it fills.
    */
-  update(dt: number, playerSpeed: number, policeNear: number, progress: number): void {
+  update(
+    dt: number,
+    playerSpeed: number,
+    sectors: number,
+    progress: number,
+    onCourse: boolean,
+  ): void {
     if (this.over) return;
 
     this.elapsed += dt;
     this.progress = progress;
-    if (progress > this.maxProgress) {
+    /*
+     * Ground gained off the course does not count.
+     *
+     * Progress is measured by projecting onto the nearest spine segment, so driving
+     * cross-country past the barriers used to bank distance exactly as if you had driven
+     * the road. Combined with the backstop putting you back afterwards, leaving the
+     * course was strictly better than staying on it. Freezing the counter out there is
+     * what makes the wasteland a cost rather than a shortcut.
+     */
+    if (onCourse && progress > this.maxProgress) {
       this.maxProgress = progress;
       this.section = sectionIndexAt(progress);
     }
 
     const run = CONFIG.run;
-    const pinned = policeNear > 0 && playerSpeed < run.captureSpeed;
+    /*
+     * What counts as pinned rises with the crowd.
+     *
+     * Up to `captureCrowdFloor` cars only have you if you are nearly stopped. Ten packed
+     * around you have you at a good deal more than that — you are not escaping, you are
+     * being carried. A flat threshold was why a player could be visibly buried in police
+     * and drive out anyway: every ram bumped them back over the line, so the meter never
+     * filled however bad it looked.
+     *
+     * The floor matters as much as the slope. Scaling from the second car made ordinary
+     * early-section traffic lethal; nothing should change until you are actually swarmed.
+     */
+    /*
+     * Smooth the speed before testing it.
+     *
+     * Being surrounded is a constant sequence of impacts, and every impact spikes your
+     * speed for a few frames. Tested instantaneously, that read as "escaping" over and
+     * over. What matters is whether you are getting anywhere, not whether you are moving.
+     */
+    this.heldSpeed += (playerSpeed - this.heldSpeed) * Math.min(1, dt / run.captureSpeedSmoothing);
+
+    /*
+     * Pinned means *enclosed*, not crowded.
+     *
+     * `sectors` is how many directions around the player are blocked by a live unit. Below
+     * the floor nothing happens however slow you are: two heavies leaning on your bumper
+     * is two cars and one direction, and the road ahead is still open. At the ceiling the
+     * meter runs flat out, because there is genuinely nowhere to go.
+     */
+    const enclosed = Math.max(0, sectors - run.minSectorsToPin);
+    const span = Math.max(1, run.fullPinSectors - run.minSectorsToPin);
+    const squeeze = clamp(enclosed / span, 0, 1);
+    const pinned = sectors > run.minSectorsToPin && this.heldSpeed < run.captureSpeed;
     // Being swarmed closes the run out fast; a single car nudging you does not.
-    const crowd = 1 + run.captureCrowdBonus * Math.max(0, policeNear - 1);
+    // How fast the arrest closes scales with how boxed in you are, so the last gap
+    // shutting is the moment it becomes urgent.
+    const crowd = 0.55 + squeeze * run.captureCrowdBonus;
     const rate = 1 / run.captureDuration;
     this.captureProgress = clamp(
       this.captureProgress + (pinned ? rate * crowd : -rate * run.captureRecovery) * dt,

@@ -60,6 +60,21 @@ export class Vehicle {
 
   /** Surface currently under the wheels, for HUD/audio/FX. */
   surface: Surface = "asphalt";
+  /** True while past the course boundary, in the wasteland. */
+  offCourse = false;
+  /**
+   * Police, rather than the player. Two things hang off it.
+   *
+   * The wasteland penalty does not apply to them: it exists to stop the player using the
+   * black as an escape hatch, and applying it to the pursuit as well simply moved the
+   * stalemate outside the barriers — everyone crawled, so leaving cost nothing.
+   *
+   * And contact between two of them is heavily damped, so the heaviest units in the game
+   * stop scattering their own side every time they arrive.
+   */
+  isPolice = false;
+
+  restraint = 1;
   /** Rise per unit travelled forward: positive uphill, negative downhill. */
   climb = 0;
   /** Rise per unit travelled to the right — the cross-slope the car sits across. */
@@ -168,6 +183,7 @@ export class Vehicle {
     this.climb = 0;
     this.bank = 0;
     this.surface = "asphalt";
+    this.offCourse = false;
     this.tireGrip = 1;
     this.tireSpeed = 1;
     this.drive = 1;
@@ -193,6 +209,7 @@ export class Vehicle {
     const ground = terrain.sample(this.x, this.z);
     const raw = t.surfaces[ground.surface];
     this.surface = ground.surface;
+    this.offCourse = !ground.onCourse;
 
     // --- Boost timers ------------------------------------------------------
     let boostAccel = 0;
@@ -227,9 +244,32 @@ export class Vehicle {
       maxSpeed: toward1(raw.maxSpeed),
       accel: toward1(raw.accel),
     };
+    /*
+     * Off the course entirely. Applied after the bypass above, so boost cannot cancel it:
+     * the wasteland is not a surface you can power through, it is somewhere you should
+     * not be. Tyre damage is outside the bypass for the same reason.
+     */
+    if (this.offCourse && !this.isPolice) {
+      const off = t.offCourse;
+      surf.grip *= off.grip;
+      surf.drag *= off.drag;
+      surf.accel *= off.accel;
+      surf.maxSpeed *= off.maxSpeed;
+    }
+
+    /*
+     * Boost claws back part of any tyre damage. The strip still costs you dearly, but
+     * spending the charge to drag yourself out from under one is a real option rather
+     * than a rounding error.
+     */
+    const tyre =
+      this.boostTime > 0 && this.boostParams
+        ? this.tireSpeed + (1 - this.tireSpeed) * CONFIG.player.boost.damageBypass
+        : this.tireSpeed;
+
     let maxSpeed = p.maxSpeed * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
-    maxSpeed *= this.tireSpeed * this.drive;
+    maxSpeed *= tyre * this.drive;
 
     // --- Steering ----------------------------------------------------------
     this.steerInput += (clamp(input.steer, -1, 1) - this.steerInput) * damp(p.steerInputResponse, dt);
@@ -270,7 +310,7 @@ export class Vehicle {
         const headroom = clamp((1 - vf / maxSpeed) * 1.9, 0, 1);
         vf +=
           (p.accel * surf.accel * input.throttle + boostAccel) *
-          this.tireSpeed *
+          tyre *
           this.drive *
           headroom *
           dt;
@@ -298,7 +338,7 @@ export class Vehicle {
       if (vf > 0) vf = Math.max(0, vf - rolling);
       else if (vf < 0) vf = Math.min(0, vf + rolling);
 
-      vf = clamp(vf, -p.maxReverseSpeed, maxSpeed);
+      vf = this.easeToLimit(vf, maxSpeed, p.maxReverseSpeed, dt);
 
       // --- Grip / drift ------------------------------------------------------
       const hardTurn = Math.abs(this.steerInput) > p.driftSteerThreshold;
@@ -307,7 +347,24 @@ export class Vehicle {
       vl *= Math.exp(-base * surf.grip * this.tireGrip * dt);
     } else {
       // Airborne: no traction, no engine. Momentum carries the jump.
-      vf = clamp(vf, -p.maxReverseSpeed, maxSpeed + 10);
+      vf = this.easeToLimit(vf, maxSpeed + 10, p.maxReverseSpeed, dt);
+    }
+
+    /*
+     * Oil brings the car round.
+     *
+     * Grip alone only makes it understeer in a straightish line. Converting some of the
+     * sideways slide into yaw is what lets it actually spin, so driving hard - or
+     * boosting - on a slick has a genuine worst case rather than just being vague.
+     */
+    if (this.tireGrip < 0.2 && !this.airborne) {
+      const oil = CONFIG.police.hazards.oil;
+      const bite = 1 - this.tireGrip / 0.2;
+      this.yawRate = clamp(
+        this.yawRate + vl * oil.spinPerSlip * bite * dt,
+        -oil.maxSpin,
+        oil.maxSpin,
+      );
     }
 
     this.slip = vl;
@@ -334,6 +391,26 @@ export class Vehicle {
     this.leanPitch += (pitchTarget - this.leanPitch) * k;
   }
 
+  /**
+   * Hold forward speed inside the engine's range — but as a ceiling the car settles back
+   * to, not a wall it is snapped against.
+   *
+   * The difference matters entirely because of external impulses. A hard clamp deleted a
+   * rocket blast's forward and backward components on the frame they were applied, so a
+   * detonation could throw a car sideways and nowhere else, and wrecks slumped in place
+   * as obstacles. Easing lets the blast land and then bleed away.
+   */
+  private easeToLimit(vf: number, maxSpeed: number, maxReverse: number, dt: number): number {
+    const t = CONFIG.terrain;
+    // Damaged tyres bleed the excess away fast; an undamaged car coasts down gently so a
+    // blast or a heavy ram still carries.
+    const rate = this.tireSpeed < 0.99 ? t.damagedOverspeedDecay : t.overspeedDecay;
+    const decay = Math.exp(-rate * dt);
+    if (vf > maxSpeed) return maxSpeed + (vf - maxSpeed) * decay;
+    if (vf < -maxReverse) return -maxReverse + (vf + maxReverse) * decay;
+    return vf;
+  }
+
   /** Ramp launches, gravity and touchdown. */
   private updateVertical(
     dt: number,
@@ -356,7 +433,9 @@ export class Vehicle {
       );
       if (launch > 0) {
         this.airborne = true;
-        this.vy = Math.min(launch, t.maxLaunchSpeed);
+        // Boosting into the lip is the difference between a hop and a jump.
+        const boosted = this.boostTime > 0 ? t.boostLaunchBonus : 1;
+        this.vy = Math.min(launch * boosted, t.maxLaunchSpeed);
         this.y = groundHere;
         this.justLaunched = true;
         return;

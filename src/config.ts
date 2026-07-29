@@ -14,7 +14,8 @@ export type PoliceRole =
   | "heavy"
   | "elite"
   | "juggernaut"
-  | "warden";
+  | "warden"
+  | "rig";
 
 /** Terrain surface tuning. Every value is a plain multiplier so effects stay readable. */
 export interface SurfaceParams {
@@ -69,8 +70,10 @@ export interface VehicleParams {
 const PLAYER_VEHICLE: VehicleParams = {
   accel: 36,
   maxSpeed: 46,
-  reverseAccel: 22,
-  maxReverseSpeed: 17,
+  // Reversing is how you get out of a pile-up, and a pile-up is the situation the whole
+  // game is built around. Too slow to back out of one is too slow to play.
+  reverseAccel: 34,
+  maxReverseSpeed: 26,
   brakeDecel: 58,
   engineDrag: 0.3,
   rollingResistance: 2.2,
@@ -139,10 +142,63 @@ export const CONFIG = {
     boostTerrainBypass: 1.0,
     /** How much of a climb's speed penalty boost cancels while it burns. */
     boostSlopeAssist: 0.65,
+    /**
+     * How fast speed above the engine's ceiling bleeds off, per second.
+     *
+     * The ceiling used to be a hard clamp applied every frame, which quietly deleted
+     * every external impulse pointed along the car: a rocket blast could throw a wreck
+     * sideways but not backwards, because the backwards component was clipped the same
+     * frame it landed. Easing instead lets a blast actually throw something.
+     */
+    overspeedDecay: 1.1,
+    /**
+     * Decay used instead when the tyres are shredded.
+     *
+     * Much faster, and this is the whole reason the spike strip did not feel like a
+     * punishment. The strip cuts top speed to a quarter, but the *gentle* overspeed decay
+     * meant a car at 44 took two and a half seconds just to get down to the new ceiling —
+     * so most of a six-second effect was spent coasting at a speed the strip was supposed
+     * to have taken away. Shredded tyres should scrub, not glide.
+     */
+    damagedOverspeedDecay: 7,
+
+    /**
+     * The wasteland past the barriers.
+     *
+     * There should be no way to get here at all any more: every section is walled at the
+     * outer edge of its run-off, so the answer to "can I drive out of bounds" is now
+     * geometry rather than economics. This survives as the backstop for a leak — a gap at
+     * some junction in twelve thousand wall pieces — and is deliberately milder than it
+     * was, because at a third of normal speed a leak was effectively a death sentence
+     * rather than a mistake. Progress still does not count out here.
+     *
+     * These are applied *after* the boost bypass, so a charge cannot paper over them the
+     * way it does mud. Boost is the answer to terrain; it is not a licence to leave.
+     *
+     * They apply to the player alone. Slowing the police out there too made the wasteland
+     * a stalemate rather than a mistake — everyone crawled, so nothing was actually lost
+     * by going. Police at full pace against a player at a third of it is what makes the
+     * black genuinely somewhere you do not want to be.
+     */
+    offCourse: {
+      maxSpeed: 0.62,
+      accel: 0.6,
+      grip: 0.7,
+      drag: 1.8,
+    },
+
     /** Below this forward speed a ramp does not launch you at all. */
-    minLaunchSpeed: 17,
+    minLaunchSpeed: 16,
     /** Ceiling on launch speed so the big kicker cannot fling you off the map. */
-    maxLaunchSpeed: 30,
+    maxLaunchSpeed: 54,
+    /**
+     * Multiplier on launch speed when you hit the lip boosting.
+     *
+     * The ramps existed and did very little: a modest hop, over before you had registered
+     * it. Boosting into one is now a decision with a visible payoff — a long, slow arc
+     * that clears a chunk of road and everything the squad had arranged on it.
+     */
+    boostLaunchBonus: 1.75,
 
     landing: {
       /** Fraction of horizontal speed lost per unit of vertical impact speed. */
@@ -173,6 +229,15 @@ export const CONFIG = {
       accel: 34,
       /** Temporary increase to max speed while boosting, u/s. */
       maxSpeedBonus: 15,
+      /**
+       * How much of a tyre-damage speed penalty the boost claws back, 0..1.
+       *
+       * Not all of it - the strip has to keep costing you - but enough that spending the
+       * charge on getting out from under one is a real option. At zero, boosting on
+       * shredded tyres produced almost nothing, so the answer to the worst situation in
+       * the game was to sit and wait for it to pass.
+       */
+      damageBypass: 0.55,
       /** How long a single boost lasts, seconds. */
       duration: 1.6,
       /**
@@ -183,6 +248,15 @@ export const CONFIG = {
       cooldown: 7.5,
       /** Camera kick when boost fires. */
       shake: 0.55,
+      /**
+       * How much harder the car shoves other vehicles while the charge burns.
+       *
+       * Boost is the answer to terrain and to a blocked road alike: a rig parked across a
+       * narrow pass should be a wall at cruising speed and something you can barge a gap
+       * in if you spend the charge on it. Being completely stopped by geometry you cannot
+       * answer is the one kind of loss with no play in it.
+       */
+      shove: 5.0,
     },
     /** Body-lean visuals (radians at full effect). */
     lean: {
@@ -225,10 +299,43 @@ export const CONFIG = {
       killRadius: 14,
       /** Everything within this radius of the blast is thrown. */
       blastRadius: 24,
-      /** Peak impulse at the centre of the blast, u/s. Divided by vehicle mass. */
-      blastImpulse: 105,
+      /**
+       * Peak impulse at the centre of the blast, u/s. Divided by vehicle mass.
+       *
+       * Large, and it needs to be: a wreck left sitting where it died is a wall you then
+       * have to drive around, which turned firing the rocket into building your own
+       * roadblock. Cars should leave the blast, not slump in it.
+       */
+      blastImpulse: 130,
       /** Spin imparted to caught vehicles, rad/s. */
-      blastSpin: 5.0,
+      blastSpin: 7.0,
+      /**
+       * How fast a hulk scrubs off blast speed, and the speed below which it stops doing
+       * so.
+       *
+       * A wreck has no driver and no brakes, so a big impulse used to carry it most of a
+       * section — dramatic for half a second and then just a car sliding into the
+       * distance. Damping only the blast-speed part gives the launch its punch back and
+       * lands the thing near where it died, while leaving a hulk that the player is
+       * nudging out of the way completely alone.
+       */
+      wreckDrag: 2.5,
+      wreckCoastSpeed: 6,
+      /**
+       * How easily a burnt-out hulk can be shoved aside afterwards (lower = easier).
+       *
+       * Very low: there should be enough resistance to feel the weight of the thing, and
+       * not enough for your own kill to become the roadblock it replaced.
+       */
+      /**
+       * Effective mass of a burnt-out hulk, in absolute terms rather than as a multiplier.
+       *
+       * A multiplier does not work here: the rig masses eight, so even at a tenth it was
+       * still heavier than the player's car, and a destroyed rig across a narrow pass was
+       * as final as a live one. Killing something should always leave you better off than
+       * not killing it.
+       */
+      wreckMass: 0.22,
       /** Seconds a surviving police car is left spinning and driverless. */
       policeDisableTime: 4.2,
       /**
@@ -237,8 +344,14 @@ export const CONFIG = {
        */
       wardenKillRadius: 6,
       wardenDisableTime: 1.6,
-      /** Fraction of the blast the player takes — enough to feel, not to end a run. */
-      selfImpulseScale: 0.28,
+      /**
+       * Fraction of the blast the player takes.
+       *
+       * Zero. Your own rocket knocking you backwards is a self-inflicted wound in a game
+       * about not losing momentum, and it is the one part of the explosion that punished
+       * you for using it well. The camera shake sells the concussion instead.
+       */
+      selfImpulseScale: 0,
       /** Camera shake on detonation. */
       shake: 1.4,
       /** Lifetime of the core flash / fireball / shockwave, seconds. */
@@ -270,7 +383,7 @@ export const CONFIG = {
     /** Shared driving/AI values for every police car. */
     shared: {
       /** How often each unit re-plans its route through the street graph, seconds. */
-      replanInterval: 0.45,
+      replanInterval: 0.3,
       /** Distance at which a waypoint counts as reached, units. */
       waypointRadius: 11,
       /** Steering error (radians) that maps to full lock. */
@@ -322,7 +435,7 @@ export const CONFIG = {
        * the flats they should cut across the grass after you rather than politely
        * following the road while you take the short line.
        */
-      directPursuitRange: 105,
+      directPursuitRange: 135,
 
       /**
        * Closing speed for units that have been left behind.
@@ -333,6 +446,119 @@ export const CONFIG = {
        * never applies to a unit already on you — it only stops the chase from ending
        * because you happened to be in front.
        */
+      /**
+       * Strike discipline — how a unit closes the last few car lengths.
+       *
+       * Left alone, a pursuer solves an intercept and drives at it flat out, which is why
+       * they read as blasting past with a token swerve: their speed *along* the player's
+       * line was thirty units an hour higher than the player's, so the geometry only
+       * worked for the fraction of a second it took to overshoot. A real driver arrives
+       * matching pace and turns in.
+       *
+       * The cap is on longitudinal overtake only. Closing sideways is untouched, because
+       * closing sideways is the hit.
+       */
+      strike: {
+        /** Discipline applies inside this range of the player. */
+        range: 34,
+        /** How much faster than the player you may travel along their line, u/s. */
+        maxOvertake: 5,
+        /** Never crawl while doing it. */
+        minPace: 16,
+        /**
+         * How far *ahead* of the player a unit must already be for the cap to apply.
+         *
+         * Measured, not guessed. Capping anyone within range dropped contacts from 60 a
+         * minute to 37: held back, they simply stopped arriving, which is the opposite of
+         * the intent. Only a car that has genuinely got past and is pulling away needs
+         * reining in — everyone else should be coming at you as hard as they can, and the
+         * accuracy comes from the turn-in below rather than from going slower.
+         */
+        chaseGrace: -5,
+        /**
+         * Inside this range, aim *through* the player rather than at an intercept point,
+         * so the last movement is a turn into them rather than a pass alongside.
+         */
+        turnInRange: 17,
+        /** How far past the player to aim when turning in, units. */
+        turnInDepth: 5.5,
+      },
+
+      /**
+       * Boxing in.
+       *
+       * Left to itself every unit drives at the player, which produces a scrum that
+       * shoves you around and rarely holds you: everyone arrives at the same point from
+       * the same direction and the collisions cancel out. Instead the director hands the
+       * nearest units a station around the player and they hold it, matching pace rather
+       * than charging — a moving cage, closing.
+       *
+       * Offsets are in the player's own frame: x across, z along. The forward stations are
+       * the brake-check, and they are the reason a fast player has to slow down.
+       */
+      box: {
+        /** Units this close are assigned a station instead of chasing the player. */
+        range: 78,
+        /** How many stations are handed out at once — one per direction. */
+        maxAssigned: 8,
+        /** Re-assign this often, seconds. Slower than the director so units commit. */
+        interval: 0.7,
+        /**
+         * Stations, in order of preference — eight of them, one per enclosure sector.
+         *
+         * The loss condition counts *directions blocked*, so the box has to be built to
+         * fill directions. Six stations could only ever close six of eight sectors, which
+         * meant a perfectly executed box still left two ways out and the arrest could not
+         * finish. Front first, because the front of the box is what makes losing speed
+         * expensive.
+         */
+        slots: [
+          { x: 0, z: 9 },
+          { x: -6.5, z: 6.5 },
+          { x: 6.5, z: 6.5 },
+          { x: -7, z: 0 },
+          { x: 7, z: 0 },
+          { x: -6, z: -6.5 },
+          { x: 6, z: -6.5 },
+          { x: 0, z: -8 },
+        ],
+        /**
+         * Pace held while on station, as a multiple of the player's own speed. Ahead of
+         * you they run slower and let you close — that is the brake-check; behind you they
+         * run faster and push.
+         */
+        leadPace: 0.9,
+        chasePace: 1.12,
+        /** Never crawl, however slowly the player is going. */
+        minPace: 14,
+        /** Once a unit is within this of its station it starts pressing inward. */
+        pressRange: 7,
+        /** How hard it presses, as a fraction of the offset removed per second. */
+        pressRate: 0.85,
+        /** Furthest the station can be closed in, as a fraction of the offset. */
+        pressMax: 0.72,
+        /**
+         * Below this speed the box closes all the way, fast.
+         *
+         * This is what makes losing your pace the real punishment. Spikes, a slick, a
+         * heavy hit — none of them end a run on their own; what ends it is the ten
+         * seconds afterwards, while everything that was chasing you gets to arrive and
+         * stand somewhere you needed to be.
+         */
+        slowPlayerSpeed: 22,
+        slowPressBonus: 0.55,
+        /**
+         * Below `slowPlayerSpeed`, this many of the nearest units are pulled off whatever
+         * they were doing and sent to the stations *in front*.
+         *
+         * A player who has lost their speed - spiked, slicked, hit - is the moment the
+         * squad has been waiting for, and it should look like they know it. Left alone
+         * the cars behind simply kept pushing, which shoves you *along* your route and is
+         * closer to help than to an arrest.
+         */
+        slowFrontPriority: 4,
+      },
+
       catchUp: {
         /** No help at all inside this range. */
         nearDistance: 55,
@@ -355,16 +581,16 @@ export const CONFIG = {
       /** Classes that can do it. */
       roles: ["rammer", "heavy", "elite", "juggernaut", "warden"],
       /** Range band to start one in. */
-      minRange: 9,
-      maxRange: 46,
+      minRange: 8,
+      maxRange: 58,
       /** Must be pointed within this many radians of the player. */
       maxHeadingError: 0.75,
       /** Lights-solid wind-up before it commits, seconds. */
-      telegraphTime: 0.45,
+      telegraphTime: 0.38,
       /** Length of the run itself, seconds. */
       chargeTime: 1.1,
       /** Gap before the same unit can charge again, seconds. */
-      cooldown: 6.5,
+      cooldown: 4.2,
       /** Speed and shove multipliers while charging. */
       speedBonus: 0.3,
       contactBoost: 2.3,
@@ -437,12 +663,20 @@ export const CONFIG = {
       /** Shrugs off almost everything: hits barely slow it and shoves barely move it. */
       impactResistance: 0.35,
       pushResistance: 2.4,
-      /** And it hits like a truck. */
-      contactBoost: 1.8,
+      /**
+       * It hits hard, but not *launchingly* hard.
+       *
+       * At 1.8 (and 4.1 through a charge) the thing punted you clear across the road,
+       * which sounds devastating and plays as mercy: you left the scrum with speed, and
+       * speed is the one thing that stops the arrest. Its mass already makes contact
+       * brutal. Its job is to be somewhere you cannot go, not to serve you.
+       */
+      contactBoost: 1.1,
       /** Commits from further out than a rammer; it cannot correct late. */
-      flankRange: 52,
-      flankOffset: 12,
-      strikeRange: 30,
+      flankRange: 58,
+      flankOffset: 9,
+      /** Wide: it closes to alongside and stays there rather than passing through. */
+      strikeRange: 34,
       maxInterceptLead: 2.6,
       /** Like the warden, only a near-direct rocket hit wrecks one. */
       rocketKillRadius: 8,
@@ -513,6 +747,64 @@ export const CONFIG = {
     },
 
     /**
+     * RIG — the roadblock.
+     *
+     * A long armoured transport that does not chase you at all. It reads the road ahead,
+     * picks the *narrowest* point within reach, drives there and parks broadside across
+     * it. Nine metres of stationary vehicle at a pinch point is a wall with a gap either
+     * side, and which gap you take is a decision made at speed with the rest of the squad
+     * behind you.
+     *
+     * Placement is the whole unit. A rig parked in the middle of the open off-road section
+     * is scenery; the same rig across a narrow downtown block is the reason the run ended.
+     */
+    rig: {
+      vehicle: policeVehicle({
+        // Faster than you, which it has to be. At 41 against your 46 it could never get
+        // in front to set up, so it parked wherever it happened to be when you caught it
+        // - which is not a roadblock, it is a slow lorry.
+        maxSpeed: 51,
+        accel: 34,
+        steerRateMax: 1.5,
+        gripNormal: 9.4,
+        // Nothing shifts it. Going around is the only play.
+        mass: 8.0,
+        halfLength: 6.0,
+        halfWidth: 1.85,
+      }),
+      impactResistance: 0.2,
+      /** Immovable at speed, shiftable with a boost behind you. */
+      pushResistance: 1.35,
+      contactBoost: 1.0,
+      /** Looks this far up the player's route for somewhere worth blocking. */
+      scoutMin: 210,
+      scoutMax: 620,
+      /** Distance from its chosen spot at which it stops driving and turns broadside. */
+      parkRadius: 11,
+      /** Start slowing this far out, down to this speed, so it can stop on the mark. */
+      approachDistance: 40,
+      approachSpeed: 20,
+      /** How fast it swings across the road once parked, rad/s. */
+      turnRate: 1.9,
+      /** Re-pick a spot only this often, so it commits instead of chasing the ideal one. */
+      repickInterval: 6,
+      /** Only blocks where the drivable width is under this, unless nothing else is near. */
+      preferredWidth: 30,
+      /**
+       * Never park somewhere narrower than this.
+       *
+       * The rig is twelve metres long and the canyon is fourteen wide, so broadside in the
+       * wrong place it sealed the road outright — measured, impassable even with a boost
+       * behind you, and with no rocket in hand that is a dead run rather than a hard
+       * corner. It now stands where there is still a car's width to fight for.
+       */
+      minBlockWidth: 19,
+      /** Only a near-direct rocket wrecks one. */
+      rocketKillRadius: 9,
+      rocketDisableTime: 2.4,
+    },
+
+    /**
      * WARDEN — the keeper on the exit ramp. A heavy SUV that never leaves the final
      * junction and cycles between two attacks, so the last corner is a fight rather than
      * a formality. Its mass means shunting it aside is not an option; you go around it,
@@ -557,12 +849,32 @@ export const CONFIG = {
      * path. Every value below exists to keep them answerable rather than arbitrary.
      */
     hazards: {
+      /**
+       * Fraction of the local road half-width a hazard may span, and the gap it must
+       * always leave.
+       *
+       * A strip is a decision, and a decision needs an alternative. Laid at a fixed width
+       * they covered the whole carriageway in the narrow sections, where there is no line
+       * to take and running one over is simply what happens - which is not a hazard, it
+       * is a toll.
+       */
+      maxRoadShare: 0.62,
+      minGap: 5.5,
+
       /** Live hazards allowed on the course at once, per kind. */
       maxLive: 5,
       /** Minimum gap between any two deployments at section 0, seconds. */
       globalCooldown: 2.4,
       /** A given unit may only lay one this often at section 0, seconds. */
       unitCooldown: 10,
+      /**
+       * Extra cooldown multiplier applied to oil specifically.
+       *
+       * The slick is much the more disruptive of the two and much the cheaper to lay, so
+       * on the shared timer it turned up constantly and stopped reading as an event.
+       * Rarer and nastier is the better trade - it is now carried by rammers alone.
+       */
+      oilCooldownScale: 2.6,
       /**
        * Both cooldowns shrink by this fraction of themselves per section, down to
        * `minCooldownScale`.
@@ -572,8 +884,8 @@ export const CONFIG = {
        * ahead of you is being carpeted, which is what "until it is absolutely ridiculous"
        * has to actually mean once there is no room for more cars.
        */
-      cooldownPerSection: 0.055,
-      minCooldownScale: 0.3,
+      cooldownPerSection: 0.035,
+      minCooldownScale: 0.16,
       /** Deployable only from this far ahead of the player, in course units... */
       minLead: 45,
       /** ...and no further, or you would never see it laid. */
@@ -587,18 +899,18 @@ export const CONFIG = {
       spike: {
         /** First section it can appear in. */
         unlockSection: 3,
-        /** Classes that carry it: the two that get in front of you on purpose. */
+        /** Classes that carry it: the ones that get in front of you on purpose. */
         roles: ["interceptor", "blocker"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
-        life: 14,
+        life: 18,
         /** Deliberately narrower than the road: there is always a way past. */
         halfWidth: 6.5,
         halfLength: 1.3,
         /** Tyre multipliers while shredded, easing back to 1 over `duration`. */
-        gripScale: 0.72,
-        speedScale: 0.5,
-        duration: 4.0,
+        gripScale: 0.55,
+        speedScale: 0.34,
+        duration: 6.0,
       },
 
       /**
@@ -607,24 +919,65 @@ export const CONFIG = {
        */
       oil: {
         unlockSection: 5,
-        roles: ["rammer", "elite"],
-        armTime: 0.35,
-        life: 10,
-        halfWidth: 5.5,
-        halfLength: 4.5,
-        gripScale: 0.3,
-        speedScale: 1.0,
-        duration: 2.8,
+        roles: ["rammer"],
+        armTime: 0.3,
+        life: 9,
+        /** Wide enough that threading it is a real line rather than a shrug. */
+        halfWidth: 7.5,
+        halfLength: 5.5,
+        /*
+         * Near zero, and it needs to be. At 0.3 the lateral damping was still strong
+         * enough to pull the car straight within a corner's worth of time, so hitting a
+         * slick was something you could ignore. At 0.06 the velocity keeps pointing where
+         * it was pointing while the nose turns, which is what a slide actually is: you
+         * steer and nothing happens for a second and a half.
+         */
+        gripScale: 0.002,
+        speedScale: 0.88,
+        duration: 5.5,
+        /**
+         * Extra grip loss while boosting through it.
+         *
+         * Power with no traction is what a slide actually is, so lighting the boost on
+         * an oiled surface should not rescue you — it should make the car completely
+         * wild. It is the one moment in the game where the answer to everything else is
+         * the wrong move, and it is worth having.
+         */
+        boostGripScale: 0.25,
+        /**
+         * Yaw the car picks up per unit of sideways slide while oiled, rad/s.
+         *
+         * Low grip alone makes the car understeer in a straight-ish line; it is this that
+         * makes it come round. Drive gently and you slither, drive hard - or boost - and
+         * you can genuinely spin, which is the difference between an inconvenience and a
+         * thing you have to respect.
+         */
+        spinPerSlip: 0.055,
+        maxSpin: 2.6,
       },
     },
 
     /** Spawn placement and recycling. How *many* units is `escalation`'s job. */
     pacing: {
       /**
-       * Course positions for the cars that are already on you at the start line. The
-       * director cannot place these itself — at zero progress there is no "behind".
+       * The opening wave, as distances up the course.
+       *
+       * All of them are *ahead* of you. The director cannot place these itself — at zero
+       * progress there is no "behind" to place anything in — and the previous list asked
+       * for two of them behind, which clamped to the first node on the spine and parked
+       * two cars alongside you on the line. Police that are simply *there* when the run
+       * begins read as a bug, not as pressure. These are coming the other way instead,
+       * and any spur near the start gets one waiting in it.
        */
-      openingWave: [-70, -130, 95, 175],
+      openingWave: [190, 285, 380],
+      /** How many of the opening units wait in a spur rather than on the road. */
+      openingAmbushes: 2,
+      /**
+       * Course window the opening ambushers are drawn from. Far enough out that the first
+       * seconds are clean, close enough that the first thing to come at you sideways does
+       * so within about ten seconds of the lights going green.
+       */
+      openingSpurRange: [260, 820],
       /**
        * Beyond this distance a unit may appear even in plain view. Requiring concealment
        * outright left the open sections completely empty, because there is nothing out
@@ -632,7 +985,7 @@ export const CONFIG = {
        */
       farSpawnDistance: 165,
       /** How often activation/repositioning decisions run, seconds. */
-      directorInterval: 0.4,
+      directorInterval: 0.28,
       /** Preferred spawn offsets along the route, in course units. */
       spawnAhead: 190,
       spawnBehind: 150,
@@ -644,18 +997,108 @@ export const CONFIG = {
        * those two reads as a queue: you outrun the ones behind, then dodge the ones in
        * front one at a time. The threat has to be able to come from off to the side.
        */
-      spawnWeights: { ambush: 4, side: 2, behind: 2, ahead: 1 },
+      spawnWeights: { ambush: 6, side: 2, behind: 2.5, ahead: 1 },
+      /**
+       * Minimum live units *behind* the player. Below this the next spawn is forced to
+       * the rear regardless of the weights.
+       *
+       * Ambush and side placements both tend to put cars in front, and the recycler pulls
+       * stragglers forward, so the deep sections could quietly end up with the entire
+       * squad ahead of you and nothing at your back at all. Pressure from behind is what
+       * stops you simply lifting off and picking your way through what is in front.
+       */
+      minBehind: 3,
+      /** A unit counts as "behind" from this far back, so bumper-riders do not count. */
+      behindDistance: 25,
+
       /** Ambush spurs are only used within this window ahead of the player. */
-      ambushLeadMin: 35,
-      ambushLeadMax: 230,
+      ambushLeadMin: 85,
+      ambushLeadMax: 300,
       /** How far down the spur the unit waits, as a fraction of its length. */
       ambushDepth: 0.72,
+      /**
+       * The ambush is a *timed* release, and that is the whole mechanic.
+       *
+       * Woken as an ordinary pursuer, a unit in a spur simply drove out at once, crossed
+       * the road and buried itself in the far wall, and by the time the player arrived it
+       * was scenery to be driven past. Now it holds station until the player's time to
+       * the mouth matches its own, so it arrives in the road at the moment you do —
+       * side-on, at speed, from a direction you were not looking in.
+       *
+       * It is beatable exactly the way it should be: the maths is done against your
+       * *current* speed, so anyone who boosts through the section arrives early and the
+       * launch misses behind them.
+       */
+      ambush: {
+        /**
+         * Slack on the unit's own estimate, seconds. Negative launches *later*.
+         *
+         * Deliberately late. Timed to arrive exactly with the player it meets them nose
+         * to nose, which is a head-on and reads as a wall; a quarter-second behind that
+         * and it comes through the flank instead, which is the hit that actually spoils
+         * a line and shoves you into the far wall.
+         */
+        leadTime: -0.28,
+        /**
+         * Fraction of top speed it assumes it will average getting out of the spur.
+         * High on purpose - overestimating its own pace is another way of launching late.
+         */
+        launchSpeedFactor: 0.85,
+        /**
+         * Range at which it reads your speed — and it only reads it once.
+         *
+         * Re-timing every frame made the ambush *better* against a boosting player, which
+         * is precisely backwards: the faster you came, the earlier it left, and it landed
+         * anyway. Latching the estimate is what turns the boost into the counter. Come in
+         * at cruising pace and it has you; light the charge after it has committed and you
+         * are through the gap before it arrives.
+         */
+        readRange: 190,
+        /**
+         * Re-aim at the player *after* launching, until this far from the mouth.
+         *
+         * The launch is a timed guess and a guess is usually a near miss — it came out
+         * behind, or in front, and either way the player drove past it. Steering the run
+         * for the first stretch turns the guess into a strike, and it is what makes the
+         * hit land on the flank at any speed rather than only at the pace it predicted.
+         */
+        homeDistance: 62,
+        /**
+         * How far *past* the intercept point to aim while springing.
+         *
+         * Arriving exactly at the intercept means arriving alongside, which is a scrape.
+         * Aiming beyond it turns the same approach into a T-bone.
+         */
+        strikeDepth: 7,
+        /** Extra pace while springing, so it arrives with weight behind it. */
+        launchSpeedBonus: 0.5,
+        /** Once the player is past, come out anyway and join the chase from behind. */
+        releaseBehindRange: 90,
+        /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
+        maxWait: 24,
+      },
       /** Lateral spawns need at least this much run-off to sit in. */
       sideShoulderMin: 9,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
-      /** Fall this far behind and the unit is recycled forward instead of trailing. */
-      retireBehind: 260,
+      /**
+       * A unit inside this range *and* in plain sight is never moved, recycled or stood
+       * down, whatever else the director wants.
+       *
+       * Every reposition in here is a teleport, and the rules only ever checked where a
+       * car was going, never where it was coming from — so a unit could pull out of a
+       * spur beside you, drive for a second and blink out of existence while you watched.
+       * Recycling is meant to be invisible bookkeeping; on screen it is just a bug.
+       */
+      keepVisibleRange: 190,
+      /**
+       * Fall this far behind and the unit is recycled forward instead of trailing.
+       *
+       * Shortened, because headcount is only half of what "there are police here" means.
+       * Five cars strung out down the road behind you is an empty section; the same five
+       * picked up and put back in front of you is a busy one.
+       */
+      retireBehind: 170,
     },
 
     /**
@@ -667,9 +1110,25 @@ export const CONFIG = {
      * The run always ends in a pile-up — the only question is when.
      */
     escalation: {
-      /** Active units at section 0, and how many more per section after that. */
-      baseActive: 4,
-      activePerSection: 1.1,
+      /**
+       * Active units at section 0, and how many more per section after that.
+       *
+       * The old 4 + 1.1 asked for 5 units in section 2 and 6 in section 3 — and the
+       * opening wave already has 5 on the board, so the first two sections after the
+       * start woke nothing at all and played out as a lull. The curve has to clear the
+       * opening wave immediately or the game gets quieter before it gets louder.
+       *
+       * The fix is a higher base with a shallower slope, not a steeper slope: raising the
+       * rate filled the early sections but compounded all the way up.
+       *
+       * The slope came down again once the capture meter learned to account for a crowd.
+       * Eleven cars in section 5 that could not actually finish you was the worst of both
+       * worlds — punishing to drive through and harmless to be caught by. Eight that can
+       * is a better section, and it leaves the ceiling until section 19 instead of 12,
+       * which is most of where the late game's escalation now lives.
+       */
+      baseActive: 7,
+      activePerSection: 1.15,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */
@@ -682,6 +1141,7 @@ export const CONFIG = {
         elite: 6,
         juggernaut: 7,
         warden: 9,
+        rig: 5,
       } as Record<PoliceRole, number>,
       /**
        * Once unlocked, how strongly a class is favoured when waking the next unit.
@@ -696,22 +1156,50 @@ export const CONFIG = {
         elite: 3.0,
         juggernaut: 3.4,
         warden: 2.2,
+        rig: 2.6,
       } as Record<PoliceRole, number>,
+      /**
+       * Section after which a class stops being sent at all.
+       *
+       * This is the escalation that costs nothing at runtime. Headcount has to be capped
+       * for frame time, so past the cap the *mix* is the only thing left to turn — and
+       * "twenty cars" meaning juggernauts, wardens and rigs is a completely
+       * different section from "twenty cars" meaning eight patrols and some rammers.
+       * Before this, nothing whatsoever changed after section 13.
+       */
+      retire: {
+        patrol: 13,
+        rammer: 19,
+        blocker: 22,
+        interceptor: 26,
+        heavy: 999,
+        elite: 999,
+        juggernaut: 999,
+        warden: 999,
+        rig: 999,
+      } as Record<PoliceRole, number>,
+
       /** Extra top speed added to every unit per section, u/s, and its cap. */
-      speedPerSection: 0.22,
-      maxSpeedBonus: 7,
+      speedPerSection: 0.3,
+      maxSpeedBonus: 12,
     },
 
-    /** How many of each class exist in the pool. Meshes are built once, up front. */
+    /**
+     * How many of each class exist in the pool. Meshes are built once, up front.
+     *
+     * The heavy end has to be deep enough to fill the entire active cap on its own, since
+     * past section 26 nothing else is being sent.
+     */
     pool: {
       patrol: 8,
       rammer: 6,
       interceptor: 5,
       blocker: 3,
-      heavy: 5,
-      elite: 5,
-      juggernaut: 4,
-      warden: 3,
+      heavy: 6,
+      elite: 6,
+      juggernaut: 5,
+      warden: 4,
+      rig: 4,
     } as Record<PoliceRole, number>,
   },
 
@@ -735,6 +1223,24 @@ export const CONFIG = {
     maxCarSpeedLossPerFrame: 0.5,
     /** Extra shove applied car-to-car so contact reads as forceful. */
     carImpulse: 12.0,
+    /**
+     * How much of its mass a vehicle keeps when barged by a boosting player.
+     *
+     * A parked rig is eight tonnes braced against the road, and in a corridor it cannot
+     * slide sideways either, so the ordinary mass ratio made boosting into one feel like
+     * boosting into the scenery. This makes the charge a genuine tool for getting through
+     * something rather than an extra ten units of speed you carry into it.
+     */
+    boostBargeScale: 0.22,
+    /**
+     * How much of that shove applies between two police cars.
+     *
+     * Low, and this matters more than it sounds. A juggernaut charging into a scrum used
+     * to scatter its own side as hard as it hit you — the heaviest unit in the game
+     * arriving read as a *reset*, blowing the box open and handing you the gap. Police
+     * hitting each other now mostly just jostle, so a pile-up stays a pile-up.
+     */
+    policeImpulseScale: 0.2,
     /** Yaw kick applied on off-centre impacts, rad/s per unit of impact speed. */
     spinFactor: 0.022,
     /** Max yaw kick from a single impact, rad/s. */
@@ -807,7 +1313,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 4.2,
+    captureDuration: 2.2,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -817,15 +1323,63 @@ export const CONFIG = {
     /** A police car must be inside this radius to contribute to capture. */
     captureRadius: 12,
     /**
-     * Player speed below this counts as "pinned". Set high enough that being ground down
-     * to a crawl by rams counts — at 7 a driver who kept nudging along at moderate speed
-     * was untouchable no matter how many units were on them.
+     * What counts as "pinned", as a speed threshold — and it rises with the crowd.
+     *
+     * A single car on your bumper only has you if you are nearly stopped. Eight of them
+     * packed around you have you at a good deal more than that: you are not escaping, you
+     * are being carried. The flat 10 was the reason a player could be visibly buried in
+     * police and simply drive out of it — every ram bumped them back over the threshold,
+     * so the meter never filled no matter how bad the situation looked.
      */
-    captureSpeed: 10,
-    /** How fast the capture meter drains when you break free (multiplier of fill rate). */
-    captureRecovery: 2.0,
-    /** Seconds off the drivable course before the player is put back on it. */
-    offCourseGrace: 1.6,
+    /** Time constant for the smoothed speed the pin test uses, seconds. */
+    captureSpeedSmoothing: 0.55,
+    /**
+     * Being *surrounded*, measured as directions blocked rather than cars counted.
+     *
+     * The circle around the player is cut into `enclosureSectors` wedges and a wedge
+     * counts as blocked when a live unit sits in it within `enclosureRadius`. Below
+     * `minSectorsToPin` nothing happens at all, however slow you are; at `fullPinSectors`
+     * the meter runs at full rate.
+     *
+     * Counting cars was the wrong measure. Two heavies leaning on your bumper is two cars
+     * and one direction, and it used to end runs while the road ahead was wide open — so
+     * losing felt arbitrary, and the actual fantasy, being buried in a scrum and squeezing
+     * out of a gap, could never happen because the meter had already run out. Directions
+     * are what "no way out" means.
+     */
+    enclosureRadius: 15,
+    enclosureSectors: 8,
+    minSectorsToPin: 3,
+    fullPinSectors: 6,
+    captureSpeed: 15,
+    /**
+     * Cars inside the radius before the threshold starts rising at all.
+     *
+     * The scaling has to be a *swarm* rule, not a crowd rule. Applied from the second car
+     * it made sections 2 and 3 lethal — five cars is normal traffic down there, and a
+     * threshold of 19 u/s meant any brief bog was an arrest. Nothing changes until you are
+     * genuinely buried, and then it changes fast.
+     */
+    captureSpeedMax: 30,
+    /**
+     * How fast the meter drains when you break free, as a multiple of the fill rate.
+     * Above 1 so escaping is always possible; not so far above that a moment of daylight
+     * wipes out four seconds of being buried.
+     */
+    captureRecovery: 1.25,
+    /**
+     * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
+     * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.
+     */
+    offCourseShove: 70,
+    /**
+     * Seconds stranded outside the course before the player is towed back.
+     *
+     * Long, and it only fires while barely moving. At 1.6 s and unconditional this was a
+     * free escape hatch: leave the road, get replaced on it a moment later with every
+     * pursuer shaken off. The wasteland does the containment now.
+     */
+    offCourseGrace: 9,
     /** Radius counted for the "police nearby" HUD readout. */
     heatRadius: 34,
   },

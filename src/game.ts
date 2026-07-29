@@ -16,6 +16,7 @@ import type { PursuitContext } from "./police/behaviors";
 import { HazardField } from "./police/hazards";
 import { PoliceManager } from "./police/policeManager";
 import { GameState } from "./state";
+import { DailyUi } from "./ui/dailyUi";
 import { Hud } from "./ui/hud";
 import { CarView, PLAYER_STYLE } from "./vehicle/carView";
 import { Vehicle } from "./vehicle/vehicle";
@@ -41,6 +42,7 @@ export class Game {
   private rockets: RocketSystem;
   private camera: ChaseCamera;
   private hud: Hud;
+  private daily = new DailyUi();
   private state = new GameState();
   private audio = new GameAudio();
   private keys = new Input();
@@ -104,8 +106,12 @@ export class Game {
       terrain: this.world.terrain,
     });
 
-    this.keys.onRestart = () => this.restart();
-    this.keys.onDrive = () => this.begin();
+    this.keys.onRestart = () => {
+      if (!this.daily.boardOpen) this.restart();
+    };
+    this.keys.onDrive = () => {
+      if (!this.daily.boardOpen) this.begin();
+    };
     // Clicking anywhere on the canvas also starts the run and takes keyboard focus.
     canvas.addEventListener("pointerdown", () => {
       canvas.focus();
@@ -354,6 +360,15 @@ export class Game {
         section: this.state.section + 1,
         distance: Math.round(this.state.maxProgress),
         elapsed: this.state.elapsed,
+      });
+      // Arm the submit row for this run. Submission is a deliberate button press rather
+      // than automatic: a name has to be chosen, and posting without asking would be a
+      // surprise the first time.
+      this.daily.showResult({
+        score: this.state.score,
+        section: this.state.section + 1,
+        distance: Math.round(this.state.maxProgress),
+        elapsedMs: Math.round(this.state.elapsed * 1000),
       });
     }
   }

@@ -252,6 +252,8 @@ export class PoliceManager {
       u.boxSlot = null;
       if (!u.active || u.destroyed || u.disabled) continue;
       if (u.role === "rig" || u.role === "warden") continue;
+      // A unit lying in wait is not available for a station.
+      if (u.ambushAt) continue;
       if (u.distanceToPlayer(player) > cfg.range) continue;
       available.push(u);
     }
@@ -378,7 +380,12 @@ export class PoliceManager {
       // The spur mouth is on the spine, so this should always hold - but a spur that has
       // been clipped by other geometry is a car parked in a box, not an ambush.
       if (!ctx.world.canReach(x, z, spur.ax, spur.az)) continue;
+
+      // Facing the mouth, so it comes out forwards rather than reversing into the road —
+      // and holding there until the player's own timing says go. `placeAt` resets the
+      // unit, so the ambush has to be armed after it.
       unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
+      unit.ambushAt = { x: spur.ax, z: spur.az };
       return true;
     }
     return false;

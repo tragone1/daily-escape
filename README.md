@@ -24,9 +24,9 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of sixteen runs | section **5** |
-| Quartiles | section **3** to section **6** |
-| Best | section **11** |
-| Died in the first 15 s | **0 of 16** |
+| Quartiles | section **2** to section **7** |
+| Best | section **12** |
+| Died in the first 15 s | 3 of 16 |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -168,6 +168,23 @@ front, which turns the squad into a queue — outrun the ones behind, then meet 
 ahead one at a time, head on, where they are trivial to dodge. A spur gives the squad
 somewhere to be *waiting*, off to the side, so a unit comes out of an alley as you pass
 and puts you into the far wall.
+
+The unit inside one **waits**. Woken as an ordinary pursuer it simply drove out at once,
+crossed the road and buried itself in the far wall, and by the time you arrived it was
+scenery to be driven past — which is exactly what it looked like. It now holds station with
+the engine running until your time-to-the-mouth matches its own, so it arrives in the road
+at the moment you do.
+
+The release is timed **late** on purpose. Arriving exactly with you means meeting nose to
+nose, which is a head-on and reads as a wall; a quarter-second behind that and it comes
+through your flank instead, which is the hit that actually spoils a line and puts you into
+the far wall. Measured over six runs: **60% of launches now connect**, and side impacts are
+the most common contact type at 44%, with head-ons down from 7 to 2.
+
+It reads your speed **once**, at 170 units out, and commits to that estimate. Re-timing
+every frame made the ambush *better* against a faster player, which is precisely backwards.
+Fewer of them are sent now that each one lands — the ambush spawn weight came down from 4
+to 2.5.
 
 They are deliberately dead ends, capped with a walled, chevroned end face. An opening that
 went somewhere would be a route, and a route the player can take is a route the player can

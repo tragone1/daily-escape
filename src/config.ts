@@ -850,7 +850,7 @@ export const CONFIG = {
        * those two reads as a queue: you outrun the ones behind, then dodge the ones in
        * front one at a time. The threat has to be able to come from off to the side.
        */
-      spawnWeights: { ambush: 4, side: 2, behind: 2, ahead: 1 },
+      spawnWeights: { ambush: 2.5, side: 2, behind: 2, ahead: 1 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.
@@ -865,10 +865,53 @@ export const CONFIG = {
       behindDistance: 25,
 
       /** Ambush spurs are only used within this window ahead of the player. */
-      ambushLeadMin: 35,
+      ambushLeadMin: 95,
       ambushLeadMax: 230,
       /** How far down the spur the unit waits, as a fraction of its length. */
       ambushDepth: 0.72,
+      /**
+       * The ambush is a *timed* release, and that is the whole mechanic.
+       *
+       * Woken as an ordinary pursuer, a unit in a spur simply drove out at once, crossed
+       * the road and buried itself in the far wall, and by the time the player arrived it
+       * was scenery to be driven past. Now it holds station until the player's time to
+       * the mouth matches its own, so it arrives in the road at the moment you do —
+       * side-on, at speed, from a direction you were not looking in.
+       *
+       * It is beatable exactly the way it should be: the maths is done against your
+       * *current* speed, so anyone who boosts through the section arrives early and the
+       * launch misses behind them.
+       */
+      ambush: {
+        /**
+         * Slack on the unit's own estimate, seconds. Negative launches *later*.
+         *
+         * Deliberately late. Timed to arrive exactly with the player it meets them nose
+         * to nose, which is a head-on and reads as a wall; a quarter-second behind that
+         * and it comes through the flank instead, which is the hit that actually spoils
+         * a line and shoves you into the far wall.
+         */
+        leadTime: -0.28,
+        /**
+         * Fraction of top speed it assumes it will average getting out of the spur.
+         * High on purpose - overestimating its own pace is another way of launching late.
+         */
+        launchSpeedFactor: 0.85,
+        /**
+         * Range at which it reads your speed — and it only reads it once.
+         *
+         * Re-timing every frame made the ambush *better* against a boosting player, which
+         * is precisely backwards: the faster you came, the earlier it left, and it landed
+         * anyway. Latching the estimate is what turns the boost into the counter. Come in
+         * at cruising pace and it has you; light the charge after it has committed and you
+         * are through the gap before it arrives.
+         */
+        readRange: 170,
+        /** Once the player is past, come out anyway and join the chase from behind. */
+        releaseBehindRange: 90,
+        /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
+        maxWait: 24,
+      },
       /** Lateral spawns need at least this much run-off to sit in. */
       sideShoulderMin: 9,
       /** Never appear closer than this to the player. */

@@ -86,6 +86,11 @@ export class PoliceCar {
 
   /** Station handed out by the director; null means "chase normally". */
   boxSlot: BoxSlot | null = null;
+  /** While set, the unit is holding in a spur waiting to launch. The mouth it faces. */
+  ambushAt: { x: number; z: number } | null = null;
+  private ambushWait = 0;
+  /** Player speed as read once on approach; the launch is timed against this, not live. */
+  private ambushReadSpeed = 0;
   /** How far the station has been closed in, 0..1. */
   private boxPress = 0;
 
@@ -166,6 +171,9 @@ export class PoliceCar {
     this.charging = false;
     this.boxSlot = null;
     this.boxPress = 0;
+    this.ambushAt = null;
+    this.ambushWait = 0;
+    this.ambushReadSpeed = 0;
     this.rigPost = null;
     this.rigTimer = 0;
     this.rigScore = Infinity;
@@ -258,6 +266,22 @@ export class PoliceCar {
       this.stuckTotal = 0;
       v.update(this.input, dt, ctx.terrain);
       return;
+    }
+
+    // Waiting in an alley: sit still, engine running, until the moment is right.
+    if (this.ambushAt) {
+      this.ambushWait += dt;
+      if (this.readyToSpring(ctx)) {
+        this.ambushAt = null;
+      } else {
+        this.input.throttle = 0;
+        this.input.brake = v.speed > 1 ? 1 : 0;
+        this.input.steer = 0;
+        this.input.boost = false;
+        this.view.setCharge(0);
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
     }
 
     this.replanTimer -= dt;
@@ -363,6 +387,37 @@ export class PoliceCar {
     if (this.role === "rig" && v.speed < 4 && parkDistance < this.parkRadius * 1.8) {
       this.parkBroadside(dt, ctx);
     }
+  }
+
+  /**
+   * Is the player close enough that pulling out now puts us across their nose?
+   *
+   * Both sides of the comparison are estimates of time-to-the-mouth: theirs from their
+   * current speed, ours from a standing start. Matching the two is what turns a car
+   * leaving a side road into an interception rather than an obstacle already spent.
+   */
+  private readyToSpring(ctx: PursuitContext): boolean {
+    const cfg = CONFIG.police.pacing.ambush;
+    if (this.ambushWait > cfg.maxWait) return true;
+
+    const mouth = this.ambushAt as { x: number; z: number };
+    const v = this.vehicle;
+    const player = ctx.player;
+
+    const toPlayer = dist(player.x, player.z, mouth.x, mouth.z);
+    // Past us already: come out and give chase rather than sitting in a dead end.
+    const closing = (mouth.x - player.x) * player.vx + (mouth.z - player.z) * player.vz > 0;
+    if (!closing) return toPlayer < cfg.releaseBehindRange;
+
+    // Read their pace once, on the way in, and commit to it.
+    if (this.ambushReadSpeed === 0 && toPlayer < cfg.readRange) {
+      this.ambushReadSpeed = player.speed;
+    }
+    const assumed = this.ambushReadSpeed || player.speed;
+
+    const ourEta = dist(v.x, v.z, mouth.x, mouth.z) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
+    const theirEta = toPlayer / Math.max(8, assumed);
+    return theirEta <= ourEta + cfg.leadTime;
   }
 
   /**

@@ -155,6 +155,8 @@ export class PoliceCar {
       this.wrecked = false;
       this.view.setWrecked(false);
     }
+    const roleCfg = CONFIG.police[this.role] as { pushResistance?: number };
+    this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
   }
 
   distanceToPlayer(player: Vehicle): number {
@@ -183,6 +185,10 @@ export class PoliceCar {
   destroy(): void {
     if (this.wrecked) return;
     this.wrecked = true;
+    // A hulk still has mass, but nobody is holding it in place any more. Without this a
+    // wrecked heavy was a permanent wall, so spending the rocket on a roadblock could
+    // build you a better one.
+    this.vehicle.pushResistance = CONFIG.player.rocket.wreckPushResistance;
     this.disabledTimer = 0;
     this.path = [];
     this.committed = null;
@@ -454,8 +460,12 @@ export class PoliceCar {
     }
 
     // Wandering off the drivable ribbon counts double: a unit ploughing through the
-    // scenery is both useless and ugly, so it gets recycled quickly.
-    if (!ctx.terrain.sample(v.x, v.z).onCourse) this.stuckTotal += dt * 2;
+    // scenery is both useless and ugly, so it gets recycled quickly. Unless the player is
+    // out there too — following someone into the wasteland is the job, and recycling
+    // units for doing it would hand the player a way to shake the whole squad.
+    if (!ctx.player.offCourse && !ctx.terrain.sample(v.x, v.z).onCourse) {
+      this.stuckTotal += dt * 2;
+    }
 
     if (this.stuckTotal > shared.respawnAfterStuck) {
       this.respawn(ctx);

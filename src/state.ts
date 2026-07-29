@@ -3,8 +3,9 @@
  *
  * There is no finish. A run ends exactly one way — the police pin you long enough to make
  * the arrest — and the only question is how far up the course you got before they managed
- * it. Score is therefore *furthest forward progress*, never distance driven: doubling
- * back, circling or taking the scenic line earns nothing.
+ * it. Score is therefore *furthest forward progress on the course*, never distance
+ * driven: doubling back, circling, taking the scenic line, or cutting across the
+ * wasteland outside the barriers all earn nothing.
  */
 
 import { CONFIG } from "./config";
@@ -82,12 +83,27 @@ export class GameState {
    * closely surrounded for a sustained period — a single hard hit never ends a run,
    * and breaking free drains the meter faster than it fills.
    */
-  update(dt: number, playerSpeed: number, policeNear: number, progress: number): void {
+  update(
+    dt: number,
+    playerSpeed: number,
+    policeNear: number,
+    progress: number,
+    onCourse: boolean,
+  ): void {
     if (this.over) return;
 
     this.elapsed += dt;
     this.progress = progress;
-    if (progress > this.maxProgress) {
+    /*
+     * Ground gained off the course does not count.
+     *
+     * Progress is measured by projecting onto the nearest spine segment, so driving
+     * cross-country past the barriers used to bank distance exactly as if you had driven
+     * the road. Combined with the backstop putting you back afterwards, leaving the
+     * course was strictly better than staying on it. Freezing the counter out there is
+     * what makes the wasteland a cost rather than a shortcut.
+     */
+    if (onCourse && progress > this.maxProgress) {
       this.maxProgress = progress;
       this.section = sectionIndexAt(progress);
     }

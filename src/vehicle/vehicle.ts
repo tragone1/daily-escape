@@ -60,6 +60,8 @@ export class Vehicle {
 
   /** Surface currently under the wheels, for HUD/audio/FX. */
   surface: Surface = "asphalt";
+  /** True while past the course boundary, in the wasteland. */
+  offCourse = false;
   /** Rise per unit travelled forward: positive uphill, negative downhill. */
   climb = 0;
   /** Rise per unit travelled to the right — the cross-slope the car sits across. */
@@ -168,6 +170,7 @@ export class Vehicle {
     this.climb = 0;
     this.bank = 0;
     this.surface = "asphalt";
+    this.offCourse = false;
     this.tireGrip = 1;
     this.tireSpeed = 1;
     this.drive = 1;
@@ -193,6 +196,7 @@ export class Vehicle {
     const ground = terrain.sample(this.x, this.z);
     const raw = t.surfaces[ground.surface];
     this.surface = ground.surface;
+    this.offCourse = !ground.onCourse;
 
     // --- Boost timers ------------------------------------------------------
     let boostAccel = 0;
@@ -227,6 +231,19 @@ export class Vehicle {
       maxSpeed: toward1(raw.maxSpeed),
       accel: toward1(raw.accel),
     };
+    /*
+     * Off the course entirely. Applied after the bypass above, so boost cannot cancel it:
+     * the wasteland is not a surface you can power through, it is somewhere you should
+     * not be. Tyre damage is outside the bypass for the same reason.
+     */
+    if (this.offCourse) {
+      const off = t.offCourse;
+      surf.grip *= off.grip;
+      surf.drag *= off.drag;
+      surf.accel *= off.accel;
+      surf.maxSpeed *= off.maxSpeed;
+    }
+
     let maxSpeed = p.maxSpeed * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
     maxSpeed *= this.tireSpeed * this.drive;
@@ -298,7 +315,7 @@ export class Vehicle {
       if (vf > 0) vf = Math.max(0, vf - rolling);
       else if (vf < 0) vf = Math.min(0, vf + rolling);
 
-      vf = clamp(vf, -p.maxReverseSpeed, maxSpeed);
+      vf = this.easeToLimit(vf, maxSpeed, p.maxReverseSpeed, dt);
 
       // --- Grip / drift ------------------------------------------------------
       const hardTurn = Math.abs(this.steerInput) > p.driftSteerThreshold;
@@ -307,7 +324,7 @@ export class Vehicle {
       vl *= Math.exp(-base * surf.grip * this.tireGrip * dt);
     } else {
       // Airborne: no traction, no engine. Momentum carries the jump.
-      vf = clamp(vf, -p.maxReverseSpeed, maxSpeed + 10);
+      vf = this.easeToLimit(vf, maxSpeed + 10, p.maxReverseSpeed, dt);
     }
 
     this.slip = vl;
@@ -332,6 +349,22 @@ export class Vehicle {
     const k = damp(7, dt);
     this.leanRoll += (rollTarget - this.leanRoll) * k;
     this.leanPitch += (pitchTarget - this.leanPitch) * k;
+  }
+
+  /**
+   * Hold forward speed inside the engine's range — but as a ceiling the car settles back
+   * to, not a wall it is snapped against.
+   *
+   * The difference matters entirely because of external impulses. A hard clamp deleted a
+   * rocket blast's forward and backward components on the frame they were applied, so a
+   * detonation could throw a car sideways and nowhere else, and wrecks slumped in place
+   * as obstacles. Easing lets the blast land and then bleed away.
+   */
+  private easeToLimit(vf: number, maxSpeed: number, maxReverse: number, dt: number): number {
+    const decay = Math.exp(-CONFIG.terrain.overspeedDecay * dt);
+    if (vf > maxSpeed) return maxSpeed + (vf - maxSpeed) * decay;
+    if (vf < -maxReverse) return -maxReverse + (vf + maxReverse) * decay;
+    return vf;
   }
 
   /** Ramp launches, gravity and touchdown. */

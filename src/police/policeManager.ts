@@ -243,8 +243,9 @@ export class PoliceManager {
       const z = spur.az + (spur.bz - spur.az) * t;
       if (this.occupied(x, z)) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
-
-      // Facing the mouth, so it comes out forwards rather than reversing into the road.
+      // The spur mouth is on the spine, so this should always hold - but a spur that has
+      // been clipped by other geometry is a car parked in a box, not an ambush.
+      if (!ctx.world.canReach(x, z, spur.ax, spur.az)) continue;
       unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
       return true;
     }
@@ -284,7 +285,11 @@ export class PoliceManager {
         const lateral = seg.halfWidth + seg.shoulder * 0.65;
         x = node.x + seg.dz * lateral * side;
         z = node.z - seg.dx * lateral * side;
+        // It has to be able to get *out* again. Run-off is fenced at its outer edge and
+        // split by the rails of neighbouring legs, so "clear ground with the player in
+        // sight" is not the same as "somewhere a car can drive from".
         if (!this.terrain.sample(x, z).onCourse) continue;
+        if (!ctx.world.canReach(x, z, node.x, node.z)) continue;
       }
 
       const d = Math.hypot(x - ctx.player.x, z - ctx.player.z);
@@ -312,18 +317,45 @@ export class PoliceManager {
   }
 
   /**
-   * The opening wave: cars already on you when the lights go green. Placed directly
-   * rather than through the spawn rules, because at the start line the player has made
-   * no progress and there is nowhere "behind" for the director to use.
+   * The opening wave: the cars that are already out looking for you when the lights go
+   * green. Placed directly rather than through the spawn rules, because at zero progress
+   * there is no "behind" for the director to work with.
+   *
+   * Every one of them is somewhere you have to *arrive* at — up the road, or waiting in
+   * an alley off it. None are on the start line. Two patrol cars sitting alongside you
+   * before you have touched a key reads as a bug rather than as pressure, and it was one:
+   * the two negative offsets this list used to carry both clamped to the first node on
+   * the spine, which is exactly where the player is.
    */
   private spawnOpeningWave(nav: NavGraph): void {
-    const wave = CONFIG.police.pacing.openingWave;
+    const pacing = CONFIG.police.pacing;
+    const wave = pacing.openingWave;
+    const patrols = this.units.filter((u) => u.role === "patrol");
     let placed = 0;
-    for (const unit of this.units) {
-      if (placed >= wave.length) break;
-      if (unit.role !== "patrol") continue;
-      const node = nav.nodeAtProgress(wave[placed]);
-      unit.placeAt(node.x, node.z, node.progress < 0 ? 0 : 0, node.y);
+
+    // Anyone waiting in an early spur comes at you from the side rather than head-on,
+    // which is the whole reason the spurs exist.
+    const [spurFrom, spurTo] = pacing.openingSpurRange;
+    const nearSpurs = SPURS.filter(
+      (sp) => sp.progress > spurFrom && sp.progress < spurTo,
+    ).slice(0, pacing.openingAmbushes);
+
+    for (const spur of nearSpurs) {
+      const unit = patrols[placed];
+      if (!unit) break;
+      const t = pacing.ambushDepth;
+      const x = spur.ax + (spur.bx - spur.ax) * t;
+      const z = spur.az + (spur.bz - spur.az) * t;
+      unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
+      placed++;
+    }
+
+    for (const offset of wave) {
+      const unit = patrols[placed];
+      if (!unit) break;
+      const node = nav.nodeAtProgress(offset);
+      // Facing back down the course: they are coming to meet you, not fleeing up it.
+      unit.placeAt(node.x, node.z, Math.PI, node.y);
       placed++;
     }
   }

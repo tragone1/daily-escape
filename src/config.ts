@@ -69,8 +69,10 @@ export interface VehicleParams {
 const PLAYER_VEHICLE: VehicleParams = {
   accel: 36,
   maxSpeed: 46,
-  reverseAccel: 22,
-  maxReverseSpeed: 17,
+  // Reversing is how you get out of a pile-up, and a pile-up is the situation the whole
+  // game is built around. Too slow to back out of one is too slow to play.
+  reverseAccel: 34,
+  maxReverseSpeed: 26,
   brakeDecel: 58,
   engineDrag: 0.3,
   rollingResistance: 2.2,
@@ -139,6 +141,34 @@ export const CONFIG = {
     boostTerrainBypass: 1.0,
     /** How much of a climb's speed penalty boost cancels while it burns. */
     boostSlopeAssist: 0.65,
+    /**
+     * How fast speed above the engine's ceiling bleeds off, per second.
+     *
+     * The ceiling used to be a hard clamp applied every frame, which quietly deleted
+     * every external impulse pointed along the car: a rocket blast could throw a wreck
+     * sideways but not backwards, because the backwards component was clipped the same
+     * frame it landed. Easing instead lets a blast actually throw something.
+     */
+    overspeedDecay: 1.1,
+
+    /**
+     * The wasteland past the barriers.
+     *
+     * Leaving the course used to be free: you drove into the black, the backstop put you
+     * back on the road a second later, and you had shed everyone chasing you. Now it is
+     * simply a bad place to be — you crawl, you steer badly, and (see `GameState`) you
+     * bank no progress at all while you are out there. Nothing to gain, a chase to lose.
+     *
+     * These are applied *after* the boost bypass, so a charge cannot paper over them the
+     * way it does mud. Boost is the answer to terrain; it is not a licence to leave.
+     */
+    offCourse: {
+      maxSpeed: 0.32,
+      accel: 0.3,
+      grip: 0.55,
+      drag: 2.6,
+    },
+
     /** Below this forward speed a ramp does not launch you at all. */
     minLaunchSpeed: 17,
     /** Ceiling on launch speed so the big kicker cannot fling you off the map. */
@@ -225,10 +255,18 @@ export const CONFIG = {
       killRadius: 14,
       /** Everything within this radius of the blast is thrown. */
       blastRadius: 24,
-      /** Peak impulse at the centre of the blast, u/s. Divided by vehicle mass. */
-      blastImpulse: 105,
+      /**
+       * Peak impulse at the centre of the blast, u/s. Divided by vehicle mass.
+       *
+       * Large, and it needs to be: a wreck left sitting where it died is a wall you then
+       * have to drive around, which turned firing the rocket into building your own
+       * roadblock. Cars should leave the blast, not slump in it.
+       */
+      blastImpulse: 265,
       /** Spin imparted to caught vehicles, rad/s. */
-      blastSpin: 5.0,
+      blastSpin: 7.0,
+      /** How easily a burnt-out hulk can be shoved aside afterwards (lower = easier). */
+      wreckPushResistance: 0.3,
       /** Seconds a surviving police car is left spinning and driverless. */
       policeDisableTime: 4.2,
       /**
@@ -621,10 +659,24 @@ export const CONFIG = {
     /** Spawn placement and recycling. How *many* units is `escalation`'s job. */
     pacing: {
       /**
-       * Course positions for the cars that are already on you at the start line. The
-       * director cannot place these itself — at zero progress there is no "behind".
+       * The opening wave, as distances up the course.
+       *
+       * All of them are *ahead* of you. The director cannot place these itself — at zero
+       * progress there is no "behind" to place anything in — and the previous list asked
+       * for two of them behind, which clamped to the first node on the spine and parked
+       * two cars alongside you on the line. Police that are simply *there* when the run
+       * begins read as a bug, not as pressure. These are coming the other way instead,
+       * and any spur near the start gets one waiting in it.
        */
-      openingWave: [-70, -130, 95, 175],
+      openingWave: [120, 190, 265],
+      /** How many of the opening units wait in a spur rather than on the road. */
+      openingAmbushes: 2,
+      /**
+       * Course window the opening ambushers are drawn from. Far enough out that the first
+       * seconds are clean, close enough that the first thing to come at you sideways does
+       * so within about ten seconds of the lights going green.
+       */
+      openingSpurRange: [80, 620],
       /**
        * Beyond this distance a unit may appear even in plain view. Requiring concealment
        * outright left the open sections completely empty, because there is nothing out
@@ -824,8 +876,14 @@ export const CONFIG = {
     captureSpeed: 10,
     /** How fast the capture meter drains when you break free (multiplier of fill rate). */
     captureRecovery: 2.0,
-    /** Seconds off the drivable course before the player is put back on it. */
-    offCourseGrace: 1.6,
+    /**
+     * Seconds stranded outside the course before the player is towed back.
+     *
+     * Long, and it only fires while barely moving. At 1.6 s and unconditional this was a
+     * free escape hatch: leave the road, get replaced on it a moment later with every
+     * pursuer shaken off. The wasteland does the containment now.
+     */
+    offCourseGrace: 9,
     /** Radius counted for the "police nearby" HUD readout. */
     heatRadius: 34,
   },

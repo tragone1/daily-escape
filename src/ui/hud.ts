@@ -33,6 +33,8 @@ export interface HudFrame {
   airborne: boolean;
   /** Set while a police deployable is still hurting the car; overrides the surface tag. */
   tireWarning: string | null;
+  /** True past the course boundary, where the car crawls and progress stops counting. */
+  offCourse: boolean;
 }
 
 export interface RunSummary {
@@ -160,11 +162,14 @@ export class Hud {
     this.compassArrow.style.transform = `rotate(${frame.escapeBearing}rad)`;
     this.progressFill.style.width = `${Math.round(frame.sectionProgress * 100)}%`;
 
-    this.surfaceTag.textContent =
-      frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]);
+    // Being off the course outranks everything else the tag could say: it is the only one
+    // of these states that silently stops the score moving.
+    this.surfaceTag.textContent = frame.offCourse
+      ? "OFF COURSE"
+      : (frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]));
     this.surfaceTag.classList.toggle(
       "rough",
-      frame.tireWarning !== null || frame.airborne || frame.surface !== "asphalt",
+      frame.offCourse || frame.tireWarning !== null || frame.airborne || frame.surface !== "asphalt",
     );
 
     if (this.bannerTime > 0) {

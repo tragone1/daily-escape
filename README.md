@@ -13,18 +13,18 @@ score = furthest distance travelled + 500 x sections survived
 ```
 
 Distance is **furthest forward progress along the course**, not distance driven. Doubling
-back, circling a block or taking the scenic line through a section earns nothing — the
-counter only moves when you get somewhere new. A section bonus is worth roughly one
-section's worth of driving, so reaching the next one is always worth about as much as the
-driving that got you there.
+back, circling a block, taking the scenic line, or cutting across the wasteland outside the
+barriers all earn nothing — the counter only moves when you get somewhere new, on the road.
+A section bonus is worth roughly one section's worth of driving, so reaching the next one is
+always worth about as much as the driving that got you there.
 
 Reference points from a scripted driver that holds the road centre line, never boosts,
 never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of ten runs | caught at **85 s**, section **7**, ~6,200 points |
-| Best of ten | **147 s**, section **11**, ~10,600 points |
+| Median of ten runs | caught at **89 s**, section **7**, ~6,200 points |
+| Best of ten | **159 s**, section **12**, ~11,700 points |
 | Dropped into section 18 | caught in **13 s**, 20 police on it, ~17,000 points |
 
 Both are floors, not targets. Everything a player can do — boost, the rocket, braking,
@@ -136,7 +136,8 @@ followed by a forced 90-unit landing apron.
 
 ### Ambush spurs
 
-78 dead-end side roads hang off the spine, two per section. They exist for exactly one
+80 dead-end side roads hang off the spine, two per section — including section 1, where
+they are kept off the opening legs so the first hundred metres stay clean. They exist for exactly one
 reason: a walled corridor can only deliver police from directly behind or directly in
 front, which turns the squad into a queue — outrun the ones behind, then meet the ones
 ahead one at a time, head on, where they are trivial to dodge. A spur gives the squad
@@ -156,8 +157,26 @@ to 34 units either side off-road — so running wide, cutting a corner or gettin
 the tarmac leaves you driving rather than hitting a fence.
 
 Open means "a lot of ground to drive on", **not** "you can leave the course". Every section
-is bounded by a continuous barrier at the outer edge of its run-off, and a backstop puts
-you back on the route if you are off it for more than 1.6 s.
+is bounded by a continuous barrier at the outer edge of its run-off.
+
+### The wasteland
+
+Past the barriers there is ground, and you can drive on it. You just should not want to.
+
+| | On the course | Outside it |
+| --- | --- | --- |
+| Top speed | 39 u/s | **10 u/s** |
+| Progress banked | yes | **none** |
+
+Leaving used to be a free move, and the best one available: dip into the black, get
+teleported back a second and a half later by the containment backstop, and every pursuer
+you had was now somewhere else. Two changes close it. Out there you crawl — the multipliers
+sit *outside* the boost bypass, so a charge cannot power through them the way it can
+through mud — and the progress counter freezes, so ground made past the barriers is not
+ground made. The police follow you out, and are no longer recycled for doing so.
+
+The backstop still exists, but only for a player genuinely stranded: nine seconds, and only
+while barely moving. It can never be the faster option.
 
 ### Terrain
 
@@ -182,8 +201,13 @@ Every unit the run will ever need is built at startup and parked dormant. The di
 decides how many are awake and which classes they are drawn from, both as functions of the
 section you have reached.
 
-**Headcount**: `4 + 1.1 per section`, capped at **20**. Four are already on you at the
-start line.
+**Headcount**: `4 + 1.1 per section`, capped at **20**.
+
+**The opening**: five units, and **none of them on the start line**. Three are up the road
+facing back down it, and two are already waiting in alleys within the first 600 units. Cars
+simply parked alongside you before you have touched a key read as a bug rather than as
+pressure — and it was one: two of the four opening offsets were negative, and both clamped
+to the first node on the spine, which is exactly where the player is.
 
 **Class mix**: a weighted pick over whatever has unlocked, so late sections stop being
 patrol soup.
@@ -228,6 +252,14 @@ Common to all of them: never within 80 units, never in your line of sight unless
 more than 165 units away (the open sections have nothing to hide behind, and requiring
 concealment outright left them empty), never on top of another live unit, and any unit
 that falls 260 units behind is recycled forward rather than left trailing.
+
+And — the one that took the longest to notice — **the unit has to be able to drive out of
+where it is put**. "Clear ground with the player in sight" is not the same thing: a guard
+rail is two units tall, so it blocks a car completely while blocking sight not at all, and
+a lateral spawn on the far side of one produced a car that spent the entire encounter
+driving into a fence. `CollisionWorld.canReach` casts against *solid* colliders rather than
+tall occluders and is the test that question actually needed. Measured over ten runs, it
+vetoes **36% of otherwise-valid spawn spots**.
 
 ### The charge
 
@@ -281,6 +313,18 @@ There are no boost refills — it is purely cooldown-gated (1.6 s of burn, 7.5 s
 What makes it worth saving is that it is the **answer to terrain**, not a generic speed
 button: while it burns you are fully impervious to surface penalty
 (`boostTerrainBypass: 1.0`) and 65% of a climb's speed penalty is cancelled.
+
+One direct hit wrecks a car outright and throws it **46 units at a peak of 133 u/s** —
+roughly three times your own top speed. It used to barely shift them, for a reason that
+had nothing to do with the blast: forward speed was hard-clamped to the engine's ceiling
+every single frame, which deleted the along-the-car component of any external impulse on
+the frame it landed. Blasts could throw a car sideways and nowhere else, so wrecks slumped
+where they died and firing the rocket at a roadblock built you a better one. The ceiling is
+now something the car settles back to rather than a wall it is snapped against.
+
+A burnt-out hulk also stops being furniture: its `pushResistance` drops to 0.3 on death, so
+you can shove one out of the way (about 10 units in three seconds of pushing) instead of
+being walled in by your own kill.
 
 You start with one rocket and can carry two. Ammo turns up regularly, and **two out of
 every three sit out in the run-off**, well off the racing line: you have to leave the

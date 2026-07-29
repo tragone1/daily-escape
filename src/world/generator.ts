@@ -102,12 +102,19 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     // One ramp per section at most, placed on a middle leg.
     const rampLeg = rnd() < theme.ramps ? 1 + Math.floor(rnd() * (LEGS_PER_SECTION - 2)) : -1;
 
-    // Which legs in this section get an ambush spur hanging off their far end.
+    /*
+     * Which legs in this section get an ambush spur hanging off their far end.
+     *
+     * Section 0 gets them too, but only on its later legs. The opening needs somewhere
+     * for the first side-on threat to come from — the alternative is a corridor with
+     * nothing in it but cars driving at you head-on — while the first hundred metres
+     * still have to be clean enough to get moving in.
+     */
+    const firstLeg = s === 0 ? 2 : 0;
     const spurLegs = new Set<number>();
-    if (s > 0) {
-      while (spurLegs.size < Math.min(SPURS_PER_SECTION, LEGS_PER_SECTION)) {
-        spurLegs.add(Math.floor(rnd() * LEGS_PER_SECTION));
-      }
+    const wanted = Math.min(SPURS_PER_SECTION, LEGS_PER_SECTION - firstLeg);
+    while (spurLegs.size < wanted) {
+      spurLegs.add(firstLeg + Math.floor(rnd() * (LEGS_PER_SECTION - firstLeg)));
     }
 
     for (let i = 0; i < LEGS_PER_SECTION; i++) {

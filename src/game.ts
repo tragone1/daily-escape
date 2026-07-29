@@ -303,7 +303,8 @@ export class Game {
     }
 
     // --- Containment -------------------------------------------------------
-    this.enforceCourse(dt, progress);
+    const onCourse = terrain.sample(this.player.x, this.player.z).onCourse;
+    this.enforceCourse(dt, progress, onCourse);
 
     // --- Run state ---------------------------------------------------------
     const nearForCapture = this.police.countNear(
@@ -311,7 +312,7 @@ export class Game {
       this.player.z,
       CONFIG.run.captureRadius,
     );
-    this.state.update(dt, this.player.speed, nearForCapture, progress);
+    this.state.update(dt, this.player.speed, nearForCapture, progress, onCourse);
 
     const section = sectionIndexAt(progress);
     if (section !== this.lastSection && !this.state.over) {
@@ -336,15 +337,17 @@ export class Game {
   }
 
   /**
-   * Geometry alone should keep the player on the course, but a single gap anywhere in
-   * ~350 wall pieces would let someone cut across country and skip whole sections. This
-   * is the guarantee: leave the drivable ribbon for more than a moment and you are put
-   * back where you left it, having gained nothing.
+   * Last-resort recovery for a player stranded outside the course.
+   *
+   * This used to be the containment mechanism, on a 1.6 s fuse, and it was the loophole:
+   * dip into the black, get teleported back a moment later, and every pursuer you had was
+   * now somewhere else. Containment is the wasteland's own doing now — out there you
+   * crawl and you bank no progress — so this only exists for the case where geometry has
+   * genuinely put someone somewhere they cannot drive out of, and it waits long enough
+   * that it can never be the faster option.
    */
-  private enforceCourse(dt: number, progress: number): void {
-    const sample = this.world.terrain.sample(this.player.x, this.player.z);
-
-    if (sample.onCourse) {
+  private enforceCourse(dt: number, progress: number, onCourse: boolean): void {
+    if (onCourse) {
       this.offCourseTimer = 0;
       // Remember a known-good spot, but only when actually driving, so the recovery
       // point is never a wall the player was scraping.
@@ -360,7 +363,10 @@ export class Game {
     }
 
     this.offCourseTimer += dt;
+    // Only rescue someone who is genuinely stuck out there. A player still driving is
+    // paying the wasteland's price and can find their own way back.
     if (this.offCourseTimer < CONFIG.run.offCourseGrace) return;
+    if (this.player.speed > 4) return;
 
     // Prefer the remembered spot; fall back to the nearest route node.
     const node = this.world.nav.nodeAtProgress(progress);
@@ -371,7 +377,7 @@ export class Game {
     this.player.reset(back.x, back.z, back.heading, back.y);
     this.camera.reset(this.player);
     this.offCourseTimer = 0;
-    this.hud.announce("BACK ON COURSE", false);
+    this.hud.announce("TOWED BACK", false);
   }
 
   /** How far through the current section the player is, 0..1, for the HUD bar. */
@@ -415,6 +421,7 @@ export class Game {
         surface: this.player.surface,
         airborne: this.player.airborne,
         tireWarning: this.hazards.warning,
+        offCourse: this.player.offCourse,
       },
       dt,
     );

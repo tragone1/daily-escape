@@ -57,6 +57,7 @@ export class CollisionWorld {
   /** Scratch buffers, reused so the per-frame collision work allocates nothing. */
   private readonly nearby: StaticCollider[] = [];
   private readonly nearbyRay: StaticCollider[] = [];
+  private readonly nearbyPath: StaticCollider[] = [];
 
   constructor(readonly colliders: StaticCollider[]) {
     this.occluders = colliders.filter((c) => c.occludes);
@@ -234,6 +235,31 @@ export class CollisionWorld {
       if (t !== null && t * maxDist < best) best = t * maxDist;
     }
     return best;
+  }
+
+  /**
+   * Can a car actually drive from A to B, or is there something solid across the line?
+   *
+   * Distinct from `lineOfSight`, which only considers tall occluders — a guard rail is
+   * two units high, so it blocks a car completely while blocking sight not at all. That
+   * gap is what let police spawn in the run-off on the far side of a rail: the spot was
+   * clear, the player was visible, and the unit spent the whole encounter driving into a
+   * fence. This is the test that question actually needed.
+   */
+  canReach(x0: number, z0: number, x1: number, z1: number, carHeight = 1.1): boolean {
+    const candidates = this.solidGrid.query(
+      Math.min(x0, x1),
+      Math.min(z0, z1),
+      Math.max(x0, x1),
+      Math.max(z0, z1),
+      this.nearbyPath,
+    );
+    for (const solid of candidates) {
+      // Kerbs and low debris are driveable over; anything taller is a wall to this car.
+      if (solid.topY < carHeight) continue;
+      if (segmentVsOBB(x0, z0, x1, z1, solid.obb) !== null) return false;
+    }
+    return true;
   }
 
   /** Nearest free spot for a respawn: true when nothing solid is within `radius`. */

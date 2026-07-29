@@ -29,7 +29,14 @@ interface Theme {
   wall: WallStyle;
   /** Road half width, before difficulty tightening. */
   halfWidth: number;
-  /** Drivable run-off each side; 0 means a walled corridor. */
+  /**
+   * Drivable run-off each side, inside the containment wall.
+   *
+   * Every theme has one now. The wall used to sit at the edge of the tarmac for most
+   * themes and at the edge of the run-off for the open one, which meant "shoulder" was
+   * sometimes ground you could not actually reach. It is now uniformly the lane between
+   * the kerb and the wall — somewhere to run wide, get shoved, or be pinned against.
+   */
   shoulder: number;
   /** Chance per leg of a gradient change. */
   hills: number;
@@ -43,11 +50,11 @@ interface Theme {
  * makes each pass through the cycle meaner than the last.
  */
 const THEMES: Theme[] = [
-  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 12, shoulder: 0, hills: 0.0, ramps: 0.0 },
-  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 10, shoulder: 12, hills: 0.2, ramps: 0.8 },
-  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 20, hills: 1.0, ramps: 0.2 },
+  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 12, shoulder: 9, hills: 0.0, ramps: 0.0 },
+  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 10, shoulder: 17, hills: 0.2, ramps: 0.8 },
+  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 24, hills: 1.0, ramps: 0.2 },
   { id: "offroad", surface: "dirt", wall: "open", halfWidth: 11, shoulder: 34, hills: 0.3, ramps: 0.7 },
-  { id: "final", surface: "gravel", wall: "fence", halfWidth: 10, shoulder: 14, hills: 0.4, ramps: 0.3 },
+  { id: "final", surface: "gravel", wall: "fence", halfWidth: 10, shoulder: 19, hills: 0.4, ramps: 0.3 },
 ];
 
 export interface GeneratedCourse {
@@ -158,7 +165,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         surface: theme.surface,
         halfWidth,
         wall: theme.wall,
-        shoulder: shoulder > 1 ? shoulder : undefined,
+        shoulder,
         // A ramp needs a rising lip; force a modest climb into it.
         ...(isRamp ? { ramp: 0.3 + rnd() * 0.16 } : {}),
       });
@@ -177,7 +184,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
           surface: theme.surface,
           halfWidth: halfWidth + 2,
           wall: theme.wall,
-          shoulder: shoulder > 1 ? shoulder + 4 : undefined,
+          shoulder: shoulder + 4,
         });
         progress += landLen;
         grade = 0;

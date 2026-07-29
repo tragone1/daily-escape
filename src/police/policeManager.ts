@@ -21,7 +21,7 @@
 
 import type { Renderer } from "../gfx/renderer";
 import { CONFIG, type PoliceRole } from "../config";
-import { headingOf } from "../math";
+import { forwardOf, headingOf, rightOf } from "../math";
 import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import type { Terrain } from "../world/terrain";
@@ -38,6 +38,7 @@ export class PoliceManager {
   /** Distance along the spine the squad currently plans against. */
   private goalProgress = POLICE_LOOKAHEAD;
   private speedBonus = -1;
+  private boxTimer = 0;
 
   constructor(r: Renderer, nav: NavGraph, private terrain: Terrain) {
     // Build the whole pool up front so meshes exist before the first frame; the director
@@ -104,6 +105,12 @@ export class PoliceManager {
       this.director(ctx, playerProgress, section);
     }
 
+    this.boxTimer -= dt;
+    if (this.boxTimer <= 0) {
+      this.boxTimer = CONFIG.police.shared.box.interval;
+      this.assignBox(ctx);
+    }
+
     for (const u of this.units) {
       if (u.active) u.update(dt, ctx);
     }
@@ -154,7 +161,104 @@ export class PoliceManager {
       budget--;
     }
 
+    /*
+     * Ambush and side placements both tend to land in front, and the recycler pulls
+     * stragglers forward, so a deep section could end up with the entire squad ahead of
+     * the player and nothing at their back at all. Something is always behind you.
+     *
+     * Crucially this *moves* a car rather than adding one. Waking a fresh unit here ran
+     * every director tick with no reference to the headcount target, which is a spawn
+     * leak: section 3 was carrying fifteen cars against a target of six, and the whole
+     * difficulty curve went with it. The unit furthest up the road is the one doing least,
+     * so it is the one that gets sent back.
+     */
+    if (this.countBehind(ctx) < pacing.minBehind) {
+      const spare = this.furthestAhead(ctx);
+      if (spare) {
+        this.spawnOnRoute(spare, ctx, playerProgress, "behind");
+      } else if (active < target) {
+        const unit = this.pickDormant(section);
+        if (unit && this.spawnOnRoute(unit, ctx, playerProgress, "behind")) active++;
+      }
+    }
+
     this.applySectionSpeed(section);
+  }
+
+  /** Live units genuinely at your back, rather than alongside. */
+  private countBehind(ctx: PursuitContext): number {
+    const player = ctx.player;
+    const fwd = forwardOf(player.heading);
+    let n = 0;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const dx = u.vehicle.x - player.x;
+      const dz = u.vehicle.z - player.z;
+      const along = dx * fwd.x + dz * fwd.z;
+      if (along < -CONFIG.police.pacing.behindDistance) n++;
+    }
+    return n;
+  }
+
+  /** The unit furthest up the road, when there is no dormant one left to send. */
+  private furthestAhead(ctx: PursuitContext): PoliceCar | null {
+    const player = ctx.player;
+    const fwd = forwardOf(player.heading);
+    let best: PoliceCar | null = null;
+    let bestAlong = 0;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed || u.role === "rig") continue;
+      const along = (u.vehicle.x - player.x) * fwd.x + (u.vehicle.z - player.z) * fwd.z;
+      if (along > bestAlong) {
+        bestAlong = along;
+        best = u;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Hand the nearest units a station around the player.
+   *
+   * Each slot goes to whichever unassigned unit is closest to it, so the box forms from
+   * whatever happens to be around rather than every car converging on the same corner.
+   * Rigs, wardens and anything mid-charge are left out: they have jobs that a station
+   * would only interrupt.
+   */
+  private assignBox(ctx: PursuitContext): void {
+    const cfg = CONFIG.police.shared.box;
+    const player = ctx.player;
+    const right = rightOf(player.heading);
+    const fwd = forwardOf(player.heading);
+
+    const available: PoliceCar[] = [];
+    for (const u of this.units) {
+      u.boxSlot = null;
+      if (!u.active || u.destroyed || u.disabled) continue;
+      if (u.role === "rig" || u.role === "warden") continue;
+      if (u.distanceToPlayer(player) > cfg.range) continue;
+      available.push(u);
+    }
+
+    const taken = new Set<PoliceCar>();
+    for (const slot of cfg.slots.slice(0, cfg.maxAssigned)) {
+      const wx = player.x + right.x * slot.x + fwd.x * slot.z;
+      const wz = player.z + right.z * slot.x + fwd.z * slot.z;
+
+      let best: PoliceCar | null = null;
+      let bestD = Infinity;
+      for (const u of available) {
+        if (taken.has(u)) continue;
+        const d = Math.hypot(u.vehicle.x - wx, u.vehicle.z - wz);
+        if (d < bestD) {
+          bestD = d;
+          best = u;
+        }
+      }
+      if (!best) break;
+      taken.add(best);
+      best.boxSlot = slot;
+    }
   }
 
   /** Weighted pick over dormant units whose class has unlocked for this section. */

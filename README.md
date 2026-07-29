@@ -23,8 +23,8 @@ never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of fourteen runs | caught at **91 s**, section **6**, ~5,500 points |
-| Best of fourteen | **160 s**, section **11** |
+| Median of twelve runs | caught at **163 s**, section **10**, ~9,900 points |
+| Range | section **5** to section **13** |
 | Dropped into section 18 | caught in **13 s**, 20 police on it, ~17,000 points |
 
 Both are floors, not targets. Everything a player can do — boost, the rocket, braking,
@@ -162,20 +162,38 @@ the tarmac leaves you driving rather than hitting a fence.
 Open means "a lot of ground to drive on", **not** "you can leave the course". Every section
 is bounded by a continuous barrier at the outer edge of its run-off.
 
-### The wasteland
+### There is no out of bounds
 
-Past the barriers there is ground, and you can drive on it. You just should not want to.
+Every section is now walled at the outer edge of its run-off, and the layout is uniform:
+**road, reflector posts, a lane of grass, then the wall.** The posts are purely a read —
+no colliders, wide gaps — because the grass is a lane both sides are meant to use, not a
+no-man's-land. Shoulders were widened to pay for the enclosure: downtown gained one where
+it had none, hills went 20 to 24, construction 12 to 17, final 14 to 19.
 
-| | On the course | Outside it |
-| --- | --- | --- |
-| Your top speed | 39 u/s | **9 u/s** |
-| Police top speed | 46 u/s | **42 u/s** |
-| Progress banked | yes | **none** |
+The wall used to sit at the edge of the tarmac for every theme except the open one, which
+put the grass *outside* the fence — ground the terrain called drivable and the geometry
+made unreachable.
 
-The penalty is one-sided on purpose. Slowing the police out there too just moved the
-stalemate past the barriers — everyone crawled, so leaving cost nothing. At a third of
-their pace with the whole squad still at full speed, the wasteland is somewhere you get
-caught, which is the entire point of it.
+Containment is verified rather than assumed. A car boosting straight at the boundary from
+every leg, at three angles, both sides, 324 probes: **3% got out** through individual gaps
+where two legs meet at a sharp bend. Hunting each one across twelve thousand wall pieces
+is a losing game, so the invariant is enforced physically as well — outside the ribbon,
+outward velocity is cancelled and the car is pushed back toward the road. With that in
+place, 1 probe in 120 was still outside after four seconds, and the longest anyone spent
+out there was 2.8 s. It is a firm shove rather than a teleport, so a leak costs a moment
+and your line instead of resetting the chase.
+
+The old crawl-speed penalty survives, milder (0.62x rather than 0.32x), purely as the
+backstop for a leak. Progress still does not count out there.
+
+#### The joint bug this found
+
+Consecutive legs share exactly one point, so a car sitting on a joint was — to floating
+point — a fraction past the end of one and a fraction before the start of the next, and
+therefore outside both. Harmless while off-course meant nothing; a real defect once it
+meant a speed penalty, a frozen score and a warning on the HUD, because the course has
+some two hundred joints and you cross every one. Segments now overlap their neighbours by
+1.5 units. That single change took the escape rate from 14% to 3%.
 
 It is also visible: warm scorched rust instead of the old near-black, which was the same
 colour as the empty background, so the boundary between "road" and "the part that ends
@@ -243,7 +261,7 @@ The mix is the one with no ceiling, and it costs nothing at runtime. Each class 
 **retirement** as well as an unlock: patrols stop being dispatched after section 13,
 rammers after 19, blockers after 22, interceptors after 26. Twenty cars meaning eight
 patrols and some rammers is a completely different section from twenty cars meaning
-heavies, elites, juggernauts, wardens and hunters — which is all you face past section 26.
+heavies, elites, juggernauts, wardens and rigs — which is all you face past section 26.
 
 Retirement also stands down stragglers rather than recycling them. Without that it did
 nothing at all: recycling reuses the same car and never re-picks its class, so a patrol
@@ -251,10 +269,11 @@ woken in section 2 was still being sent at you in section 33.
 
 Measured survival, dropped cold into a section with a scripted driver, eight trials each:
 
-| Section | 5 | 11 | 17 | 23 | 29 | 35 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Survived | 6.0 s | 8.9 s | 19.1 s | 10.2 s | 5.2 s | **0.4 s** |
-| Tethered | 0% | 0% | 27% | 35% | 51% | — |
+| Section | 1 | 2 | 3 | 4 | 7 | 10 | 13 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Cars active | 5 | 6 | 7 | 7 | 10 | 12 | 15 |
+| Within 120 units | 3.3 | 4.7 | 5.8 | 6.4 | 7.8 | 10.3 | 12.6 |
+| **Behind you** | 1.9 | 3.2 | 3.9 | 3.5 | 4.5 | 5.0 | 5.3 |
 
 **The opening**: five units, and **none of them on the start line**. Three are up the road
 facing back down it, and two are already waiting in alleys within the first 600 units. Cars
@@ -275,7 +294,7 @@ patrol soup.
 | **Elite** | hot pink | 7 | 3.0 | Fast (52 top speed), short-horizon route lead, closes to a ram. Carries oil. |
 | **Juggernaut** | blood orange on charcoal | 8 | 3.4 | The armoured wrecker. 5× mass, a metre wider, `impactResistance` 0.35 and `pushResistance` 2.4 — hits barely slow it and shoves barely move it. Only a near-direct rocket wrecks one. Its `contactBoost` is only 1.1: see below. |
 | **Warden** | amber on charcoal | 10 | 2.2 | 4× mass SUV. Alternates a head-on charge and a flanking sweep. |
-| **Hunter** | matte black, one cold lamp | 13 | 3.6 | No siren, a winch on the roof. Gets in front, holds station just outside contact, and tethers you. See below. |
+| **Rig** | hazard yellow on charcoal | 6 | 2.6 | Nine metres of armoured transport. Does not chase — parks broadside across the tightest point ahead of you. See below. |
 
 **Speed**: everything gains `0.22 u/s` of top speed per section, capped at `+7`.
 
@@ -315,33 +334,44 @@ driving into a fence. `CollisionWorld.canReach` casts against *solid* colliders 
 tall occluders and is the test that question actually needed. Measured over ten runs, it
 vetoes **36% of otherwise-valid spawn spots**.
 
-### The hunter's tether
+### The rig
 
-Every other threat in the game is a collision, and collisions share a fatal property: they
-give you speed. The heaviest unit on the roster arriving at full charge shoved the player
-clear of the scrum, which looks devastating and plays as an *escape* — the box opens, you
-leave with pace, and pace is the one thing that stops an arrest.
-
-A cable has no such problem. It does not push, it holds.
+A nine-metre armoured transport that does not chase you at all. It scouts the road ahead,
+picks the tightest point it can reach, drives there and parks **broadside across it**.
 
 | | |
 | --- | --- |
-| Fires from | 52 units, within a 1.0 rad arc, line of sight |
-| While attached | your top speed ×0.52, and a 26 u/s² pull back toward the hunter |
-| Holds for | 5 s, or 96 units of separation |
-| The counter | **0.35 s of boost snaps it** |
+| Scouts | 210-620 units up your route |
+| Picks | the narrowest **free width**, measured by ray, not the section's nominal width |
+| Mass | 8.0, `pushResistance` 3.5 - going around it is the only play |
+| Top speed | 51 u/s |
 
-Only one line is ever in the air. Making boost the answer puts the charge you were saving
-for the next climb up against the thing about to end the run, which is a better decision
-than either half was on its own. At section 29 a scripted driver is tethered 51% of the
-time.
+Two things had to be true before it worked. It has to be *faster than you*: at 41 against
+your 46 it could never get in front to set up, so it parked wherever it happened to be
+when you caught it, which is not a roadblock, it is a slow lorry. And "tight" has to mean
+the actual gap between the walls, cast by ray — a section's nominal width barely varies
+along its length, so scouting on that picked spots no better than at random. Measured, it
+now parks in free widths averaging 51 against a course average of 55, 82% of the time
+ahead of you, broadside two thirds of the time it is stopped.
 
-Two changes went with it, both aimed at the same complaint — that getting hit by the big
-units read as a reset rather than a trap. The juggernaut's `contactBoost` came down from
-1.8 to 1.1 (its mass already makes contact brutal; its job is to be somewhere you cannot
-go, not to serve you). And contact *between* two police cars is damped to 20%, so a
-charging juggernaut can no longer blow its own squad off you and hand you the gap it was
-sent to close.
+### Boxing in
+
+Left to themselves every unit drives at the player, which produces a scrum: everyone
+arrives at the same point from the same direction, the collisions cancel, and being shoved
+somewhere is being freed. The director now hands the six nearest units a **station** around
+the player instead — front, both front quarters, both flanks, rear — and they hold it,
+matching pace rather than charging, closing the offset once they are on it. The forward
+stations are a brake-check, and they are the reason a fast player has to slow down.
+
+Around four to five units are on station at any time in a busy section.
+
+Something is also always **behind** you. Ambush and side placements both tend to land in
+front and the recycler pulls stragglers forward, so deep sections could quietly end up with
+the entire squad ahead and nothing at your back. Below three units behind, the one furthest
+up the road — the one doing least — gets sent back. It *moves* a car rather than adding
+one; waking a fresh unit there ignored the headcount target and ran every 0.4 s, which put
+fifteen cars in section 3 against a target of six and took the whole difficulty curve with
+it.
 
 ### The charge
 

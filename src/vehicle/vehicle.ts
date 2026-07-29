@@ -74,10 +74,6 @@ export class Vehicle {
    */
   isPolice = false;
 
-  /**
-   * Physical restraint on top speed — a hunter's tether. Separate from `tireSpeed` and
-   * `drive` because it is neither damage nor engine: something is holding you.
-   */
   restraint = 1;
   /** Rise per unit travelled forward: positive uphill, negative downhill. */
   climb = 0;
@@ -191,7 +187,6 @@ export class Vehicle {
     this.tireGrip = 1;
     this.tireSpeed = 1;
     this.drive = 1;
-    this.restraint = 1;
   }
 
   /** External shove (collisions, explosions). */
@@ -264,7 +259,7 @@ export class Vehicle {
 
     let maxSpeed = p.maxSpeed * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
-    maxSpeed *= this.tireSpeed * this.drive * this.restraint;
+    maxSpeed *= this.tireSpeed * this.drive;
 
     // --- Steering ----------------------------------------------------------
     this.steerInput += (clamp(input.steer, -1, 1) - this.steerInput) * damp(p.steerInputResponse, dt);

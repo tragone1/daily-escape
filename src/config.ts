@@ -15,7 +15,7 @@ export type PoliceRole =
   | "elite"
   | "juggernaut"
   | "warden"
-  | "hunter";
+  | "rig";
 
 /** Terrain surface tuning. Every value is a plain multiplier so effects stay readable. */
 export interface SurfaceParams {
@@ -155,10 +155,12 @@ export const CONFIG = {
     /**
      * The wasteland past the barriers.
      *
-     * Leaving the course used to be free: you drove into the black, the backstop put you
-     * back on the road a second later, and you had shed everyone chasing you. Now it is
-     * simply a bad place to be — you crawl, you steer badly, and (see `GameState`) you
-     * bank no progress at all while you are out there. Nothing to gain, a chase to lose.
+     * There should be no way to get here at all any more: every section is walled at the
+     * outer edge of its run-off, so the answer to "can I drive out of bounds" is now
+     * geometry rather than economics. This survives as the backstop for a leak — a gap at
+     * some junction in twelve thousand wall pieces — and is deliberately milder than it
+     * was, because at a third of normal speed a leak was effectively a death sentence
+     * rather than a mistake. Progress still does not count out here.
      *
      * These are applied *after* the boost bypass, so a charge cannot paper over them the
      * way it does mud. Boost is the answer to terrain; it is not a licence to leave.
@@ -169,10 +171,10 @@ export const CONFIG = {
      * black genuinely somewhere you do not want to be.
      */
     offCourse: {
-      maxSpeed: 0.32,
-      accel: 0.3,
-      grip: 0.55,
-      drag: 2.6,
+      maxSpeed: 0.62,
+      accel: 0.6,
+      grip: 0.7,
+      drag: 1.8,
     },
 
     /** Below this forward speed a ramp does not launch you at all. */
@@ -400,6 +402,40 @@ export const CONFIG = {
        * never applies to a unit already on you — it only stops the chase from ending
        * because you happened to be in front.
        */
+      /**
+       * Boxing in.
+       *
+       * Left to itself every unit drives at the player, which produces a scrum that
+       * shoves you around and rarely holds you: everyone arrives at the same point from
+       * the same direction and the collisions cancel out. Instead the director hands the
+       * nearest units a station around the player and they hold it, matching pace rather
+       * than charging — a moving cage, closing.
+       *
+       * Offsets are in the player's own frame: x across, z along. The forward stations are
+       * the brake-check, and they are the reason a fast player has to slow down.
+       */
+      box: {
+        /** Units this close are assigned a station instead of chasing the player. */
+        range: 62,
+        /** How many stations are handed out at once. */
+        maxAssigned: 6,
+        /** Re-assign this often, seconds. Slower than the director so units commit. */
+        interval: 1.1,
+        /** Stations, in order of preference. */
+        slots: [
+          { x: 0, z: 10 },
+          { x: -7, z: 7 },
+          { x: 7, z: 7 },
+          { x: -7.5, z: -1 },
+          { x: 7.5, z: -1 },
+          { x: 0, z: -8 },
+        ],
+        /** Once a unit is within this of its station it starts pressing inward. */
+        pressRange: 7,
+        /** How hard it presses, as a fraction of the offset removed per second. */
+        pressRate: 0.55,
+      },
+
       catchUp: {
         /** No help at all inside this range. */
         nearDistance: 55,
@@ -588,56 +624,51 @@ export const CONFIG = {
     },
 
     /**
-     * HUNTER — the last thing the city sends, and the only one that does not want to hit
-     * you at all.
+     * RIG — the roadblock.
      *
-     * Matte black, low, no siren bar — a winch on the roof instead. It closes to tether
-     * range, fires, and then simply drives: the line caps your speed and hauls you back
-     * toward it while everything else in the section arrives. Nothing about it is a
-     * collision, which is exactly why it works where the juggernaut did not. You cannot
-     * bounce off a cable.
+     * A long armoured transport that does not chase you at all. It reads the road ahead,
+     * picks the *narrowest* point within reach, drives there and parks broadside across
+     * it. Nine metres of stationary vehicle at a pinch point is a wall with a gap either
+     * side, and which gap you take is a decision made at speed with the rest of the squad
+     * behind you.
      *
-     * The counter is the boost. Burning a charge snaps the line, which turns the meter
-     * you were saving for a hill into the thing standing between you and the arrest.
+     * Placement is the whole unit. A rig parked in the middle of the open off-road section
+     * is scenery; the same rig across a narrow downtown block is the reason the run ended.
      */
-    hunter: {
+    rig: {
       vehicle: policeVehicle({
-        maxSpeed: 49,
-        accel: 38,
-        steerRateMax: 2.4,
-        gripNormal: 9.0,
-        mass: 2.2,
-        halfLength: 2.9,
-        halfWidth: 1.5,
+        // Faster than you, which it has to be. At 41 against your 46 it could never get
+        // in front to set up, so it parked wherever it happened to be when you caught it
+        // - which is not a roadblock, it is a slow lorry.
+        maxSpeed: 51,
+        accel: 34,
+        steerRateMax: 1.5,
+        gripNormal: 9.4,
+        // Nothing shifts it. Going around is the only play.
+        mass: 8.0,
+        halfLength: 6.0,
+        halfWidth: 1.85,
       }),
-      impactResistance: 0.6,
-      pushResistance: 1.6,
-      contactBoost: 1.1,
-      /** Uses the interceptor's route-lead to get in front before it shoots. */
-      predictionTime: 1.8,
-      /** Closes to this range before firing. */
-      commitRange: 44,
-
-      tether: {
-        /** Maximum range the line can be fired at. */
-        fireRange: 52,
-        /** Half-angle of the firing arc, radians. It has to be pointed at you. */
-        fireCone: 1.0,
-        /** Seconds the line holds before the winch has to reset. */
-        duration: 5.0,
-        /** Gap before the same unit can fire again. */
-        cooldown: 9,
-        /** Only one line in the air at a time, across the whole squad. */
-        maxActive: 1,
-        /** Your top speed while hauled, as a multiplier. */
-        speedScale: 0.52,
-        /** Pull toward the hunter, u/s^2. */
-        pull: 26,
-        /** The line snaps on its own past this length. */
-        breakLength: 96,
-        /** Seconds of boost burn needed to snap it early. */
-        boostBreakTime: 0.35,
-      },
+      impactResistance: 0.2,
+      pushResistance: 3.5,
+      contactBoost: 1.0,
+      /** Looks this far up the player's route for somewhere worth blocking. */
+      scoutMin: 210,
+      scoutMax: 620,
+      /** Distance from its chosen spot at which it stops driving and turns broadside. */
+      parkRadius: 11,
+      /** Start slowing this far out, down to this speed, so it can stop on the mark. */
+      approachDistance: 40,
+      approachSpeed: 20,
+      /** How fast it swings across the road once parked, rad/s. */
+      turnRate: 1.9,
+      /** Re-pick a spot only this often, so it commits instead of chasing the ideal one. */
+      repickInterval: 6,
+      /** Only blocks where the drivable width is under this, unless nothing else is near. */
+      preferredWidth: 30,
+      /** Only a near-direct rocket wrecks one. */
+      rocketKillRadius: 9,
+      rocketDisableTime: 2.4,
     },
 
     /**
@@ -716,7 +747,7 @@ export const CONFIG = {
         /** First section it can appear in. */
         unlockSection: 3,
         /** Classes that carry it: the ones that get in front of you on purpose. */
-        roles: ["interceptor", "blocker", "hunter"],
+        roles: ["interceptor", "blocker"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
         life: 14,
@@ -787,6 +818,19 @@ export const CONFIG = {
        * front one at a time. The threat has to be able to come from off to the side.
        */
       spawnWeights: { ambush: 4, side: 2, behind: 2, ahead: 1 },
+      /**
+       * Minimum live units *behind* the player. Below this the next spawn is forced to
+       * the rear regardless of the weights.
+       *
+       * Ambush and side placements both tend to put cars in front, and the recycler pulls
+       * stragglers forward, so the deep sections could quietly end up with the entire
+       * squad ahead of you and nothing at your back at all. Pressure from behind is what
+       * stops you simply lifting off and picking your way through what is in front.
+       */
+      minBehind: 3,
+      /** A unit counts as "behind" from this far back, so bumper-riders do not count. */
+      behindDistance: 25,
+
       /** Ambush spurs are only used within this window ahead of the player. */
       ambushLeadMin: 35,
       ambushLeadMax: 230,
@@ -846,7 +890,7 @@ export const CONFIG = {
         elite: 6,
         juggernaut: 7,
         warden: 9,
-        hunter: 12,
+        rig: 5,
       } as Record<PoliceRole, number>,
       /**
        * Once unlocked, how strongly a class is favoured when waking the next unit.
@@ -861,14 +905,14 @@ export const CONFIG = {
         elite: 3.0,
         juggernaut: 3.4,
         warden: 2.2,
-        hunter: 3.6,
+        rig: 2.6,
       } as Record<PoliceRole, number>,
       /**
        * Section after which a class stops being sent at all.
        *
        * This is the escalation that costs nothing at runtime. Headcount has to be capped
        * for frame time, so past the cap the *mix* is the only thing left to turn — and
-       * "twenty cars" meaning twenty juggernauts, wardens and hunters is a completely
+       * "twenty cars" meaning juggernauts, wardens and rigs is a completely
        * different section from "twenty cars" meaning eight patrols and some rammers.
        * Before this, nothing whatsoever changed after section 13.
        */
@@ -881,7 +925,7 @@ export const CONFIG = {
         elite: 999,
         juggernaut: 999,
         warden: 999,
-        hunter: 999,
+        rig: 999,
       } as Record<PoliceRole, number>,
 
       /** Extra top speed added to every unit per section, u/s, and its cap. */
@@ -904,7 +948,7 @@ export const CONFIG = {
       elite: 6,
       juggernaut: 5,
       warden: 4,
-      hunter: 5,
+      rig: 4,
     } as Record<PoliceRole, number>,
   },
 
@@ -1045,6 +1089,11 @@ export const CONFIG = {
      * wipes out four seconds of being buried.
      */
     captureRecovery: 1.8,
+    /**
+     * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
+     * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.
+     */
+    offCourseShove: 70,
     /**
      * Seconds stranded outside the course before the player is towed back.
      *

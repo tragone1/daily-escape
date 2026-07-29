@@ -12,12 +12,16 @@ import type { Renderer } from "../gfx/renderer";
 
 import { CONFIG, type PoliceRole } from "../config";
 import { clamp, dist, forwardOf, headingOf, wrapAngle } from "../math";
-import { CarView, hunterStyle, policeStyle } from "../vehicle/carView";
+import { CarView, policeStyle } from "../vehicle/carView";
 import { Vehicle, type VehicleInput } from "../vehicle/vehicle";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import {
+  boxGoal,
   goalFor,
+  rigGoal,
   type BehaviorTuning,
+  type BoxSlot,
+  type Goal,
   type PursuitContext,
   type WardenAttack,
 } from "./behaviors";
@@ -35,8 +39,8 @@ const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
   // Hot amber on charcoal: the keeper has to be identifiable at a glance, at speed,
   // against a night palette — you need to know which one you cannot simply shove aside.
   warden: [1.0, 0.5, 0.02],
-  // Cold white. No siren, no colour: the hunter is the one that is not announcing itself.
-  hunter: [0.85, 0.95, 1.0],
+  // Hazard yellow on charcoal, like a works vehicle. It is not chasing anybody.
+  rig: [0.98, 0.78, 0.06],
 };
 
 export class PoliceCar {
@@ -80,6 +84,16 @@ export class PoliceCar {
 
   private input: VehicleInput = { throttle: 0, brake: 0, steer: 0, boost: false };
 
+  /** Station handed out by the director; null means "chase normally". */
+  boxSlot: BoxSlot | null = null;
+  /** How far the station has been closed in, 0..1. */
+  private boxPress = 0;
+
+  /** RIG: the spot it is blocking, and when it may pick a different one. */
+  private rigPost: NavNode | null = null;
+  private rigTimer = 0;
+  private rigScore = Infinity;
+
   /** Units stay dormant until the director wakes them. */
   active = false;
 
@@ -120,9 +134,10 @@ export class PoliceCar {
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
     this.view = new CarView(
       r,
-      role === "hunter"
-        ? hunterStyle(ROLE_ACCENT.hunter)
-        : policeStyle(ROLE_ACCENT[role], role === "warden" || role === "juggernaut"),
+      policeStyle(
+        ROLE_ACCENT[role],
+        role === "warden" || role === "juggernaut" || role === "rig",
+      ),
       params.halfLength,
       params.halfWidth,
     );
@@ -130,9 +145,9 @@ export class PoliceCar {
 
   /** The warden sits on a wider post than the light blockers do. */
   private get parkRadius(): number {
-    return this.role === "warden"
-      ? CONFIG.police.warden.parkRadius
-      : CONFIG.police.blocker.parkRadius;
+    if (this.role === "warden") return CONFIG.police.warden.parkRadius;
+    if (this.role === "rig") return CONFIG.police.rig.parkRadius;
+    return CONFIG.police.blocker.parkRadius;
   }
 
   reset(): void {
@@ -149,6 +164,11 @@ export class PoliceCar {
     this.chargeTimer = 0;
     this.chargeCooldown = 0;
     this.charging = false;
+    this.boxSlot = null;
+    this.boxPress = 0;
+    this.rigPost = null;
+    this.rigTimer = 0;
+    this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
     this.vehicle.drive = 1;
     this.disabledTimer = 0;
@@ -246,11 +266,25 @@ export class PoliceCar {
     this.updateCatchUp(ctx);
     if (this.role === "warden") this.updateWardenAttack(dt, ctx);
 
-    // A committed charge overrides goal selection entirely: it is already pointed at the
-    // player and it is not going to reconsider halfway through.
-    const goal = this.charging
-      ? ({ kind: "direct", x: ctx.player.x + ctx.player.vx * 0.3, z: ctx.player.z + ctx.player.vz * 0.3 } as const)
-      : goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
+    let goal: Goal;
+    if (this.charging) {
+      // A committed charge overrides everything: it is already pointed at the player and
+      // it is not going to reconsider halfway through.
+      goal = { kind: "direct", x: ctx.player.x + ctx.player.vx * 0.3, z: ctx.player.z + ctx.player.vz * 0.3 };
+    } else if (this.role === "rig") {
+      this.updateRigPost(dt, ctx);
+      goal = rigGoal(ctx, this.rigPost);
+    } else if (this.boxSlot) {
+      // On a station: hold it, then close it.
+      const box = CONFIG.police.shared.box;
+      const target = boxGoal(ctx, this.boxSlot, this.boxPress);
+      const atStation = dist(v.x, v.z, target.x, target.z) < box.pressRange;
+      this.boxPress = clamp(this.boxPress + (atStation ? box.pressRate : -box.pressRate) * dt, 0, 0.8);
+      goal = boxGoal(ctx, this.boxSlot, this.boxPress);
+    } else {
+      this.boxPress = 0;
+      goal = goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
+    }
 
     let steerTargetX: number;
     let steerTargetZ: number;
@@ -290,7 +324,7 @@ export class PoliceCar {
         // Slow down on the approach. Arriving at 40+ meant sailing straight past the
         // post and then having to turn around, which repeatedly wedged units against
         // walls and took them out of the run entirely.
-        const cfg = CONFIG.police.blocker;
+        const cfg = this.role === "rig" ? CONFIG.police.rig : CONFIG.police.blocker;
         if (parkDistance < cfg.approachDistance) {
           cornerLimit = Math.min(cornerLimit, cfg.approachSpeed);
         }
@@ -299,6 +333,12 @@ export class PoliceCar {
 
     this.driveToward(steerTargetX, steerTargetZ, cornerLimit, parkDistance, dt, ctx);
     v.update(this.input, dt, ctx.terrain);
+    // Swing across as soon as it has effectively arrived, rather than only inside the
+    // park radius: a rig that coasts to a stop a metre short is still a roadblock, and it
+    // should look like one.
+    if (this.role === "rig" && v.speed < 4 && parkDistance < this.parkRadius * 1.8) {
+      this.parkBroadside(dt, ctx);
+    }
   }
 
   /**
@@ -374,6 +414,69 @@ export class PoliceCar {
     const d = this.distanceToPlayer(player);
     const t = clamp((d - cfg.nearDistance) / (cfg.farDistance - cfg.nearDistance), 0, 1);
     v.drive = 1 + t * cfg.maxBonus + charge;
+  }
+
+  /**
+   * Pick somewhere worth blocking: the narrowest point on the player's route inside the
+   * scouting window.
+   *
+   * Width is the whole heuristic, and it is the difference between a roadblock and a
+   * parked lorry. Nine metres across the middle of the wide off-road section leaves two
+   * lanes either side and reads as scenery; the same nine metres across a downtown block
+   * is most of the road.
+   */
+  private updateRigPost(dt: number, ctx: PursuitContext): void {
+    const cfg = CONFIG.police.rig;
+    this.rigTimer -= dt;
+    const playerProgress = ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+    // A block the player has already driven past is not a block. Re-scout immediately
+    // rather than sitting behind them until the timer happens to come round.
+    const passed =
+      this.rigPost !== null &&
+      ctx.terrain.progressAt(this.rigPost.x, this.rigPost.z) < playerProgress + 20;
+    if (this.rigPost && this.rigTimer > 0 && !passed) return;
+    if (passed) this.rigScore = Infinity;
+    this.rigTimer = cfg.repickInterval;
+    let best: NavNode | null = null;
+    let bestScore = Infinity;
+
+    for (let d = cfg.scoutMin; d <= cfg.scoutMax; d += 14) {
+      const node = ctx.nav.nodeAtProgress(playerProgress + d);
+      const seg = ctx.terrain.sample(node.x, node.z).segment;
+      // Real room to drive through, not the section's nominal width - the latter barely
+      // varies inside a section, so scouting on it chose spots no better than at random.
+      const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
+      // Width dominates, heavily: the whole unit is the choice of where to stand, and a
+      // rig across the wide off-road flats is scenery. Distance is only a tiebreak, but
+      // it has to count for something, because a rig that never arrives has blocked
+      // nothing either.
+      const score = width * 2 + d * 0.04 + (width < cfg.preferredWidth ? -25 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    }
+    // Do not abandon a good spot for a marginally better one once committed.
+    if (best && (!this.rigPost || bestScore < this.rigScore - 6)) {
+      this.rigPost = best;
+      this.rigScore = bestScore;
+    }
+  }
+
+  /**
+   * Swing broadside once parked. A rig pointing down the road is a car in your lane; a
+   * rig across it is a wall.
+   */
+  private parkBroadside(dt: number, ctx: PursuitContext): void {
+    const v = this.vehicle;
+    const seg = ctx.terrain.sample(v.x, v.z).segment;
+    // Either perpendicular will do; take whichever is the shorter swing from here.
+    const across = seg.heading + Math.PI / 2;
+    const a = wrapAngle(across - v.heading);
+    const b = wrapAngle(across + Math.PI - v.heading);
+    const err = Math.abs(a) < Math.abs(b) ? a : b;
+    const step = CONFIG.police.rig.turnRate * dt;
+    v.heading += clamp(err, -step, step);
   }
 
   /**

@@ -14,7 +14,6 @@ import { CollisionWorld } from "./physics/collisionWorld";
 import { PlayerController } from "./player/playerController";
 import type { PursuitContext } from "./police/behaviors";
 import { HazardField } from "./police/hazards";
-import { TetherSystem } from "./police/tether";
 import { PoliceManager } from "./police/policeManager";
 import { GameState } from "./state";
 import { Hud } from "./ui/hud";
@@ -22,6 +21,7 @@ import { CarView, PLAYER_STYLE } from "./vehicle/carView";
 import { Vehicle } from "./vehicle/vehicle";
 import { RocketSystem } from "./weapons/rocket";
 import { buildWorld, type BuiltWorld } from "./world/courseBuilder";
+import type { TerrainSample } from "./world/terrain";
 import { COURSE_START, SECTION_STARTS, START_HEADING, sectionIndexAt } from "./world/course";
 import { PickupSystem } from "./world/pickups";
 
@@ -37,7 +37,6 @@ export class Game {
 
   private police: PoliceManager;
   private hazards: HazardField;
-  private tethers: TetherSystem;
   private pickups: PickupSystem;
   private rockets: RocketSystem;
   private camera: ChaseCamera;
@@ -87,7 +86,6 @@ export class Game {
 
     this.police = new PoliceManager(this.renderer, this.world.nav, this.world.terrain);
     this.hazards = new HazardField(this.renderer, this.world.terrain);
-    this.tethers = new TetherSystem(this.renderer);
     this.pickups = new PickupSystem(this.renderer, this.world.terrain);
     this.rockets = new RocketSystem(this.renderer);
     this.camera = new ChaseCamera(this.renderer, this.collision, this.world.terrain);
@@ -150,7 +148,6 @@ export class Game {
     this.player.reset(COURSE_START.x, COURSE_START.z, START_HEADING, COURSE_START.y);
     this.police.reset(this.world.nav);
     this.hazards.reset();
-    this.tethers.reset();
     this.pickups.reset();
     this.rockets.reset();
     this.camera.reset(this.player);
@@ -267,17 +264,6 @@ export class Game {
       this.hud.announce(hazard === "spike" ? "SPIKE STRIP!" : "OIL SLICK!", false);
     }
 
-    const tether = this.tethers.update(dt, this.player, this.police.units);
-    if (tether === "fired") {
-      this.camera.addShake(0.5);
-      this.hud.punch(0.22);
-      this.audio.impact(0.6);
-      this.hud.announce("TETHERED - BOOST TO BREAK", false);
-    } else if (tether === "snapped") {
-      this.camera.addShake(0.3);
-      this.audio.impact(0.4);
-      this.hud.announce("LINE SNAPPED", true);
-    }
 
     // --- Collisions --------------------------------------------------------
     const playerHit = this.collision.resolveStatic(this.player);
@@ -319,8 +305,8 @@ export class Game {
     }
 
     // --- Containment -------------------------------------------------------
-    const onCourse = terrain.sample(this.player.x, this.player.z).onCourse;
-    this.enforceCourse(dt, progress, onCourse);
+    const ground = terrain.sample(this.player.x, this.player.z);
+    this.enforceCourse(dt, progress, ground);
 
     // --- Run state ---------------------------------------------------------
     const nearForCapture = this.police.countNear(
@@ -328,7 +314,7 @@ export class Game {
       this.player.z,
       CONFIG.run.captureRadius,
     );
-    this.state.update(dt, this.player.speed, nearForCapture, progress, onCourse);
+    this.state.update(dt, this.player.speed, nearForCapture, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
     if (section !== this.lastSection && !this.state.over) {
@@ -362,8 +348,10 @@ export class Game {
    * genuinely put someone somewhere they cannot drive out of, and it waits long enough
    * that it can never be the faster option.
    */
-  private enforceCourse(dt: number, progress: number, onCourse: boolean): void {
-    if (onCourse) {
+  private enforceCourse(dt: number, progress: number, ground: TerrainSample): void {
+    if (!ground.onCourse) this.pushBackOnCourse(dt, ground);
+
+    if (ground.onCourse) {
       this.offCourseTimer = 0;
       // Remember a known-good spot, but only when actually driving, so the recovery
       // point is never a wall the player was scraping.
@@ -394,6 +382,48 @@ export class Game {
     this.camera.reset(this.player);
     this.offCourseTimer = 0;
     this.hud.announce("TOWED BACK", false);
+  }
+
+  /**
+   * The invisible wall.
+   *
+   * Every section is fenced at the outer edge of its run-off, and measured, that geometry
+   * turns away 97% of a deliberately adversarial escape sweep — boosting straight at the
+   * boundary from every angle at every leg. The remaining few percent are individual gaps
+   * where two legs meet at a sharp bend, and hunting each one across twelve thousand wall
+   * pieces is a losing game.
+   *
+   * So the invariant is enforced physically instead: outside the ribbon, whatever velocity
+   * is carrying you further out is cancelled and you are pushed back toward the road. It
+   * is a firm shove rather than a teleport, so a leak costs you a moment and your line
+   * instead of resetting the chase — which is what made the old backstop worth abusing.
+   */
+  private pushBackOnCourse(dt: number, ground: TerrainSample): void {
+    const seg = ground.segment;
+    const p = this.player;
+
+    // Closest point on this segment's centre line.
+    const rx = p.x - seg.ax;
+    const rz = p.z - seg.az;
+    const along = clamp(rx * seg.dx + rz * seg.dz, 0, seg.length);
+    const cx = seg.ax + seg.dx * along;
+    const cz = seg.az + seg.dz * along;
+
+    const dx = cx - p.x;
+    const dz = cz - p.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const nx = dx / d;
+    const nz = dz / d;
+
+    // Cancel anything still carrying the car outward, then push it back in.
+    const outward = p.vx * nx + p.vz * nz;
+    if (outward < 0) {
+      p.vx -= nx * outward;
+      p.vz -= nz * outward;
+    }
+    const shove = CONFIG.run.offCourseShove * dt;
+    p.vx += nx * shove;
+    p.vz += nz * shove;
   }
 
   /** How far through the current section the player is, 0..1, for the HUD bar. */
@@ -438,7 +468,6 @@ export class Game {
         airborne: this.player.airborne,
         tireWarning: this.hazards.warning,
         offCourse: this.player.offCourse,
-        tethered: this.tethers.attached,
       },
       dt,
     );

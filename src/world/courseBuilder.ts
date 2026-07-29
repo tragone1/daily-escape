@@ -176,9 +176,12 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
     if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments);
+    if (seg.shoulder > 0 && !seg.branch) buildKerb(r, seg, segments);
     if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);
   }
+
+  buildJunctionCaps(r, segments, colliders, wallShades);
 
   // No gate: endless mode has no finish to build.
 
@@ -248,9 +251,15 @@ function buildWalls(
   // Right-hand perpendicular of the segment direction.
   const rx = seg.dz;
   const rz = -seg.dx;
-  const isOpen = seg.wall === "open";
-  // Open sections fence the far edge of the run-off, not the edge of the tarmac.
-  const offset = seg.halfWidth + (isOpen ? seg.shoulder : 0) + style.thickness / 2;
+  /*
+   * The wall always sits at the far edge of the run-off.
+   *
+   * It used to sit at the edge of the tarmac for every theme except the open one, which
+   * put the grass *outside* the fence — ground the terrain called drivable and the
+   * geometry made unreachable. Now the layout is uniform everywhere: road, kerb markers,
+   * a lane of grass, then the wall. There is nothing beyond it to drive to.
+   */
+  const offset = seg.halfWidth + seg.shoulder + style.thickness / 2;
 
   for (let side = -1; side <= 1; side += 2) {
     for (let i = 0; i < count; i++) {
@@ -295,6 +304,108 @@ function buildWalls(
         seg.heading,
         groundY + height,
       );
+    }
+  }
+}
+
+/**
+ * Seal the wedge on the outside of every corner.
+ *
+ * Two consecutive legs each fence their own flank, and where they meet at an angle the
+ * two wall lines stop short of each other on the outside of the turn. The gap is
+ * proportional to how far out the wall sits, so it was a rounding error while walls hugged
+ * the tarmac and a driveable hole the moment they moved to the far edge of the run-off —
+ * measured, 14% of junction probes escaped through one.
+ *
+ * Each gap is bridged with short chunks, trimmed individually against other roads so that
+ * spur mouths and junctions stay open. A single long chunk would either seal an alley or
+ * leave the whole corner open.
+ */
+function buildJunctionCaps(
+  r: Renderer,
+  segments: CourseSegment[],
+  colliders: StaticCollider[],
+  wallShades: Record<string, Rgb[]>,
+): void {
+  const spine = segments.filter((s) => !s.branch && !s.overlay);
+
+  for (let i = 0; i < spine.length - 1; i++) {
+    const a = spine[i];
+    const b = spine[i + 1];
+    if (a.wall === "none" || b.wall === "none") continue;
+
+    const style = WALL_STYLE[a.wall as Exclude<WallStyle, "none">];
+    const shades = wallShades[a.wall];
+    const offA = a.halfWidth + a.shoulder + style.thickness / 2;
+    const offB = b.halfWidth + b.shoulder + WALL_STYLE[b.wall as Exclude<WallStyle, "none">].thickness / 2;
+
+    for (let side = -1; side <= 1; side += 2) {
+      // Wall endpoints either side of the joint, on this flank.
+      const ax = a.bx + a.dz * offA * side;
+      const az = a.bz - a.dx * offA * side;
+      const bx = b.ax + b.dz * offB * side;
+      const bz = b.az - b.dx * offB * side;
+
+      const dx = bx - ax;
+      const dz = bz - az;
+      const span = Math.hypot(dx, dz);
+      if (span < 1.5) continue;
+
+      const heading = Math.atan2(dx, dz);
+      const chunks = Math.max(1, Math.round(span / 8));
+      const chunkLen = span / chunks;
+
+      for (let c = 0; c < chunks; c++) {
+        const t = (c + 0.5) / chunks;
+        const cx = ax + dx * t;
+        const cz = az + dz * t;
+        // Leave openings where a road actually passes through, so spur mouths survive.
+        if (onOtherRoad(segments, a, cx, cz, JUNCTION_CLEARANCE)) continue;
+
+        const rnd = hash2(cx, cz);
+        const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
+        const mesh = r.createMesh(
+          { kind: "box", width: style.thickness, height, depth: chunkLen * 1.15 },
+          { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
+        );
+        const groundY = a.by;
+        mesh.position.set(cx, groundY + height / 2, cz);
+        mesh.rotation.y = heading;
+        addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
+      }
+    }
+  }
+}
+
+/**
+ * Reflector posts along the edge of the tarmac.
+ *
+ * Purely a read: the kerb line has to be visible at speed so leaving the road is a choice
+ * rather than a surprise, but it must not be a barrier — the grass beyond it is a lane you
+ * are meant to be able to use, and both sides use it. Hence posts with wide gaps and no
+ * colliders at all rather than a continuous kerb.
+ */
+function buildKerb(r: Renderer, seg: CourseSegment, segments: CourseSegment[]): void {
+  const spacing = 13;
+  const count = Math.max(1, Math.floor(seg.length / spacing));
+  const rx = seg.dz;
+  const rz = -seg.dx;
+  const pitch = -Math.atan(seg.grade);
+
+  for (let side = -1; side <= 1; side += 2) {
+    for (let i = 0; i < count; i++) {
+      const along = (i + 0.5) * (seg.length / count);
+      const cx = seg.ax + seg.dx * along + rx * seg.halfWidth * side;
+      const cz = seg.az + seg.dz * along + rz * seg.halfWidth * side;
+      if (onOtherRoad(segments, seg, cx, cz, 1.0)) continue;
+
+      const post = r.createMesh(
+        { kind: "box", width: 0.4, height: 1.0, depth: 0.4 },
+        { color: side < 0 ? [0.95, 0.85, 0.3] : [0.9, 0.9, 0.95], emissive: 0.75, isStatic: true },
+      );
+      post.position.set(cx, seg.ay + seg.grade * along + 0.5, cz);
+      post.rotation.y = seg.heading;
+      post.rotation.x = pitch;
     }
   }
 }

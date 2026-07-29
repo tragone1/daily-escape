@@ -25,6 +25,17 @@ export interface TerrainSample {
 /** Margin bonus that makes sealed road outrank any shoulder in sampling. */
 const ROAD_PRIORITY = 1000;
 
+/**
+ * How far each segment is treated as extending past its own ends.
+ *
+ * Consecutive legs share exactly one point, so a car sitting on a joint is, to floating
+ * point, a fraction past the end of one and a fraction before the start of the next —
+ * outside both, and therefore "off the course". Harmless when off-course meant nothing;
+ * a real defect once it meant a speed penalty, a frozen score and a warning on the HUD,
+ * because the course has some two hundred joints and you cross every one of them.
+ */
+const JOINT_TOLERANCE = 1.5;
+
 export class Terrain {
   /** Cumulative distance to the START of each main-spine segment. */
   private readonly spineStart: number[] = [];
@@ -89,7 +100,7 @@ export class Terrain {
         acrossAbs <= seg.halfWidth
           ? seg.halfWidth - acrossAbs + ROAD_PRIORITY
           : seg.halfWidth + seg.shoulder - acrossAbs;
-      const insideAlong = Math.min(along, seg.length - along);
+      const insideAlong = Math.min(along, seg.length - along) + JOINT_TOLERANCE;
       // A point past the segment's ends is outside regardless of the road bonus.
       const margin = insideAlong < 0 ? insideAlong : Math.min(insideAcross, insideAlong + ROAD_PRIORITY);
       // Priority first: a narrow rut laid over a wide mud lane must win, even though the

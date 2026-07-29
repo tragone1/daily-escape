@@ -40,6 +40,51 @@ export interface BehaviorTuning {
   routeDepth?: number;
 }
 
+/** A station around the player, in the player's own frame. x is across, z is along. */
+export interface BoxSlot {
+  x: number;
+  z: number;
+}
+
+/**
+ * Hold a station around the player rather than driving at them.
+ *
+ * This is the difference between a scrum and a cage. Every unit charging the same point
+ * from the same direction produces a lot of contact and very little containment — the
+ * collisions cancel, the player is shoved somewhere, and being shoved is being freed.
+ * Units on stations match pace instead, and close the offset once they are on it.
+ *
+ * The forward stations are a brake-check: a car sitting ten units off your nose at your
+ * own speed is not something you can drive through, and slowing down is what lets the
+ * rest of the box shut.
+ */
+export function boxGoal(ctx: PursuitContext, slot: BoxSlot, press: number): Goal {
+  const player = ctx.player;
+  const right = rightOf(player.heading);
+  const fwd = forwardOf(player.heading);
+  const shrink = 1 - press;
+
+  // Lead the station by the player's own motion so the unit arrives with them, not at
+  // where they were.
+  const lead = leadPoint(player, 0.25);
+  return {
+    kind: "direct",
+    x: lead.x + right.x * slot.x * shrink + fwd.x * slot.z * shrink,
+    z: lead.z + right.z * slot.x * shrink + fwd.z * slot.z * shrink,
+  };
+}
+
+/**
+ * RIG — parks broadside across the narrowest point it can find ahead of you.
+ *
+ * It does not pursue. `postX`/`postZ` are chosen by the driving layer, which is where the
+ * road-width scouting lives; this only says "go there and stop".
+ */
+export function rigGoal(ctx: PursuitContext, post: NavNode | null): Goal {
+  if (!post) return nodeGoal(ctx.nav, ctx.player.x, ctx.player.z);
+  return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
+}
+
 function nodeGoal(nav: NavGraph, x: number, z: number): Goal {
   const n = nav.nearestNode(x, z);
   return { kind: "node", nodeId: n.id, x: n.x, z: n.z };
@@ -320,39 +365,6 @@ export function wardenGoal(
   return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
 }
 
-/**
- * HUNTER — gets in front, closes to cable range, and stays there.
- *
- * It route-leads like an interceptor to get ahead of you, then holds station just outside
- * contact rather than closing to a ram. That distance is the point: it wants a clear
- * firing line, not a collision, and the moment it has one the tether does the work.
- */
-export function hunterGoal(self: Vehicle, ctx: PursuitContext): Goal {
-  const cfg = CONFIG.police.hunter;
-  const player = ctx.player;
-  const d = dist(self.x, self.z, player.x, player.z);
-
-  if (d < cfg.commitRange && ctx.world.lineOfSight(self.x, self.z, player.x, player.z)) {
-    // Aim slightly short of the player: it is lining up a shot, not a hit.
-    const lead = leadPoint(player, 0.5);
-    const back = Math.min(1, 12 / Math.max(1, d));
-    return {
-      kind: "direct",
-      x: lead.x + (self.x - lead.x) * back,
-      z: lead.z + (self.z - lead.z) * back,
-    };
-  }
-
-  const travel = clamp(
-    player.speed * cfg.predictionTime,
-    CONFIG.police.interceptor.minPrediction,
-    CONFIG.police.interceptor.maxPredictionDistance,
-  );
-  const post = routeNodeAhead(ctx, travel);
-  if (post) return { kind: "node", nodeId: post.id, x: post.x, z: post.z };
-  return nodeGoal(ctx.nav, player.x, player.z);
-}
-
 export function goalFor(
   role: PoliceRole,
   self: Vehicle,
@@ -361,6 +373,9 @@ export function goalFor(
   wardenAttack: WardenAttack | null = null,
 ): Goal {
   switch (role) {
+    case "rig":
+      // Handled by the driving layer, which owns the scouting; never reached.
+      return nodeGoal(ctx.nav, ctx.player.x, ctx.player.z);
     case "patrol":
       return patrolGoal(self, ctx);
     case "heavy":
@@ -375,8 +390,6 @@ export function goalFor(
       return rammerGoal(self, ctx);
     case "blocker":
       return blockerGoal(self, ctx, tuning);
-    case "hunter":
-      return hunterGoal(self, ctx);
     case "warden":
       return wardenGoal(self, ctx, tuning, wardenAttack);
   }

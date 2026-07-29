@@ -129,9 +129,18 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (!unit.active || unit.destroyed) continue;
       const unitProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
-      if (playerProgress - unitProgress > pacing.retireBehind) {
-        this.spawnUnit(unit, ctx, playerProgress);
+      if (playerProgress - unitProgress <= pacing.retireBehind) continue;
+
+      // A straggler whose class has since retired is stood down rather than recycled, so
+      // the wake loop below can replace it with something from the current tier.
+      // Recycling reuses the same car and never re-picks its class, so without this a
+      // patrol woken in section 2 was still being sent back at you in section 33 and
+      // retirement did nothing at all.
+      if (section > (esc.retire[unit.role] ?? 999)) {
+        unit.deactivate();
+        continue;
       }
+      this.spawnUnit(unit, ctx, playerProgress);
     }
 
     let active = this.activeCount;
@@ -156,6 +165,9 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (unit.active || unit.destroyed) continue;
       if (section < (esc.unlock[unit.role] ?? 0)) continue;
+      // Past its retirement the class is simply no longer dispatched. Headcount is
+      // capped, so the mix is what escalation has left to turn once the cap is reached.
+      if (section > (esc.retire[unit.role] ?? 999)) continue;
       const weight = esc.weight[unit.role] ?? 1;
       candidates.push({ unit, weight });
       total += weight;

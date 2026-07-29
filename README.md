@@ -23,8 +23,8 @@ never fires the rocket and never dodges anything:
 
 | | Result |
 | --- | --- |
-| Median of twelve runs | caught at **96 s**, section **6**, ~5,500 points |
-| Best of twelve | **121 s**, section **7**, ~6,600 points |
+| Median of fourteen runs | caught at **91 s**, section **6**, ~5,500 points |
+| Best of fourteen | **160 s**, section **11** |
 | Dropped into section 18 | caught in **13 s**, 20 police on it, ~17,000 points |
 
 Both are floors, not targets. Everything a player can do — boost, the rocket, braking,
@@ -215,14 +215,46 @@ Every unit the run will ever need is built at startup and parked dormant. The di
 decides how many are awake and which classes they are drawn from, both as functions of the
 section you have reached.
 
-**Headcount**: `6 + 1.15 per section`, capped at **20**.
+**Headcount**: `5 + 0.8 per section`, capped at **20** — reached at section 19.
 
 It used to be `4 + 1.1`, which asked for five units in section 2 and six in section 3 —
 and the opening wave already puts five on the board, so the two sections after the start
-woke *nothing*, and the game got quieter before it got louder. Measured, sections 2 and 3
-now carry 5.5 and 6.5 cars within 120 units of you, against 3.6 and 4.3 before. The fix is
-a higher base with a shallower slope rather than a steeper slope: raising the rate filled
-the early sections but compounded all the way up and cost a quarter of the median run.
+woke *nothing*, and the game got quieter before it got louder. Sections 2 and 3 now carry
+5.0 and 6.1 cars within 120 units of you, against 3.6 and 4.3 then.
+
+The slope came *down* again once the capture meter learned to count a crowd. Eleven cars
+in section 5 that could not actually finish you was the worst of both worlds — punishing
+to drive through and harmless to be caught by.
+
+### What still escalates, and when
+
+Everything below used to stop by section 13. Past that point the only thing that changed
+was police top speed, +0.22 u/s per section, and a run that survived the mid-game could
+coast to section 30 without ever meeting anything new.
+
+| | Climbs until | Then |
+| --- | --- | --- |
+| Headcount | section 19 | capped at 20, for frame time |
+| Police top speed | section 40 | +12 u/s |
+| Hazard frequency | section 24 | one every ~0.4 s of eligibility |
+| **Class mix** | forever | see below |
+
+The mix is the one with no ceiling, and it costs nothing at runtime. Each class has a
+**retirement** as well as an unlock: patrols stop being dispatched after section 13,
+rammers after 19, blockers after 22, interceptors after 26. Twenty cars meaning eight
+patrols and some rammers is a completely different section from twenty cars meaning
+heavies, elites, juggernauts, wardens and hunters — which is all you face past section 26.
+
+Retirement also stands down stragglers rather than recycling them. Without that it did
+nothing at all: recycling reuses the same car and never re-picks its class, so a patrol
+woken in section 2 was still being sent at you in section 33.
+
+Measured survival, dropped cold into a section with a scripted driver, eight trials each:
+
+| Section | 5 | 11 | 17 | 23 | 29 | 35 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Survived | 6.0 s | 8.9 s | 19.1 s | 10.2 s | 5.2 s | **0.4 s** |
+| Tethered | 0% | 0% | 27% | 35% | 51% | — |
 
 **The opening**: five units, and **none of them on the start line**. Three are up the road
 facing back down it, and two are already waiting in alleys within the first 600 units. Cars
@@ -241,8 +273,9 @@ patrol soup.
 | **Blocker** | amber | 4 | 1.0 | Parks across a junction up the road. Carries spike strips. |
 | **Heavy** | teal | 5 | 2.4 | 2.6× mass, slow to turn, resists shoves, takes 45% less speed loss per hit. |
 | **Elite** | hot pink | 7 | 3.0 | Fast (52 top speed), short-horizon route lead, closes to a ram. Carries oil. |
-| **Juggernaut** | blood orange on charcoal | 8 | 3.4 | The armoured wrecker. 5× mass, a metre wider, `impactResistance` 0.35 and `pushResistance` 2.4 — hits barely slow it and shoves barely move it, and it hits back at 1.8×. Only a near-direct rocket wrecks one. |
+| **Juggernaut** | blood orange on charcoal | 8 | 3.4 | The armoured wrecker. 5× mass, a metre wider, `impactResistance` 0.35 and `pushResistance` 2.4 — hits barely slow it and shoves barely move it. Only a near-direct rocket wrecks one. Its `contactBoost` is only 1.1: see below. |
 | **Warden** | amber on charcoal | 10 | 2.2 | 4× mass SUV. Alternates a head-on charge and a flanking sweep. |
+| **Hunter** | matte black, one cold lamp | 13 | 3.6 | No siren, a winch on the roof. Gets in front, holds station just outside contact, and tethers you. See below. |
 
 **Speed**: everything gains `0.22 u/s` of top speed per section, capped at `+7`.
 
@@ -282,6 +315,34 @@ driving into a fence. `CollisionWorld.canReach` casts against *solid* colliders 
 tall occluders and is the test that question actually needed. Measured over ten runs, it
 vetoes **36% of otherwise-valid spawn spots**.
 
+### The hunter's tether
+
+Every other threat in the game is a collision, and collisions share a fatal property: they
+give you speed. The heaviest unit on the roster arriving at full charge shoved the player
+clear of the scrum, which looks devastating and plays as an *escape* — the box opens, you
+leave with pace, and pace is the one thing that stops an arrest.
+
+A cable has no such problem. It does not push, it holds.
+
+| | |
+| --- | --- |
+| Fires from | 52 units, within a 1.0 rad arc, line of sight |
+| While attached | your top speed ×0.52, and a 26 u/s² pull back toward the hunter |
+| Holds for | 5 s, or 96 units of separation |
+| The counter | **0.35 s of boost snaps it** |
+
+Only one line is ever in the air. Making boost the answer puts the charge you were saving
+for the next climb up against the thing about to end the run, which is a better decision
+than either half was on its own. At section 29 a scripted driver is tethered 51% of the
+time.
+
+Two changes went with it, both aimed at the same complaint — that getting hit by the big
+units read as a reset rather than a trap. The juggernaut's `contactBoost` came down from
+1.8 to 1.1 (its mass already makes contact brutal; its job is to be somewhere you cannot
+go, not to serve you). And contact *between* two police cars is damped to 20%, so a
+charging juggernaut can no longer blow its own squad off you and hand you the gap it was
+sent to close.
+
 ### The charge
 
 The squad's melee move, available to rammers, heavies, elites, juggernauts and wardens.
@@ -298,6 +359,23 @@ contact in one frame is clamped at 50%. Contacts resolve pair by pair and each s
 share of what is left, so four units arriving together used to compound to 43 u/s → zero in
 two frames with no input that could recover it. Being hit hard should cost you the corner,
 not the run.
+
+### Being surrounded
+
+A run ends exactly one way, and the rule for it has a floor as well as a slope:
+
+```
+counts as pinned below   9 u/s + 3.2 x (cars within 12 units - 4)     capped at 30 u/s
+```
+
+Up to four cars only have you if you are nearly stopped. Ten packed around you have you at
+a good deal more than that — at that point you are not escaping, you are being carried.
+
+A flat threshold was why a player could be visibly buried in police and drive out anyway:
+every ram bumped them back over the line, so the meter never filled however bad it looked.
+The floor matters as much as the slope, though — scaling from the *second* car instead
+made ordinary section-2 traffic lethal and killed a third of runs before section 4.
+Nothing changes until you are genuinely swarmed, and then it changes fast.
 
 ## Police deployables
 

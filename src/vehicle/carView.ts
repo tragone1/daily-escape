@@ -21,6 +21,8 @@ export interface CarStyle {
   police: boolean;
   /** Taller cab, roof rack and a bull bar — the warden SUV. */
   heavy?: boolean;
+  /** Roof winch drum and a single hard lamp, no siren bar — the hunter. */
+  winch?: boolean;
 }
 
 export const PLAYER_STYLE: CarStyle = {
@@ -36,6 +38,15 @@ export function policeStyle(accent: Rgb, heavy = false): CarStyle {
     police: true,
     heavy,
   };
+}
+
+/**
+ * The hunter reads by *absence*. Every other unit in the game announces itself with a
+ * strobe; this one is matte black with a single cold lamp and a winch drum on the roof,
+ * so the thing you learn to fear looks nothing like the thing you learned to dodge.
+ */
+export function hunterStyle(accent: Rgb): CarStyle {
+  return { body: [0.07, 0.07, 0.09], accent, police: false, winch: true };
 }
 
 const CHARRED: Rgb = [0.09, 0.08, 0.08];
@@ -179,6 +190,35 @@ export class CarView {
       panel(rack, style.accent);
     }
 
+    if (style.winch) {
+      // Winch drum across the roof, plus the one lamp it aims with.
+      const drum = r.createMesh(
+        { kind: "cylinder", diameterTop: 0.62, diameterBottom: 0.62, height: wid * 0.8, tessellation: 8 },
+        { color: [0.3, 0.32, 0.36], emissive: 0.3 },
+      );
+      drum.rotation.z = Math.PI / 2;
+      drum.position.set(0, 1.85, -0.3);
+      drum.parent = this.body;
+      panel(drum, [0.3, 0.32, 0.36]);
+
+      for (const side of [-1, 1]) {
+        const post = r.createMesh(
+          { kind: "box", width: 0.2, height: 0.9, depth: 0.2 },
+          { color: [0.22, 0.23, 0.26], emissive: 0.25 },
+        );
+        post.position.set(side * wid * 0.4, 1.45, -0.3);
+        post.parent = this.body;
+        panel(post, [0.22, 0.23, 0.26]);
+      }
+
+      this.lightRed = r.createMesh(
+        { kind: "box", width: wid * 0.28, height: 0.24, depth: 0.3 },
+        { color: [...style.accent], emissive: 0.6 },
+      );
+      this.lightRed.position.set(0, 1.5, halfLength - 0.1);
+      this.lightRed.parent = this.body;
+    }
+
     if (style.police) {
       const bar = r.createMesh(
         { kind: "box", width: wid * 0.9, height: 0.16, depth: 0.4 },
@@ -272,7 +312,10 @@ export class CarView {
     const glow = braking || vehicle.forwardSpeed < -0.5 ? 0.9 : 0.05;
     this.brake.tint[3] += (glow - this.brake.tint[3]) * damp(14, dt);
 
-    if (this.lightRed && this.lightBlue) {
+    if (this.lightRed && !this.lightBlue) {
+      // Hunter: one cold lamp, steady. It does not flash, it looks at you.
+      this.lightRed.tint[3] = disabled ? 0 : 1.6 + this.chargeLevel * 2.2;
+    } else if (this.lightRed && this.lightBlue) {
       if (disabled) {
         // Lights out while the crew is picking itself up.
         this.lightRed.tint[3] = 0;

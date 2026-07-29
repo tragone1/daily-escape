@@ -63,13 +63,22 @@ export class Vehicle {
   /** True while past the course boundary, in the wasteland. */
   offCourse = false;
   /**
-   * Set on police cars: they drive the wasteland at full pace.
+   * Police, rather than the player. Two things hang off it.
    *
-   * The penalty exists to stop the player using the black as an escape hatch. Applying it
-   * to the pursuit as well simply moved the stalemate outside the barriers — everyone
-   * crawled, so leaving cost nothing. One-sided, it is the deterrent it was meant to be.
+   * The wasteland penalty does not apply to them: it exists to stop the player using the
+   * black as an escape hatch, and applying it to the pursuit as well simply moved the
+   * stalemate outside the barriers — everyone crawled, so leaving cost nothing.
+   *
+   * And contact between two of them is heavily damped, so the heaviest units in the game
+   * stop scattering their own side every time they arrive.
    */
-  offCourseImmune = false;
+  isPolice = false;
+
+  /**
+   * Physical restraint on top speed — a hunter's tether. Separate from `tireSpeed` and
+   * `drive` because it is neither damage nor engine: something is holding you.
+   */
+  restraint = 1;
   /** Rise per unit travelled forward: positive uphill, negative downhill. */
   climb = 0;
   /** Rise per unit travelled to the right — the cross-slope the car sits across. */
@@ -182,6 +191,7 @@ export class Vehicle {
     this.tireGrip = 1;
     this.tireSpeed = 1;
     this.drive = 1;
+    this.restraint = 1;
   }
 
   /** External shove (collisions, explosions). */
@@ -244,7 +254,7 @@ export class Vehicle {
      * the wasteland is not a surface you can power through, it is somewhere you should
      * not be. Tyre damage is outside the bypass for the same reason.
      */
-    if (this.offCourse && !this.offCourseImmune) {
+    if (this.offCourse && !this.isPolice) {
       const off = t.offCourse;
       surf.grip *= off.grip;
       surf.drag *= off.drag;
@@ -254,7 +264,7 @@ export class Vehicle {
 
     let maxSpeed = p.maxSpeed * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
-    maxSpeed *= this.tireSpeed * this.drive;
+    maxSpeed *= this.tireSpeed * this.drive * this.restraint;
 
     // --- Steering ----------------------------------------------------------
     this.steerInput += (clamp(input.steer, -1, 1) - this.steerInput) * damp(p.steerInputResponse, dt);

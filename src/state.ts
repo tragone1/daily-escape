@@ -109,7 +109,24 @@ export class GameState {
     }
 
     const run = CONFIG.run;
-    const pinned = policeNear > 0 && playerSpeed < run.captureSpeed;
+    /*
+     * What counts as pinned rises with the crowd.
+     *
+     * Up to `captureCrowdFloor` cars only have you if you are nearly stopped. Ten packed
+     * around you have you at a good deal more than that — you are not escaping, you are
+     * being carried. A flat threshold was why a player could be visibly buried in police
+     * and drive out anyway: every ram bumped them back over the line, so the meter never
+     * filled however bad it looked.
+     *
+     * The floor matters as much as the slope. Scaling from the second car made ordinary
+     * early-section traffic lethal; nothing should change until you are actually swarmed.
+     */
+    const swarm = Math.max(0, policeNear - run.captureCrowdFloor);
+    const threshold = Math.min(
+      run.captureSpeedMax,
+      run.captureSpeed + swarm * run.captureSpeedPerUnit,
+    );
+    const pinned = policeNear > 0 && playerSpeed < threshold;
     // Being swarmed closes the run out fast; a single car nudging you does not.
     const crowd = 1 + run.captureCrowdBonus * Math.max(0, policeNear - 1);
     const rate = 1 / run.captureDuration;

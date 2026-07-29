@@ -12,7 +12,7 @@ import type { Renderer } from "../gfx/renderer";
 
 import { CONFIG, type PoliceRole } from "../config";
 import { clamp, dist, forwardOf, headingOf, wrapAngle } from "../math";
-import { CarView, policeStyle } from "../vehicle/carView";
+import { CarView, hunterStyle, policeStyle } from "../vehicle/carView";
 import { Vehicle, type VehicleInput } from "../vehicle/vehicle";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import {
@@ -35,6 +35,8 @@ const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
   // Hot amber on charcoal: the keeper has to be identifiable at a glance, at speed,
   // against a night palette — you need to know which one you cannot simply shove aside.
   warden: [1.0, 0.5, 0.02],
+  // Cold white. No siren, no colour: the hunter is the one that is not announcing itself.
+  hunter: [0.85, 0.95, 1.0],
 };
 
 export class PoliceCar {
@@ -114,11 +116,13 @@ export class PoliceCar {
     this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
     this.vehicle.contactBoost = roleCfg.contactBoost ?? 1;
     this.baseContactBoost = this.vehicle.contactBoost;
-    this.vehicle.offCourseImmune = true;
+    this.vehicle.isPolice = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
     this.view = new CarView(
       r,
-      policeStyle(ROLE_ACCENT[role], role === "warden" || role === "juggernaut"),
+      role === "hunter"
+        ? hunterStyle(ROLE_ACCENT.hunter)
+        : policeStyle(ROLE_ACCENT[role], role === "warden" || role === "juggernaut"),
       params.halfLength,
       params.halfWidth,
     );

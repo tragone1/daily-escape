@@ -14,6 +14,7 @@ import { CollisionWorld } from "./physics/collisionWorld";
 import { PlayerController } from "./player/playerController";
 import type { PursuitContext } from "./police/behaviors";
 import { HazardField } from "./police/hazards";
+import { TetherSystem } from "./police/tether";
 import { PoliceManager } from "./police/policeManager";
 import { GameState } from "./state";
 import { Hud } from "./ui/hud";
@@ -36,6 +37,7 @@ export class Game {
 
   private police: PoliceManager;
   private hazards: HazardField;
+  private tethers: TetherSystem;
   private pickups: PickupSystem;
   private rockets: RocketSystem;
   private camera: ChaseCamera;
@@ -85,6 +87,7 @@ export class Game {
 
     this.police = new PoliceManager(this.renderer, this.world.nav, this.world.terrain);
     this.hazards = new HazardField(this.renderer, this.world.terrain);
+    this.tethers = new TetherSystem(this.renderer);
     this.pickups = new PickupSystem(this.renderer, this.world.terrain);
     this.rockets = new RocketSystem(this.renderer);
     this.camera = new ChaseCamera(this.renderer, this.collision, this.world.terrain);
@@ -147,6 +150,7 @@ export class Game {
     this.player.reset(COURSE_START.x, COURSE_START.z, START_HEADING, COURSE_START.y);
     this.police.reset(this.world.nav);
     this.hazards.reset();
+    this.tethers.reset();
     this.pickups.reset();
     this.rockets.reset();
     this.camera.reset(this.player);
@@ -261,6 +265,18 @@ export class Game {
       this.hud.punch(hazard === "spike" ? 0.3 : 0.15);
       this.audio.impact(hazard === "spike" ? 0.9 : 0.4);
       this.hud.announce(hazard === "spike" ? "SPIKE STRIP!" : "OIL SLICK!", false);
+    }
+
+    const tether = this.tethers.update(dt, this.player, this.police.units);
+    if (tether === "fired") {
+      this.camera.addShake(0.5);
+      this.hud.punch(0.22);
+      this.audio.impact(0.6);
+      this.hud.announce("TETHERED - BOOST TO BREAK", false);
+    } else if (tether === "snapped") {
+      this.camera.addShake(0.3);
+      this.audio.impact(0.4);
+      this.hud.announce("LINE SNAPPED", true);
     }
 
     // --- Collisions --------------------------------------------------------
@@ -422,6 +438,7 @@ export class Game {
         airborne: this.player.airborne,
         tireWarning: this.hazards.warning,
         offCourse: this.player.offCourse,
+        tethered: this.tethers.attached,
       },
       dt,
     );

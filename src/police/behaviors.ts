@@ -320,6 +320,39 @@ export function wardenGoal(
   return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
 }
 
+/**
+ * HUNTER — gets in front, closes to cable range, and stays there.
+ *
+ * It route-leads like an interceptor to get ahead of you, then holds station just outside
+ * contact rather than closing to a ram. That distance is the point: it wants a clear
+ * firing line, not a collision, and the moment it has one the tether does the work.
+ */
+export function hunterGoal(self: Vehicle, ctx: PursuitContext): Goal {
+  const cfg = CONFIG.police.hunter;
+  const player = ctx.player;
+  const d = dist(self.x, self.z, player.x, player.z);
+
+  if (d < cfg.commitRange && ctx.world.lineOfSight(self.x, self.z, player.x, player.z)) {
+    // Aim slightly short of the player: it is lining up a shot, not a hit.
+    const lead = leadPoint(player, 0.5);
+    const back = Math.min(1, 12 / Math.max(1, d));
+    return {
+      kind: "direct",
+      x: lead.x + (self.x - lead.x) * back,
+      z: lead.z + (self.z - lead.z) * back,
+    };
+  }
+
+  const travel = clamp(
+    player.speed * cfg.predictionTime,
+    CONFIG.police.interceptor.minPrediction,
+    CONFIG.police.interceptor.maxPredictionDistance,
+  );
+  const post = routeNodeAhead(ctx, travel);
+  if (post) return { kind: "node", nodeId: post.id, x: post.x, z: post.z };
+  return nodeGoal(ctx.nav, player.x, player.z);
+}
+
 export function goalFor(
   role: PoliceRole,
   self: Vehicle,
@@ -342,6 +375,8 @@ export function goalFor(
       return rammerGoal(self, ctx);
     case "blocker":
       return blockerGoal(self, ctx, tuning);
+    case "hunter":
+      return hunterGoal(self, ctx);
     case "warden":
       return wardenGoal(self, ctx, tuning, wardenAttack);
   }

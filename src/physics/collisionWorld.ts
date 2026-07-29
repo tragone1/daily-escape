@@ -154,8 +154,14 @@ export class CollisionWorld {
     const vn = rvx * hit.nx + rvz * hit.nz;
 
     // A fixed extra shove on top of the elastic response, so contact always reads as
-    // a hit even when both cars are travelling at similar speeds.
-    const shove = c.carImpulse * Math.max(a.contactBoost, b.contactBoost);
+    // a hit even when both cars are travelling at similar speeds — heavily damped when
+    // it is one police car hitting another, so a charging juggernaut cannot blow its own
+    // squad off you and hand the player the gap it was sent to close.
+    const friendly = a.isPolice && b.isPolice;
+    const shove =
+      c.carImpulse *
+      Math.max(a.contactBoost, b.contactBoost) *
+      (friendly ? c.policeImpulseScale : 1);
     if (vn < 0) {
       const j = (-vn * (1 + c.restitution) + shove) / total;
       a.vx += hit.nx * j * mb;

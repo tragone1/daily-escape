@@ -14,7 +14,8 @@ export type PoliceRole =
   | "heavy"
   | "elite"
   | "juggernaut"
-  | "warden";
+  | "warden"
+  | "hunter";
 
 /** Terrain surface tuning. Every value is a plain multiplier so effects stay readable. */
 export interface SurfaceParams {
@@ -503,12 +504,20 @@ export const CONFIG = {
       /** Shrugs off almost everything: hits barely slow it and shoves barely move it. */
       impactResistance: 0.35,
       pushResistance: 2.4,
-      /** And it hits like a truck. */
-      contactBoost: 1.8,
+      /**
+       * It hits hard, but not *launchingly* hard.
+       *
+       * At 1.8 (and 4.1 through a charge) the thing punted you clear across the road,
+       * which sounds devastating and plays as mercy: you left the scrum with speed, and
+       * speed is the one thing that stops the arrest. Its mass already makes contact
+       * brutal. Its job is to be somewhere you cannot go, not to serve you.
+       */
+      contactBoost: 1.1,
       /** Commits from further out than a rammer; it cannot correct late. */
-      flankRange: 52,
-      flankOffset: 12,
-      strikeRange: 30,
+      flankRange: 58,
+      flankOffset: 9,
+      /** Wide: it closes to alongside and stays there rather than passing through. */
+      strikeRange: 34,
       maxInterceptLead: 2.6,
       /** Like the warden, only a near-direct rocket hit wrecks one. */
       rocketKillRadius: 8,
@@ -579,6 +588,59 @@ export const CONFIG = {
     },
 
     /**
+     * HUNTER — the last thing the city sends, and the only one that does not want to hit
+     * you at all.
+     *
+     * Matte black, low, no siren bar — a winch on the roof instead. It closes to tether
+     * range, fires, and then simply drives: the line caps your speed and hauls you back
+     * toward it while everything else in the section arrives. Nothing about it is a
+     * collision, which is exactly why it works where the juggernaut did not. You cannot
+     * bounce off a cable.
+     *
+     * The counter is the boost. Burning a charge snaps the line, which turns the meter
+     * you were saving for a hill into the thing standing between you and the arrest.
+     */
+    hunter: {
+      vehicle: policeVehicle({
+        maxSpeed: 49,
+        accel: 38,
+        steerRateMax: 2.4,
+        gripNormal: 9.0,
+        mass: 2.2,
+        halfLength: 2.9,
+        halfWidth: 1.5,
+      }),
+      impactResistance: 0.6,
+      pushResistance: 1.6,
+      contactBoost: 1.1,
+      /** Uses the interceptor's route-lead to get in front before it shoots. */
+      predictionTime: 1.8,
+      /** Closes to this range before firing. */
+      commitRange: 44,
+
+      tether: {
+        /** Maximum range the line can be fired at. */
+        fireRange: 52,
+        /** Half-angle of the firing arc, radians. It has to be pointed at you. */
+        fireCone: 1.0,
+        /** Seconds the line holds before the winch has to reset. */
+        duration: 5.0,
+        /** Gap before the same unit can fire again. */
+        cooldown: 9,
+        /** Only one line in the air at a time, across the whole squad. */
+        maxActive: 1,
+        /** Your top speed while hauled, as a multiplier. */
+        speedScale: 0.52,
+        /** Pull toward the hunter, u/s^2. */
+        pull: 26,
+        /** The line snaps on its own past this length. */
+        breakLength: 96,
+        /** Seconds of boost burn needed to snap it early. */
+        boostBreakTime: 0.35,
+      },
+    },
+
+    /**
      * WARDEN — the keeper on the exit ramp. A heavy SUV that never leaves the final
      * junction and cycles between two attacks, so the last corner is a fight rather than
      * a formality. Its mass means shunting it aside is not an option; you go around it,
@@ -638,8 +700,8 @@ export const CONFIG = {
        * ahead of you is being carpeted, which is what "until it is absolutely ridiculous"
        * has to actually mean once there is no room for more cars.
        */
-      cooldownPerSection: 0.055,
-      minCooldownScale: 0.3,
+      cooldownPerSection: 0.035,
+      minCooldownScale: 0.16,
       /** Deployable only from this far ahead of the player, in course units... */
       minLead: 45,
       /** ...and no further, or you would never see it laid. */
@@ -653,8 +715,8 @@ export const CONFIG = {
       spike: {
         /** First section it can appear in. */
         unlockSection: 3,
-        /** Classes that carry it: the two that get in front of you on purpose. */
-        roles: ["interceptor", "blocker"],
+        /** Classes that carry it: the ones that get in front of you on purpose. */
+        roles: ["interceptor", "blocker", "hunter"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
         life: 14,
@@ -762,12 +824,16 @@ export const CONFIG = {
        * opening wave immediately or the game gets quieter before it gets louder.
        *
        * The fix is a higher base with a shallower slope, not a steeper slope: raising the
-       * rate filled the early sections but compounded all the way up, and cost a quarter
-       * of the median run. This fills the lull and leaves the late game roughly where it
-       * was, which is where it was wanted.
+       * rate filled the early sections but compounded all the way up.
+       *
+       * The slope came down again once the capture meter learned to account for a crowd.
+       * Eleven cars in section 5 that could not actually finish you was the worst of both
+       * worlds — punishing to drive through and harmless to be caught by. Eight that can
+       * is a better section, and it leaves the ceiling until section 19 instead of 12,
+       * which is most of where the late game's escalation now lives.
        */
-      baseActive: 6,
-      activePerSection: 1.15,
+      baseActive: 5,
+      activePerSection: 0.8,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */
@@ -780,6 +846,7 @@ export const CONFIG = {
         elite: 6,
         juggernaut: 7,
         warden: 9,
+        hunter: 12,
       } as Record<PoliceRole, number>,
       /**
        * Once unlocked, how strongly a class is favoured when waking the next unit.
@@ -794,22 +861,50 @@ export const CONFIG = {
         elite: 3.0,
         juggernaut: 3.4,
         warden: 2.2,
+        hunter: 3.6,
       } as Record<PoliceRole, number>,
+      /**
+       * Section after which a class stops being sent at all.
+       *
+       * This is the escalation that costs nothing at runtime. Headcount has to be capped
+       * for frame time, so past the cap the *mix* is the only thing left to turn — and
+       * "twenty cars" meaning twenty juggernauts, wardens and hunters is a completely
+       * different section from "twenty cars" meaning eight patrols and some rammers.
+       * Before this, nothing whatsoever changed after section 13.
+       */
+      retire: {
+        patrol: 13,
+        rammer: 19,
+        blocker: 22,
+        interceptor: 26,
+        heavy: 999,
+        elite: 999,
+        juggernaut: 999,
+        warden: 999,
+        hunter: 999,
+      } as Record<PoliceRole, number>,
+
       /** Extra top speed added to every unit per section, u/s, and its cap. */
-      speedPerSection: 0.22,
-      maxSpeedBonus: 7,
+      speedPerSection: 0.3,
+      maxSpeedBonus: 12,
     },
 
-    /** How many of each class exist in the pool. Meshes are built once, up front. */
+    /**
+     * How many of each class exist in the pool. Meshes are built once, up front.
+     *
+     * The heavy end has to be deep enough to fill the entire active cap on its own, since
+     * past section 26 nothing else is being sent.
+     */
     pool: {
       patrol: 8,
       rammer: 6,
       interceptor: 5,
       blocker: 3,
-      heavy: 5,
-      elite: 5,
-      juggernaut: 4,
-      warden: 3,
+      heavy: 6,
+      elite: 6,
+      juggernaut: 5,
+      warden: 4,
+      hunter: 5,
     } as Record<PoliceRole, number>,
   },
 
@@ -833,6 +928,15 @@ export const CONFIG = {
     maxCarSpeedLossPerFrame: 0.5,
     /** Extra shove applied car-to-car so contact reads as forceful. */
     carImpulse: 12.0,
+    /**
+     * How much of that shove applies between two police cars.
+     *
+     * Low, and this matters more than it sounds. A juggernaut charging into a scrum used
+     * to scatter its own side as hard as it hit you — the heaviest unit in the game
+     * arriving read as a *reset*, blowing the box open and handing you the gap. Police
+     * hitting each other now mostly just jostle, so a pile-up stays a pile-up.
+     */
+    policeImpulseScale: 0.2,
     /** Yaw kick applied on off-centre impacts, rad/s per unit of impact speed. */
     spinFactor: 0.022,
     /** Max yaw kick from a single impact, rad/s. */
@@ -915,13 +1019,32 @@ export const CONFIG = {
     /** A police car must be inside this radius to contribute to capture. */
     captureRadius: 12,
     /**
-     * Player speed below this counts as "pinned". Set high enough that being ground down
-     * to a crawl by rams counts — at 7 a driver who kept nudging along at moderate speed
-     * was untouchable no matter how many units were on them.
+     * What counts as "pinned", as a speed threshold — and it rises with the crowd.
+     *
+     * A single car on your bumper only has you if you are nearly stopped. Eight of them
+     * packed around you have you at a good deal more than that: you are not escaping, you
+     * are being carried. The flat 10 was the reason a player could be visibly buried in
+     * police and simply drive out of it — every ram bumped them back over the threshold,
+     * so the meter never filled no matter how bad the situation looked.
      */
-    captureSpeed: 10,
-    /** How fast the capture meter drains when you break free (multiplier of fill rate). */
-    captureRecovery: 2.0,
+    captureSpeed: 9,
+    /**
+     * Cars inside the radius before the threshold starts rising at all.
+     *
+     * The scaling has to be a *swarm* rule, not a crowd rule. Applied from the second car
+     * it made sections 2 and 3 lethal — five cars is normal traffic down there, and a
+     * threshold of 19 u/s meant any brief bog was an arrest. Nothing changes until you are
+     * genuinely buried, and then it changes fast.
+     */
+    captureCrowdFloor: 4,
+    captureSpeedPerUnit: 3.2,
+    captureSpeedMax: 30,
+    /**
+     * How fast the meter drains when you break free, as a multiple of the fill rate.
+     * Above 1 so escaping is always possible; not so far above that a moment of daylight
+     * wipes out four seconds of being buried.
+     */
+    captureRecovery: 1.8,
     /**
      * Seconds stranded outside the course before the player is towed back.
      *

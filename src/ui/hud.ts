@@ -35,6 +35,8 @@ export interface HudFrame {
   tireWarning: string | null;
   /** True past the course boundary, where the car crawls and progress stops counting. */
   offCourse: boolean;
+  /** True while a hunter's cable is attached. */
+  tethered: boolean;
 }
 
 export interface RunSummary {
@@ -165,12 +167,20 @@ export class Hud {
 
     // Being off the course outranks everything else the tag could say: it is the only one
     // of these states that silently stops the score moving.
-    this.surfaceTag.textContent = frame.offCourse
-      ? "OFF COURSE"
-      : (frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]));
+    // Being tethered or off the course outranks anything else the tag could say: both
+    // silently stop the score moving, and neither is obvious from the road.
+    this.surfaceTag.textContent = frame.tethered
+      ? "TETHERED"
+      : frame.offCourse
+        ? "OFF COURSE"
+        : (frame.tireWarning ?? (frame.airborne ? "AIRBORNE" : SURFACE_LABEL[frame.surface]));
     this.surfaceTag.classList.toggle(
       "rough",
-      frame.offCourse || frame.tireWarning !== null || frame.airborne || frame.surface !== "asphalt",
+      frame.tethered ||
+        frame.offCourse ||
+        frame.tireWarning !== null ||
+        frame.airborne ||
+        frame.surface !== "asphalt",
     );
 
     if (this.bannerTime > 0) {

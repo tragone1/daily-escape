@@ -204,7 +204,7 @@ export class Game {
 
     if (this.player.boostFired) {
       this.camera.addShake(CONFIG.player.boost.shake);
-      this.hud.punch(0.18);
+      this.hud.punch(0.1);
       this.audio.boost();
     }
     if (this.player.justLaunched) {
@@ -261,7 +261,10 @@ export class Game {
     );
     if (hazard) {
       this.camera.addShake(hazard === "spike" ? 0.7 : 0.3);
-      this.hud.punch(hazard === "spike" ? 0.3 : 0.15);
+      // No flash for either. The white pop was designed for one-off moments and the
+      // hazards are not that any more; on a slick it fired every time you clipped one and
+      // read as the screen glitching rather than as an event.
+      if (hazard === "spike") this.hud.punch(0.12);
       this.audio.impact(hazard === "spike" ? 0.9 : 0.4);
       this.hud.announce(hazard === "spike" ? "SPIKE STRIP!" : "OIL SLICK!", false);
     }
@@ -302,7 +305,9 @@ export class Game {
     if (strongest) {
       const severity = clamp(strongest.speed / this.player.params.maxSpeed, 0, 1);
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
-      this.hud.punch(severity * 0.22);
+      // Barely a flicker. Contact is now near-constant by design, and at the old weight
+      // the screen sat under a permanent white veil for the whole back half of a run.
+      this.hud.punch(severity * 0.05);
       this.audio.impact(severity);
     }
 

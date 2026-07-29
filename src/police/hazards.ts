@@ -158,7 +158,8 @@ export class HazardField {
       if (!kind) continue;
 
       const last = this.lastUsed.get(unit) ?? -999;
-      if (this.clock - last < cfg.unitCooldown * rate) continue;
+      const kindScale = kind === "oil" ? cfg.oilCooldownScale : 1;
+      if (this.clock - last < cfg.unitCooldown * rate * kindScale) continue;
 
       const lead = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z) - playerProgress;
       if (lead < cfg.minLead || lead > cfg.maxLead) continue;
@@ -186,7 +187,7 @@ export class HazardField {
       slot.root.setEnabled(true);
 
       this.lastUsed.set(unit, this.clock);
-      this.cooldown = cfg.globalCooldown * rate;
+      this.cooldown = cfg.globalCooldown * rate * (kind === "oil" ? 1.6 : 1);
       return;
     }
   }

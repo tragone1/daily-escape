@@ -247,7 +247,7 @@ export const CONFIG = {
        * in if you spend the charge on it. Being completely stopped by geometry you cannot
        * answer is the one kind of loss with no play in it.
        */
-      shove: 2.6,
+      shove: 5.0,
     },
     /** Body-lean visuals (radians at full effect). */
     lean: {
@@ -437,6 +437,44 @@ export const CONFIG = {
        * never applies to a unit already on you — it only stops the chase from ending
        * because you happened to be in front.
        */
+      /**
+       * Strike discipline — how a unit closes the last few car lengths.
+       *
+       * Left alone, a pursuer solves an intercept and drives at it flat out, which is why
+       * they read as blasting past with a token swerve: their speed *along* the player's
+       * line was thirty units an hour higher than the player's, so the geometry only
+       * worked for the fraction of a second it took to overshoot. A real driver arrives
+       * matching pace and turns in.
+       *
+       * The cap is on longitudinal overtake only. Closing sideways is untouched, because
+       * closing sideways is the hit.
+       */
+      strike: {
+        /** Discipline applies inside this range of the player. */
+        range: 34,
+        /** How much faster than the player you may travel along their line, u/s. */
+        maxOvertake: 5,
+        /** Never crawl while doing it. */
+        minPace: 16,
+        /**
+         * How far *ahead* of the player a unit must already be for the cap to apply.
+         *
+         * Measured, not guessed. Capping anyone within range dropped contacts from 60 a
+         * minute to 37: held back, they simply stopped arriving, which is the opposite of
+         * the intent. Only a car that has genuinely got past and is pulling away needs
+         * reining in — everyone else should be coming at you as hard as they can, and the
+         * accuracy comes from the turn-in below rather than from going slower.
+         */
+        chaseGrace: -5,
+        /**
+         * Inside this range, aim *through* the player rather than at an intercept point,
+         * so the last movement is a turn into them rather than a pass alongside.
+         */
+        turnInRange: 17,
+        /** How far past the player to aim when turning in, units. */
+        turnInDepth: 5.5,
+      },
+
       /**
        * Boxing in.
        *
@@ -717,7 +755,7 @@ export const CONFIG = {
       }),
       impactResistance: 0.2,
       /** Immovable at speed, shiftable with a boost behind you. */
-      pushResistance: 2.2,
+      pushResistance: 1.35,
       contactBoost: 1.0,
       /** Looks this far up the player's route for somewhere worth blocking. */
       scoutMin: 210,
@@ -733,6 +771,15 @@ export const CONFIG = {
       repickInterval: 6,
       /** Only blocks where the drivable width is under this, unless nothing else is near. */
       preferredWidth: 30,
+      /**
+       * Never park somewhere narrower than this.
+       *
+       * The rig is twelve metres long and the canyon is fourteen wide, so broadside in the
+       * wrong place it sealed the road outright — measured, impassable even with a boost
+       * behind you, and with no rocket in hand that is a dead run rather than a hard
+       * corner. It now stands where there is still a car's width to fight for.
+       */
+      minBlockWidth: 19,
       /** Only a near-direct rocket wrecks one. */
       rocketKillRadius: 9,
       rocketDisableTime: 2.4,
@@ -790,6 +837,14 @@ export const CONFIG = {
       /** A given unit may only lay one this often at section 0, seconds. */
       unitCooldown: 10,
       /**
+       * Extra cooldown multiplier applied to oil specifically.
+       *
+       * The slick is much the more disruptive of the two and much the cheaper to lay, so
+       * on the shared timer it turned up constantly and stopped reading as an event.
+       * Rarer and nastier is the better trade - it is now carried by rammers alone.
+       */
+      oilCooldownScale: 2.6,
+      /**
        * Both cooldowns shrink by this fraction of themselves per section, down to
        * `minCooldownScale`.
        *
@@ -833,9 +888,9 @@ export const CONFIG = {
        */
       oil: {
         unlockSection: 5,
-        roles: ["rammer", "elite"],
+        roles: ["rammer"],
         armTime: 0.3,
-        life: 13,
+        life: 9,
         /** Wide enough that threading it is a real line rather than a shrug. */
         halfWidth: 7.5,
         halfLength: 5.5,
@@ -846,7 +901,7 @@ export const CONFIG = {
          * it was pointing while the nose turns, which is what a slide actually is: you
          * steer and nothing happens for a second and a half.
          */
-        gripScale: 0.008,
+        gripScale: 0.004,
         speedScale: 0.88,
         duration: 5.5,
         /**

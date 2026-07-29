@@ -94,7 +94,9 @@ export class Hud {
 
   /** Screen-wide white pop for boosts and heavy impacts. */
   punch(amount: number): void {
-    this.flashAmount = Math.min(0.55, this.flashAmount + amount);
+    // Ceiling lowered: the flash is a punctuation mark, and it cannot be allowed to
+    // accumulate into a wash when several things land in the same second.
+    this.flashAmount = Math.min(0.3, this.flashAmount + amount);
   }
 
   /** Big transient centre-screen callout — rocket results and pickups. */
@@ -180,7 +182,7 @@ export class Hud {
     }
 
     if (this.flashAmount > 0.001) {
-      this.flashAmount = Math.max(0, this.flashAmount - dt * 2.2);
+      this.flashAmount = Math.max(0, this.flashAmount - dt * 4.5);
       this.flash.style.opacity = String(this.flashAmount);
     } else if (this.flash.style.opacity !== "0") {
       this.flash.style.opacity = "0";

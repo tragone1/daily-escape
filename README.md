@@ -24,10 +24,10 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of ten runs | section **5** |
-| Quartiles | section **3** to section **6** |
-| Best | section **8** |
+| Quartiles | section **5** to section **6** |
+| Best | section **10** |
 | Died in the first 15 s | **0 of 10** |
-| At the moment of arrest | **5.3 of 8 directions blocked, 6.8 u/s** |
+| At the moment of arrest | **4.5 of 8 directions blocked, 6.6 u/s** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -430,6 +430,11 @@ picks the tightest point it can reach, drives there and parks **broadside across
 | Mass | 8.0, effective 17.6 against a shove — a wall at cruising speed |
 | Top speed | 51 u/s |
 
+It will not park anywhere narrower than **19 units** of free width. Twelve metres of
+vehicle broadside across the fourteen-metre canyon sealed the road outright, and with no
+rocket in hand that is a dead run rather than a hard corner. It now stands where there is
+still a car's width to fight for.
+
 **It is not a dead end.** Boosting into one shoves at 2.6x, which is enough to barge a gap
 in a road it has closed; and wrecking it drops its effective mass from **17.6 to 0.22** —
 lighter than your own car — so the hulk can simply be pushed aside. A multiplier could not
@@ -470,6 +475,22 @@ up the road — the one doing least — gets sent back. It *moves* a car rather 
 one; waking a fresh unit there ignored the headcount target and ran every 0.4 s, which put
 fifteen cars in section 3 against a target of six and took the whole difficulty curve with
 it.
+
+### Closing for a hit
+
+A pursuer used to solve an intercept and drive at it flat out, which is why they read as
+blasting past with a token swerve. Two changes, and the honest summary is that one of them
+worked and one of them was mostly wrong:
+
+- **Turn-in.** Inside 17 units a unit aims *through* the player rather than at an intercept
+  point, so the last movement is a turn into you rather than a pass beside you.
+- **Overtake cap.** Capped how much faster than you a unit may travel *along* your line.
+  Applied to everyone in range this cost a third of all contact — reined in, they simply
+  stopped arriving — so it now applies only to a car that has genuinely got past and is
+  pulling away.
+
+Measured together: contact goes from 60 to 64 a minute. A real improvement, and a small
+one; the honest reading is that the fly-by was less of the problem than it looked.
 
 ### The charge
 
@@ -526,6 +547,13 @@ everything that was chasing you gets to arrive and stand somewhere you needed to
 That is wired explicitly: below 22 u/s the box closes **faster and further**, up to 92% of
 the way in. It is why the boost meter is the thing you find yourself watching.
 
+### Screen flash
+
+The white pop was designed for one-off moments — a boost, a detonation — and then contact
+became near-constant by design, at which point a flash weighted for a rare event sat over
+the whole back half of a run as a permanent veil. It is now a fifth of its old weight on
+contact, gone entirely on oil, decays twice as fast, and cannot accumulate past 0.3.
+
 ## Police deployables
 
 The only way the police can hurt you without touching you — and it is strictly a
@@ -535,7 +563,7 @@ you** can lay one.
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
 | **Spike strip** | section 4 | Top speed **×0.26**, grip ×0.5 | **6.5 s** |
-| **Oil slick** | section 6 | Grip **×0.008** (×0.003 boosting), speed ×0.88 | **5.5 s** |
+| **Oil slick** | section 6 | Grip **×0.004** (×0.0014 boosting), speed ×0.88 | **5.5 s** |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
@@ -551,7 +579,12 @@ still pulled the car straight inside a corner's worth of time, so a slick was so
 could drive over and ignore. At **0.03** the velocity keeps pointing where it was pointing
 while the nose turns — you steer and, for the better part of two seconds, nothing happens.
 
-Slicks are half again as wide as they were, and they are built to be *seen*: a near-black
+Slicks are rarer than they were — carried by rammers alone, on a cooldown 2.6x the shared
+one — because the more disruptive of the two hazards was also much the cheaper to lay, so
+it turned up constantly and stopped reading as an event. Rarer and nastier is the better
+trade.
+
+They are half again as wide as they were, and built to be *seen*: a near-black
 puddle on near-black asphalt is invisible, which is how the slick spent several versions
 being something players drove over without ever learning why the car went sideways. It now
 reads by contrast — an iridescent sheen over the pool and a hard bright rim around it.

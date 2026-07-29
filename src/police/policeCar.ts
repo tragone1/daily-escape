@@ -418,10 +418,39 @@ export class PoliceCar {
       }
     }
 
+    /*
+     * Closing for a hit: match pace and turn in, rather than driving through at full tilt.
+     */
+    let strikeLimit = Infinity;
+    if (goal.kind === "direct" && this.role !== "rig") {
+      const st = CONFIG.police.shared.strike;
+      const d = this.distanceToPlayer(ctx.player);
+      if (d < st.range) {
+        const f = forwardOf(ctx.player.heading);
+        const playerAlong = ctx.player.vx * f.x + ctx.player.vz * f.z;
+        // Only a unit that has genuinely got past and is pulling away is held back.
+        // Capping anyone in range instead cost a third of all contact: reined in, they
+        // stopped arriving at all.
+        const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
+        if (lead > -st.chaseGrace) {
+          strikeLimit = Math.max(st.minPace, playerAlong + st.maxOvertake);
+        }
+
+        // The last car length is a turn into them, not a pass beside them: aim at a point
+        // beyond the player, on the far side from us.
+        if (d < st.turnInRange) {
+          const nx = (ctx.player.x - v.x) / Math.max(1, d);
+          const nz = (ctx.player.z - v.z) / Math.max(1, d);
+          steerTargetX = ctx.player.x + nx * st.turnInDepth;
+          steerTargetZ = ctx.player.z + nz * st.turnInDepth;
+        }
+      }
+    }
+
     this.driveToward(
       steerTargetX,
       steerTargetZ,
-      Math.min(cornerLimit, boxSpeedLimit),
+      Math.min(cornerLimit, boxSpeedLimit, strikeLimit),
       parkDistance,
       dt,
       ctx,
@@ -571,6 +600,8 @@ export class PoliceCar {
       // Real room to drive through, not the section's nominal width - the latter barely
       // varies inside a section, so scouting on it chose spots no better than at random.
       const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
+      // Somewhere it can block, not somewhere it can seal.
+      if (width < cfg.minBlockWidth) continue;
       // Width dominates, heavily: the whole unit is the choice of where to stand, and a
       // rig across the wide off-road flats is scenery. Distance is only a tiebreak, but
       // it has to count for something, because a rig that never arrives has blocked

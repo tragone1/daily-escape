@@ -783,11 +783,12 @@ export const CONFIG = {
      */
     rig: {
       vehicle: policeVehicle({
-        // Faster than you, which it has to be. At 41 against your 46 it could never get
-        // in front to set up, so it parked wherever it happened to be when you caught it
-        // - which is not a roadblock, it is a slow lorry.
-        maxSpeed: 51,
-        accel: 34,
+        // Slow, because it never has to race you anywhere. It is placed in position ahead
+        // of you and is simply *there* when you arrive; a nine-metre transport overtaking
+        // a sports car to set up in front of it was the least convincing thing on the
+        // roster. It still shifts to cover a gap you are obviously aiming at.
+        maxSpeed: 38,
+        accel: 26,
         steerRateMax: 1.5,
         gripNormal: 9.4,
         // Nothing shifts it. Going around is the only play.
@@ -799,9 +800,16 @@ export const CONFIG = {
       /** Immovable at speed, shiftable with a boost behind you. */
       pushResistance: 1.35,
       contactBoost: 1.0,
-      /** Looks this far up the player's route for somewhere worth blocking. */
-      scoutMin: 210,
-      scoutMax: 620,
+      /**
+       * How far up the route it is placed. It arrives by being *put* there, out of sight,
+       * not by driving past you.
+       */
+      scoutMin: 260,
+      scoutMax: 700,
+      /** Never more than this many blocking the road at once. */
+      maxActive: 1,
+      /** Stood down once the player is this far past it. */
+      retirePast: 70,
       /** Distance from its chosen spot at which it stops driving and turns broadside. */
       parkRadius: 11,
       /** Start slowing this far out, down to this speed, so it can stop on the mark. */
@@ -1121,6 +1129,15 @@ export const CONFIG = {
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
       /**
+       * Spawn distance is scaled down for a player who has come to a halt.
+       *
+       * Standing still used to mean waiting the better part of a minute while the squad
+       * drove in from wherever it had been placed. Stopping should bring the chase to you
+       * quickly - the whole point of stopping being fatal is that it is fatal soon.
+       */
+      slowPlayerSpeed: 12,
+      slowSpawnScale: 0.55,
+      /**
        * A unit inside this range *and* in plain sight is never moved, recycled or stood
        * down, whatever else the director wants.
        *
@@ -1363,7 +1380,7 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 2.2,
+    captureDuration: 1.4,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1400,8 +1417,8 @@ export const CONFIG = {
     enclosureRadius: 15,
     enclosureSectors: 8,
     minSectorsToPin: 3,
-    fullPinSectors: 6,
-    captureSpeed: 15,
+    fullPinSectors: 5,
+    captureSpeed: 17,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *

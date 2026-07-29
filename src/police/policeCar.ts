@@ -105,6 +105,13 @@ export class PoliceCar {
   /** Units stay dormant until the director wakes them. */
   active = false;
 
+  /** Park a rig on the spot it was placed at, so it holds rather than scouting anew. */
+  parkAt(node: NavNode): void {
+    this.rigPost = node;
+    this.rigScore = -Infinity;
+    this.rigTimer = Infinity;
+  }
+
   /** Drop the unit onto a route node and wake it up. */
   placeAt(x: number, z: number, heading: number, y = 0): void {
     this.reset();

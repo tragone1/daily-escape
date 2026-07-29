@@ -360,8 +360,12 @@ export class Vehicle {
     if (this.tireGrip < 0.2 && !this.airborne) {
       const oil = CONFIG.police.hazards.oil;
       const bite = 1 - this.tireGrip / 0.2;
+      // Two sources: the slide itself, and how hard you are asking the car to turn. The
+      // second is what makes a slick punish aggression rather than merely existing.
+      const fromSlide = vl * oil.spinPerSlip;
+      const fromSteer = this.steerInput * oil.spinPerSteer * Math.min(1, absSpeed / 18);
       this.yawRate = clamp(
-        this.yawRate + vl * oil.spinPerSlip * bite * dt,
+        this.yawRate + (fromSlide + fromSteer) * bite * dt,
         -oil.maxSpin,
         oil.maxSpin,
       );

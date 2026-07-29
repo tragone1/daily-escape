@@ -24,10 +24,11 @@ never fires the rocket and never dodges anything:
 | | Result |
 | --- | --- |
 | Median of ten runs | section **5** |
-| Quartiles | section **3** to section **6** |
-| Best | section **6** |
+| Quartiles | section **3** to section **5** |
+| Best | section **7** |
 | Died in the first 15 s | **0 of 10** |
-| At the moment of arrest | **5.0 of 8 directions blocked** |
+| At the moment of arrest | **4.5 of 8 directions blocked** |
+| Standing still from the line | arrested in **22 s** |
 
 The driver was rewritten for this round and the old numbers are not comparable. It used to
 aim at a node 55 units away with no lane-keeping, which is fine on a fifty-unit motorway
@@ -183,6 +184,10 @@ the far wall. It also **steers the strike** for the first 46 units out of the mo
 prediction and a prediction is usually a near miss — it arrives behind you or ahead of you
 and either way you drive past it. Homing converts the guess into contact, and because it
 aims where you *will* be, the contact lands on the flank whatever speed you are doing.
+
+Measured across driving styles: **95% of launches connect when driving steadily, 93% while
+boosting, 64% while weaving** — and a hit throws you sideways at **17.6 u/s on average**,
+peaking at 37, with ten of eleven above 8. That is the T-bone into the far wall.
 
 Measured over three runs: **92% of launches connect** and **half of all hits are side-on**,
 against a hit rate of roughly zero when they simply drove out and hit the far wall. The
@@ -546,6 +551,27 @@ impacts and every impact spikes your speed for a few frames; tested instantaneou
 read as "escaping" over and over, so a player who had actually come to a stop watched the
 meter reset every time somebody hit them.
 
+### Why a stopped player could not be surrounded
+
+Stopping dead at the start line produced a run of cars arriving, shoving, and wandering off
+again: measured, an average of **2.1 of 8 sectors blocked**, the pin breaking **twelve
+times** in half a minute, and half a minute to lose. Three separate causes, all of them the
+squad dismantling its own work:
+
+- **The stuck detector.** A car pressed against a stationary player is, by definition,
+  moving slowly — so it registered as stuck, reversed out of the sector it was blocking,
+  and after three and a half seconds teleported away entirely. Sitting on somebody is the
+  job, not a fault; anything within 15 units of the player is now exempt.
+- **The pace floor.** Units on station held a floor of 14 u/s regardless of the player, so
+  against a stopped car they kept driving *through* the ring at 14 and bounced off. The
+  floor is now capped to just above the player's own speed.
+- **The shove.** The fixed impulse that makes contact read as forceful during a chase
+  scatters a ring once the player has stopped. Below 12 u/s it drops to 12% and the bounce
+  with it, so cars nestle in and stay.
+
+Measured after: the pin now breaks **zero** times, the ring builds monotonically 1 → 2 → 4
+→ 5 sectors, and standing still ends the run in **22 seconds**.
+
 ### Losing your speed is the punishment
 
 Nothing in the game kills you directly. Spikes, a slick, a heavy hit, a rig across a
@@ -580,7 +606,7 @@ you** can lay one.
 | | From | Effect | Duration |
 | --- | --- | --- | --- |
 | **Spike strip** | section 4 | Top speed **×0.34**, grip ×0.55 | **6.0 s** |
-| **Oil slick** | section 6 | Grip **×0.002** (×0.0005 boosting) + spin, speed ×0.88 | **5.5 s** |
+| **Oil slick** | section 6 | Grip **×0.0008** (×0.0002 boosting) + spin, **no speed penalty** | **5.5 s** |
 | **Charge** | any | 2.3× shove, 0.45 s telegraph | see above |
 
 Two different problems. Spikes take your pace and hand the squad the seconds they need to
@@ -606,11 +632,20 @@ puddle on near-black asphalt is invisible, which is how the slick spent several 
 being something players drove over without ever learning why the car went sideways. It now
 reads by contrast — an iridescent sheen over the pool and a hard bright rim around it.
 
+The slick takes **no speed off you at all**. A liquid does not slow a car down, it stops it
+steering, and taking pace off as well muddled what the hazard was for — it read as a weak
+spike strip. All of its weight is in control now: you keep every unit of speed you had and
+almost none of your ability to point the car.
+
 Low grip alone only makes a car understeer in a straightish line. Some of the sideways
-slide is now converted into **yaw**, which is what lets it actually come round: measured,
-holding full lock on a slick turns the car **138 degrees**, and **180 - a complete spin -
-if you are boosting**. Drive gently and you slither; drive hard and you are facing the
-wrong way.
+slide is now converted into **yaw**, which is what lets it actually come round: and it scales with how hard you are
+driving, because yaw is fed by the steering input as well as by the slide:
+
+| On a slick | Rotation |
+| --- | --- |
+| Quarter lock, feathered | 24° |
+| Full lock | 93° |
+| Full lock, boosting | **182° — a complete spin** |
 
 **Boosting on oil does not rescue you.** Grip drops a further 65% while the charge burns:
 power with no traction is the definition of a slide, and this is the one moment in the game

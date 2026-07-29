@@ -162,12 +162,23 @@ export class CollisionWorld {
     // it is one police car hitting another, so a charging juggernaut cannot blow its own
     // squad off you and hand the player the gap it was sent to close.
     const friendly = a.isPolice && b.isPolice;
+    /*
+     * Settle rather than ricochet once the player has stopped.
+     *
+     * The fixed shove is there so contact during a chase reads as forceful; against a
+     * stationary player it just scatters the ring the squad has built. Damping it - and
+     * the bounce with it - is what lets a pin actually hold.
+     */
+    const player = a.isPolice ? (b.isPolice ? null : b) : a;
+    const settling = player !== null && player.speed < c.pinSettleSpeed;
     const shove =
       c.carImpulse *
       Math.max(a.contactBoost, b.contactBoost) *
-      (friendly ? c.policeImpulseScale : 1);
+      (friendly ? c.policeImpulseScale : 1) *
+      (settling ? c.pinShoveScale : 1);
+    const bounce = settling ? c.pinRestitution : c.restitution;
     if (vn < 0) {
-      const j = (-vn * (1 + c.restitution) + shove) / total;
+      const j = (-vn * (1 + bounce) + shove) / total;
       a.vx += hit.nx * j * mb;
       a.vz += hit.nz * j * mb;
       b.vx -= hit.nx * j * ma;

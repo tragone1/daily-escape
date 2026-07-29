@@ -111,6 +111,20 @@ export class Game {
       canvas.focus();
       this.begin();
     });
+
+    /*
+     * The intro card. Wired here rather than in the shareable build's own script, because
+     * the card now lives in index.html and both builds need the button to work — the card
+     * covers the canvas, so its click never reaches the handler above.
+     */
+    const start = () => {
+      this.audio.init();
+      this.audio.resume();
+      canvas.focus();
+      this.begin();
+    };
+    document.getElementById("startGo")?.addEventListener("click", start);
+    document.getElementById("focusHint")?.addEventListener("pointerdown", start);
     this.keys.onResetCamera = () => this.camera.reset(this.player);
     this.keys.onAnyKey = () => {
       this.audio.init();
@@ -130,6 +144,7 @@ export class Game {
    */
   begin(): void {
     this.started = true;
+    this.audio.resumeLoops();
     const hint = document.getElementById("focusHint");
     if (hint) hint.classList.add("hidden");
   }
@@ -163,6 +178,7 @@ export class Game {
       heading: START_HEADING,
     };
     this.keys.endFrame();
+    this.audio.resumeLoops();
     this.audio.resume();
   }
 
@@ -469,11 +485,18 @@ export class Game {
       dt,
     );
 
-    this.audio.updateLoop(
-      dt,
-      clamp(this.player.speed / this.player.params.maxSpeed, 0, 1),
-      this.player.boosting,
-      this.state.over ? 999 : nearest,
-    );
+    // Nothing is driving once the run is over, so nothing should be humming either. This
+    // used to keep being called every frame, which reset the engine gain to its idle value
+    // and left the car droning behind the BUSTED card for as long as the page was open.
+    if (this.state.over || !this.started) {
+      this.audio.quietLoops();
+    } else {
+      this.audio.updateLoop(
+        dt,
+        clamp(this.player.speed / this.player.params.maxSpeed, 0, 1),
+        this.player.boosting,
+        nearest,
+      );
+    }
   }
 }

@@ -113,15 +113,20 @@ Opens on <http://localhost:5173>. Also `npm run typecheck`, `npm run build`, `np
 | `A` `D` / `←` `→` | Steer |
 | `Space` | Boost |
 | `F` | Fire rocket |
-| `R` | Restart the run |
+| `Q` | Restart the run |
 | `C` | Snap the camera behind the car |
 
 There is no compass. There was an arrow above the car pointing at the escape gate, and the
 escape gate stopped existing when the game became endless — it had been pointing at nothing
 in particular for several versions.
 
-The run does not start until you press a driving key (or hit **Start Run** on the shared
-build), so nothing is chasing you before you are at the wheel. The first leg of the course
+The run does not start until you hit **Start Run** or press a driving key, so nothing is
+chasing you before you are at the wheel.
+
+The intro card lives in `index.html` and both builds share it — the shareable build used to
+inject its own copy, which is two places for the same words to drift apart. The card covers
+the canvas, so its button is wired in `Game` rather than in the build script; otherwise the
+hosted site had no way to start at all. The first leg of the course
 runs dead straight, so the car and the road agree about which way forward is — a generated
 opening that turned immediately meant starting the run pointed off the road for no reason
 you could see.

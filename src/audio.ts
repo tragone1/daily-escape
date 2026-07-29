@@ -20,6 +20,8 @@ export class GameAudio {
   private sirenGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private sirenPhase = 0;
+  /** True while the loops are meant to stay silent (run over, or tab hidden). */
+  private silenced = false;
 
   /** Must be called from a user gesture (browsers block audio otherwise). */
   init(): void {
@@ -42,6 +44,7 @@ export class GameAudio {
       const data = buf.getChannelData(0);
       for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
       this.noiseBuffer = buf;
+      this.watchVisibility();
 
       /*
        * Engine.
@@ -109,6 +112,7 @@ export class GameAudio {
 
   /** Called every frame with the player's speed ratio and nearest police distance. */
   updateLoop(dt: number, speedRatio: number, boosting: boolean, nearestPolice: number): void {
+    if (this.silenced) return;
     if (!this.ctx || !this.engineOsc || !this.engineGain || !this.engineFilter) return;
     const t = this.ctx.currentTime;
 
@@ -210,10 +214,39 @@ export class GameAudio {
   }
 
   /** Silence the continuous loops when a run ends. */
+  /**
+   * Silence everything that loops.
+   *
+   * `rushGain` was missing from this, and more importantly `updateLoop` kept being called
+   * every frame after the run ended — so it immediately reset the engine gain back to its
+   * idle value and the car sat there humming behind the BUSTED card indefinitely. Callers
+   * must stop driving the loops as well as asking for quiet; `updateLoop` now refuses to
+   * do anything once silenced.
+   */
   quietLoops(): void {
+    this.silenced = true;
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.engineGain?.gain.setTargetAtTime(0, t, 0.2);
-    this.sirenGain?.gain.setTargetAtTime(0, t, 0.2);
+    this.engineGain?.gain.setTargetAtTime(0, t, 0.12);
+    this.sirenGain?.gain.setTargetAtTime(0, t, 0.12);
+    this.rushGain?.gain.setTargetAtTime(0, t, 0.12);
+  }
+
+  /** Let the loops run again — called when a new run starts. */
+  resumeLoops(): void {
+    this.silenced = false;
+  }
+
+  /**
+   * Drop everything when the tab goes away, and stay quiet until it comes back.
+   *
+   * A browser will happily keep an oscillator running in a background tab, which is how a
+   * finished run ends up humming at somebody from a window they are no longer looking at.
+   */
+  private watchVisibility(): void {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) void this.ctx?.suspend();
+      else if (!this.silenced) void this.ctx?.resume();
+    });
   }
 }

@@ -402,6 +402,13 @@ The slope came *down* again once the capture meter learned to count a crowd. Ele
 in section 5 that could not actually finish you was the worst of both worlds — punishing
 to drive through and harmless to be caught by.
 
+**Fixing placement did not mean lowering the curve**, though it looked that way for one
+version. While the director was refusing three quarters of its placements the real headcount
+sat five or six under target, so dropping the numbers to match what it was *achieving* threw
+away the pressure the curve was always describing — and the opening, which is supposed to be
+losable, became a freebie. The curve is what the game is meant to run at; placement is what
+makes it true.
+
 ### Why it got easier the deeper you went
 
 Someone reached section 40 and found the road empty. Measured, headcount ran five or six

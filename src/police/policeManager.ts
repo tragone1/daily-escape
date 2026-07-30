@@ -552,8 +552,11 @@ export class PoliceManager {
         const fx = Math.sin(ctx.player.heading);
         const fz = Math.cos(ctx.player.heading);
         const ahead = ((x - ctx.player.x) * fx + (z - ctx.player.z) * fz) / Math.max(1, d);
-        if (ahead > pacing.viewConeCos) continue;
-        if (d < pacing.farSpawnDistance) continue;
+        // In the forward view it has to be a long way off; elsewhere the usual distance
+        // stands in for concealment. A car arriving down the road is fine - one appearing
+        // beside you is not.
+        const needed = ahead > pacing.viewConeCos ? pacing.viewConeDistance : pacing.farSpawnDistance;
+        if (d < needed) continue;
       }
       if (!ctx.world.isClear(x, z, 3.5)) continue;
       if (this.occupied(x, z)) continue;

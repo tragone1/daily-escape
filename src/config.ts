@@ -1037,10 +1037,16 @@ export const CONFIG = {
        */
       farSpawnDistance: 165,
       /**
-       * Cosine of the half-angle of the player's forward view. A visible spawn inside this
-       * cone is refused at any distance - you would watch it happen.
+       * Cosine of the half-angle of the player's forward view, and how far away a car may
+       * appear inside it while still being visible.
+       *
+       * Refusing visible spawns ahead *at any distance* was too blunt: it starved the road
+       * of cars, because ahead-of-you is where a lot of the pressure comes from. What
+       * actually reads badly is a car popping into existence nearby. Appearing well down
+       * the road and already coming toward you is how a police car is supposed to arrive.
        */
       viewConeCos: 0.55,
+      viewConeDistance: 240,
       /** How often activation/repositioning decisions run, seconds. */
       directorInterval: 0.28,
       /** Preferred spawn offsets along the route, in course units. */
@@ -1202,13 +1208,15 @@ export const CONFIG = {
        * which is most of where the late game's escalation now lives.
        */
       /*
-       * Lowered when placement was fixed. These numbers were set while the director was
-       * failing three quarters of its placements, so the *target* was aspirational and the
-       * real headcount was five or six under it. Once it started hitting the number, the
-       * same curve buried the opening.
+       * These are the numbers the game is *meant* to run at, and they stay put.
+       *
+       * When the director was refusing three quarters of its placements the real headcount
+       * sat five or six under this, and I lowered the curve to compensate - which was
+       * backwards. Fixing placement means the opening finally gets the pressure this curve
+       * always described. No section should be a freebie, least of all the first.
        */
-      baseActive: 5,
-      activePerSection: 1.05,
+      baseActive: 7,
+      activePerSection: 1.15,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */

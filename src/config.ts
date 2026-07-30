@@ -822,6 +822,11 @@ export const CONFIG = {
       /** Only blocks where the drivable width is under this, unless nothing else is near. */
       preferredWidth: 30,
       /**
+       * Speed ceiling while manoeuvring on a block. Low: it is shuffling to cover a gap,
+       * not racing anywhere, and it must never end up in front of the player under power.
+       */
+      holdPace: 18,
+      /**
        * Never park somewhere narrower than this.
        *
        * The rig is twelve metres long and the canyon is fourteen wide, so broadside in the
@@ -1031,6 +1036,11 @@ export const CONFIG = {
        * there to hide behind.
        */
       farSpawnDistance: 165,
+      /**
+       * Cosine of the half-angle of the player's forward view. A visible spawn inside this
+       * cone is refused at any distance - you would watch it happen.
+       */
+      viewConeCos: 0.55,
       /** How often activation/repositioning decisions run, seconds. */
       directorInterval: 0.28,
       /** Preferred spawn offsets along the route, in course units. */
@@ -1124,8 +1134,16 @@ export const CONFIG = {
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
         maxWait: 24,
       },
-      /** Lateral spawns need at least this much run-off to sit in. */
-      sideShoulderMin: 9,
+      /**
+       * How many units may be woken per director tick, and how many placements may be
+       * tried to do it.
+       *
+       * Attempts are budgeted separately from wakes because refusals are normal and
+       * frequent - no spur in range, nowhere out of sight, the spot already taken. Tying
+       * the two together meant one bad spot ended recruitment for the tick.
+       */
+      wakePerTick: 3,
+      wakeAttempts: 26,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
       /**
@@ -1183,8 +1201,14 @@ export const CONFIG = {
        * is a better section, and it leaves the ceiling until section 19 instead of 12,
        * which is most of where the late game's escalation now lives.
        */
-      baseActive: 7,
-      activePerSection: 1.15,
+      /*
+       * Lowered when placement was fixed. These numbers were set while the director was
+       * failing three quarters of its placements, so the *target* was aspirational and the
+       * real headcount was five or six under it. Once it started hitting the number, the
+       * same curve buried the opening.
+       */
+      baseActive: 5,
+      activePerSection: 1.05,
       /** Ceiling, for fairness and frame time alike. */
       maxActive: 20,
       /** Section at which each class starts appearing. */
@@ -1415,6 +1439,27 @@ export const CONFIG = {
      * are what "no way out" means.
      */
     enclosureRadius: 15,
+    /**
+     * Walls count toward being surrounded, but cheaply enough to be careful with.
+     *
+     * The case worth capturing is being shoved into a corner and held there by one car,
+     * where there is no *room* for police in the other directions. The case to avoid is an
+     * ordinary narrow street counting as half a pin all by itself: at nine units and no
+     * cap, the canyon and downtown walls blocked three or four sectors permanently, one or
+     * two cars finished the job, and every run died in section one.
+     *
+     * The rule that makes it work is *speed*: walls only count once you have already been
+     * brought to a stop. Driving down a canyon at forty, the walls either side are scenery
+     * and count for nothing; stopped dead in a corner with a car on your bumper, they are
+     * the reason there is nowhere to go, which is exactly what the meter is supposed to
+     * measure. Without that condition every narrow street was half a pin by itself and
+     * every run ended in section one.
+     */
+    wallEnclosureRadius: 6,
+    maxWallSectors: 3,
+    minPoliceSectors: 1,
+    /** Walls only count toward the ring below this speed. */
+    wallEnclosureSpeed: 9,
     enclosureSectors: 8,
     minSectorsToPin: 3,
     fullPinSectors: 5,

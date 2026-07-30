@@ -10,8 +10,11 @@ name = "daily-escape-local"
 compatibility_date = "2026-07-01"
 pages_build_output_dir = "dist"
 
+# `binding` is what the code sees as env.DB; `database_name` is what the wrangler CLI
+# addresses. They are different things, and conflating them is why `wrangler d1 execute DB`
+# failed with "couldn't find a D1 DB with the name or binding 'DB'".
 [[d1_databases]]
 binding = "DB"
-database_name = "DB"
+database_name = "daily-escape-leaderboard"
 # Ignored in --local mode, which is backed by a local SQLite file.
 database_id = "local-development-only"

@@ -9,11 +9,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.functions.json",
     "build:share": "npm run build && node scripts/build-artifact.mjs",
-    "db:local": "wrangler d1 execute DB --local -c wrangler.local.toml --file=./migrations/0001_init.sql",
-    "db:remote": "wrangler d1 execute DB --remote --file=./migrations/0001_init.sql",
-    "dev:api": "npm run build && wrangler pages dev dist --d1=DB=DB --compatibility-date=2026-07-01 --port 8788",
+    "db:local": "wrangler d1 execute daily-escape-leaderboard --local -c wrangler.local.toml --file=./migrations/0001_init.sql",
+    "db:remote": "wrangler d1 execute daily-escape-leaderboard --remote --file=./migrations/0001_init.sql",
+    "dev:api": "npm run build && wrangler pages dev dist --d1=DB=daily-escape-leaderboard --compatibility-date=2026-07-01 --port 8788",
     "cf:login": "wrangler login",
-    "cf:whoami": "wrangler whoami"
+    "cf:whoami": "wrangler whoami",
+    "db:tables": "wrangler d1 execute daily-escape-leaderboard --remote --command \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\""
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260729.1",

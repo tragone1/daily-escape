@@ -56,8 +56,18 @@ the game feels. Worth doing only if the board actually gets spoiled.
 
 ### Deploying it
 
-The database and its `DB` binding are created in the Cloudflare dashboard. Once bound, the
-schema is applied once:
+The database and its `DB` binding are created in the Cloudflare dashboard. Two things there
+are easy to get wrong and produce identical symptoms:
+
+- **`binding` and `database_name` are different things.** The code sees `env.DB`; the
+  wrangler CLI addresses the database by its own name (`daily-escape-leaderboard` here).
+  Passing the binding where the name belongs fails with "couldn't find a D1 DB with the name
+  or binding 'DB'".
+- **Bindings are configured per environment.** A database bound only to Production leaves
+  `env.DB` undefined on every branch preview, which used to surface as a bare
+  Cloudflare 1101. `GET /api/health` now names both failures instead.
+
+Once bound, the schema is applied once:
 
 ```bash
 npm run db:remote

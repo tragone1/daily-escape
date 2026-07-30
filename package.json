@@ -11,7 +11,7 @@
     "build:share": "npm run build && node scripts/build-artifact.mjs",
     "db:local": "wrangler d1 execute DB --local -c wrangler.local.toml --file=./migrations/0001_init.sql",
     "db:remote": "wrangler d1 execute DB --remote --file=./migrations/0001_init.sql",
-    "dev:api": "wrangler pages dev -c wrangler.local.toml --port 8788",
+    "dev:api": "npm run build && wrangler pages dev dist --d1=DB=DB --port 8788",
     "cf:login": "wrangler login",
     "cf:whoami": "wrangler whoami"
   },

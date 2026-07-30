@@ -1,10 +1,86 @@
-# Daily Escape — endless police pursuit
+# Daily Escape — a daily police pursuit
 
 There is no finish line. The course keeps going, and every section it throws more police
 at you, then heavier police, then faster police, then spike strips. You drive until they
 box you in. The only question the game asks is *how far did you get*.
 
-A feel prototype: no daily generation, no backend, no leaderboard.
+**A new map every day, and a leaderboard for it.** One shared boundary — midnight US
+Eastern — so everybody is on the same course at the same time and the board is never
+ambiguous.
+
+## The daily challenge
+
+The course generator was already seeded, so the map is derived rather than stored: the day
+key (`YYYY-MM-DD` in `America/New_York`) is hashed into a seed, and the same day always
+rebuilds the same course. Nothing has to be fetched to know what you are driving, and any
+past or future day can be reproduced offline for testing.
+
+The hash matters. Feeding mulberry32 `20260729` and `20260730` back to back produces courses
+that open almost identically, so the date is mixed before it is used. Verified: consecutive
+days differ in length and layout while the seven-theme *order* stays fixed, which is the
+right split — the rhythm is learnable, the road is new.
+
+DST is handled by asking `Intl` for the date in the zone rather than doing arithmetic on
+offsets, in both the browser and the Worker. A page left open across the rollover keeps
+yesterday's course until reloaded; the countdown on the intro card is what makes that
+visible.
+
+## The leaderboard
+
+Cloudflare Pages Functions plus D1, so the API deploys from the same `git push` as the game
+and there is no second vendor to hold credentials for.
+
+| | |
+| --- | --- |
+| `POST /api/score` | Submit a run. Keeps only your best per day. |
+| `GET /api/leaderboard` | One day's board, plus your own row if you fall outside the top 25. |
+| `GET /api/leaderboard?mode=days` | Recent days, for the day picker. |
+
+**Identity is deliberately thin**: a random id in `localStorage` plus a name you pick. That
+is enough to own your scores across days without accounts or passwords. Clearing site data
+loses the link, which the board says out loud rather than hiding.
+
+### On cheating — read this before trusting the board
+
+**The API cannot tell a real run from a fabricated one.** It rejects scores that are
+physically impossible for the time claimed, requires the score to match its own breakdown,
+bounds every field, decides the day server-side so nobody can post onto a map they have
+already studied, and caps submissions per player per day. That stops idle tampering and
+keeps a malformed request from corrupting the table.
+
+Someone determined can still post a plausible lie. Closing that needs server-side replay of
+the input stream, which needs the simulation to be deterministic — and it is not: four
+`Math.random()` calls in the police logic change outcomes. That is a real piece of work and
+it would also make police behaviour identical for everyone on a given day, which changes how
+the game feels. Worth doing only if the board actually gets spoiled.
+
+### Deploying it
+
+The database and its `DB` binding are created in the Cloudflare dashboard. Two things there
+are easy to get wrong and produce identical symptoms:
+
+- **`binding` and `database_name` are different things.** The code sees `env.DB`; the
+  wrangler CLI addresses the database by its own name (`daily-escape-leaderboard` here).
+  Passing the binding where the name belongs fails with "couldn't find a D1 DB with the name
+  or binding 'DB'".
+- **Bindings are configured per environment.** A database bound only to Production leaves
+  `env.DB` undefined on every branch preview, which used to surface as a bare
+  Cloudflare 1101. `GET /api/health` now names both failures instead.
+
+Once bound, the schema is applied once:
+
+```bash
+npm run db:remote
+```
+
+Locally, `npm run dev:api` serves the built site and the functions together against a local
+D1 (`npm run db:local` for its schema). Plain `npm run dev` still runs the game alone on
+Vite, with the leaderboard simply reporting itself unavailable.
+
+There is deliberately **no `wrangler.toml` in the repo root**. Cloudflare Pages treats one
+as the source of truth for bindings and ignores what the dashboard says, so committing it
+would silently override the binding on the project. `wrangler.local.toml` is passed
+explicitly where it is needed.
 
 ## Scoring
 

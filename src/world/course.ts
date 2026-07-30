@@ -10,6 +10,7 @@
  * the things placed along it.
  */
 
+import { seedForDay } from "../daily";
 import { generateCourse } from "./generator";
 
 export type Surface = "asphalt" | "dirt" | "gravel" | "mud" | "grass";
@@ -144,7 +145,15 @@ export const START_HEADING = 0; // facing +Z
  */
 export const SECTION_COUNT = 40;
 
-const GENERATED = generateCourse(SECTION_COUNT);
+/**
+ * Today's course.
+ *
+ * Built once at module load from the day's seed, so everybody driving the challenge on a
+ * given day drives an identical map and nothing has to be fetched to know what it is. A
+ * page left open across the rollover keeps yesterday's course until it is reloaded, which
+ * the intro card's countdown makes visible.
+ */
+const GENERATED = generateCourse(SECTION_COUNT, seedForDay());
 
 export const MAIN_LEGS: LegDef[] = GENERATED.legs;
 /** Ambush spurs, in course order. */

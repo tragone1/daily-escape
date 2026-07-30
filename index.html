@@ -277,6 +277,8 @@
       }
       #overlay.show { display: flex; }
       #overlayCard {
+        max-height: calc(100vh - 32px);
+        overflow: auto;
         text-align: center;
         padding: 34px 54px;
         border-radius: 16px;
@@ -337,12 +339,12 @@
         border: 1px solid rgba(255, 255, 255, 0.13);
         border-radius: 14px;
         backdrop-filter: blur(8px);
-        padding: 14px 24px;
+        padding: 12px 22px;
         max-width: 760px;
         width: 100%;
         display: flex;
         flex-direction: column;
-        gap: 9px;
+        gap: 7px;
         /* Short viewports are the common case in an embedded frame, so the card scrolls
            inside itself rather than pushing the button off the bottom of the screen. */
         max-height: calc(100vh - 32px);
@@ -360,8 +362,8 @@
       #startCard h2 + .tagline { margin-top: -4px; }
       #startCard .tagline {
         margin: 0;
-        font-size: 12.5px;
-        line-height: 1.55;
+        font-size: 12px;
+        line-height: 1.5;
         color: #c3cade;
         text-align: center;
         text-wrap: balance;
@@ -369,11 +371,11 @@
       #startCard .tagline strong { color: var(--good); font-weight: 700; }
       #startBeats {
         display: grid;
-        gap: 7px 24px;
+        gap: 6px 22px;
         grid-template-columns: 1fr;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 10px 0;
+        padding: 8px 0;
       }
       #startBeats div {
         display: grid;
@@ -424,7 +426,7 @@
         background: var(--accent);
         border: none;
         border-radius: 8px;
-        padding: 10px 30px;
+        padding: 9px 26px;
         cursor: pointer;
         align-self: center;
       }
@@ -437,6 +439,162 @@
         letter-spacing: 0.1em;
         color: #5d6579;
       }
+
+      /* ------------------------------------------------------------------ */
+      /* Daily challenge + leaderboard                                      */
+      /* ------------------------------------------------------------------ */
+      #dayLine {
+        margin: -4px 0 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: center;
+        gap: 4px 10px;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+      }
+      #dayNumber { color: var(--accent); font-weight: 700; }
+      #dayDate { color: #9aa3b8; }
+      #dayCountdown { color: #6f7789; }
+      #startActions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+      }
+      button.ghost {
+        font: inherit;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        color: #cfd6e6;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 8px;
+        padding: 9px 14px;
+        cursor: pointer;
+      }
+      button.ghost:hover { background: rgba(255, 255, 255, 0.13); }
+      button.ghost:focus-visible { outline: 2px solid var(--good); outline-offset: 3px; }
+
+      #submitRow {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      #nameInput {
+        font: inherit;
+        font-size: 12px;
+        color: #eaf0ff;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 8px;
+        padding: 9px 12px;
+        width: 160px;
+      }
+      #nameInput:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      #submitScore {
+        font: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        color: #05070c;
+        background: var(--good);
+        border: none;
+        border-radius: 8px;
+        padding: 9px 16px;
+        cursor: pointer;
+      }
+      #submitScore:disabled { opacity: 0.45; cursor: default; }
+      #submitNote { margin: 0; font-size: 11px; min-height: 14px; color: #9aa3b8; }
+      #submitNote.good { color: var(--good); }
+      #submitNote.bad { color: var(--danger); }
+      #resultActions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+      #boardOverlay {
+        position: absolute;
+        inset: 0;
+        z-index: 70;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(4, 6, 11, 0.86);
+        font-family: inherit;
+      }
+      #boardOverlay[hidden] { display: none; }
+      #boardCard {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        backdrop-filter: blur(8px);
+        padding: 16px 18px;
+        width: 100%;
+        max-width: 520px;
+        max-height: calc(100vh - 32px);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      #boardHead {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      #boardHead h3 {
+        margin: 0;
+        flex: 1;
+        font-size: 13px;
+        letter-spacing: 0.16em;
+        color: var(--accent);
+      }
+      #boardDay {
+        font: inherit;
+        font-size: 11px;
+        color: #eaf0ff;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 6px;
+        padding: 5px 7px;
+      }
+      #boardClose {
+        font: inherit;
+        font-size: 18px;
+        line-height: 1;
+        color: #cfd6e6;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0 4px;
+      }
+      #boardMeta { margin: 0; font-size: 11px; color: #8b93a7; }
+      #boardList {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      #boardList li {
+        display: grid;
+        grid-template-columns: 28px 1fr auto auto;
+        gap: 10px;
+        align-items: baseline;
+        font-size: 12px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+      #boardList li.me { background: rgba(255, 210, 63, 0.14); }
+      #boardList .rank { color: #6f7789; font-variant-numeric: tabular-nums; }
+      #boardList .who { color: #eaf0ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #boardList .sec { color: #8b93a7; font-size: 10.5px; }
+      #boardList .pts { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+      #boardYou { margin: 0; font-size: 11.5px; color: var(--accent); min-height: 14px; }
+      #boardFoot { margin: 0; font-size: 10px; line-height: 1.5; color: #5d6579; }
       #restartBtn {
         position: absolute;
         top: 16px;
@@ -531,7 +689,23 @@
         <div id="overlayStars"></div>
         <div id="overlayTime">00.00</div>
         <div id="overlayDetail"></div>
-        <button id="playAgainBtn">PLAY AGAIN (Q)</button>
+        <div id="submitRow">
+          <input
+            id="nameInput"
+            type="text"
+            maxlength="18"
+            autocomplete="nickname"
+            spellcheck="false"
+            placeholder="Your name"
+            aria-label="Your name for the leaderboard"
+          />
+          <button id="submitScore" type="button">SUBMIT SCORE</button>
+        </div>
+        <p id="submitNote"></p>
+        <div id="resultActions">
+          <button id="playAgainBtn">PLAY AGAIN (Q)</button>
+          <button id="resultBoard" class="ghost" type="button">LEADERBOARD</button>
+        </div>
       </div>
     </div>
 
@@ -539,6 +713,11 @@
     <div id="focusHint">
       <div id="startCard">
         <h2>DAILY ESCAPE</h2>
+        <p id="dayLine">
+          <span id="dayNumber">DAY 1</span>
+          <span id="dayDate"></span>
+          <span id="dayCountdown"></span>
+        </p>
         <p class="tagline">
           A police pursuit with <strong>no finish line</strong>. Every section sends more cars,
           heavier cars and new ways to stop you. Your score is how far you got.
@@ -575,8 +754,28 @@
           <span><b>C</b> camera</span>
         </div>
 
-        <button id="startGo" type="button">START RUN</button>
+        <div id="startActions">
+          <button id="startGo" type="button">START RUN</button>
+          <button id="startBoard" class="ghost" type="button">TODAY'S LEADERBOARD</button>
+        </div>
         <p id="buildStamp"></p>
+      </div>
+    </div>
+
+    <div id="boardOverlay" hidden>
+      <div id="boardCard">
+        <div id="boardHead">
+          <h3>LEADERBOARD</h3>
+          <select id="boardDay" aria-label="Which day to show"></select>
+          <button id="boardClose" type="button" aria-label="Close leaderboard">&times;</button>
+        </div>
+        <p id="boardMeta"></p>
+        <ol id="boardList"></ol>
+        <p id="boardYou"></p>
+        <p id="boardFoot">
+          Scores are kept per day and only your best counts. Your name lives in this browser
+          &mdash; clearing site data starts you over.
+        </p>
       </div>
     </div>
 

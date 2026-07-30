@@ -1,0 +1,20 @@
+# Local development only.
+#
+# Deliberately NOT called wrangler.toml. Cloudflare Pages treats a repo-root wrangler.toml
+# as the source of truth for bindings and ignores the ones configured in the dashboard, so
+# committing one here would silently override the D1 binding set up on the project - and
+# this file cannot carry the real database_id, because that lives in the account.
+#
+# Pass it explicitly: wrangler ... -c wrangler.local.toml
+name = "daily-escape-local"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "dist"
+
+# `binding` is what the code sees as env.DB; `database_name` is what the wrangler CLI
+# addresses. They are different things, and conflating them is why `wrangler d1 execute DB`
+# failed with "couldn't find a D1 DB with the name or binding 'DB'".
+[[d1_databases]]
+binding = "DB"
+database_name = "daily-escape-leaderboard"
+# Ignored in --local mode, which is backed by a local SQLite file.
+database_id = "local-development-only"

@@ -130,7 +130,18 @@ export class Game {
       this.begin();
     };
     document.getElementById("startGo")?.addEventListener("click", start);
-    document.getElementById("focusHint")?.addEventListener("pointerdown", start);
+    /*
+     * Clicking the backdrop starts the run — but only the backdrop.
+     *
+     * Without the target check this listener also fired for every click *inside* the card,
+     * because the event bubbles: the leaderboard button opened the board and then the run
+     * began underneath it and hid the card, so the button looked like it did nothing but
+     * start the game.
+     */
+    const hint = document.getElementById("focusHint");
+    hint?.addEventListener("pointerdown", (e) => {
+      if (e.target === hint) start();
+    });
     this.keys.onResetCamera = () => this.camera.reset(this.player);
     this.keys.onAnyKey = () => {
       this.audio.init();

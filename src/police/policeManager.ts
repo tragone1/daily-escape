@@ -24,7 +24,6 @@ import { CONFIG, type PoliceRole } from "../config";
 import { forwardOf, headingOf, rightOf } from "../math";
 import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
-import type { CollisionWorld } from "../physics/collisionWorld";
 import type { Terrain } from "../world/terrain";
 import type { PursuitContext } from "./behaviors";
 import { PoliceCar } from "./policeCar";
@@ -163,29 +162,15 @@ export class PoliceManager {
       this.spawnUnit(unit, ctx, playerProgress);
     }
 
-    /*
-     * Fill toward the target, and do not give up on the first refusal.
-     *
-     * `break` on a failed placement was the reason the squad thinned out as the run went
-     * on. Placement fails often and legitimately - no spur in range, nowhere out of sight,
-     * a spot already taken - and measured, three quarters of attempts were being refused
-     * by section 11. One refusal aborted the whole wake loop for that tick, so headcount
-     * sat well under target from the mid-game onward and the game got *easier* the deeper
-     * you went: target 20, actual 13.
-     *
-     * Attempts are budgeted instead, so a run of bad spots costs a few tries rather than
-     * the entire tick's recruitment.
-     */
     let active = this.activeCount;
-    let woken = 0;
-    let attempts = 0;
-    while (active < target && woken < pacing.wakePerTick && attempts < pacing.wakeAttempts) {
-      attempts++;
+    // Wake at most a couple per tick so a section change ramps in rather than pops.
+    let budget = 2;
+    while (active < target && budget > 0) {
       const unit = this.pickDormant(section);
       if (!unit) break;
-      if (!this.spawnUnit(unit, ctx, playerProgress)) continue;
+      if (!this.spawnUnit(unit, ctx, playerProgress)) break;
       active++;
-      woken++;
+      budget--;
     }
 
     /*
@@ -485,20 +470,12 @@ export class PoliceManager {
     mode: Exclude<SpawnMode, "ambush">,
   ): boolean {
     const pacing = CONFIG.police.pacing;
-    /*
-     * A ladder of candidate distances rather than three guesses.
-     *
-     * Deep in a run there are already fifteen-plus cars packed into a narrow corridor, so
-     * most spots near the player are legitimately taken and most spots ahead are in plain
-     * view. Three candidates found a free one about one time in ten, which is why headcount
-     * sat five under target however hard the director tried. Behind gets the longest ladder
-     * because behind is, by definition, outside the forward view cone and therefore the
-     * placement most likely to be allowed.
-     */
-    const behind = [0.7, 1, 1.3, 1.6, 2, 2.5, 3, 3.6].map((k) => -pacing.spawnBehind * k);
-    const ahead = [1, 1.3, 0.75, 1.7, 2.1, 2.6].map((k) => pacing.spawnAhead * k);
     const offsets =
-      mode === "behind" ? behind : mode === "ahead" ? ahead : [...ahead.slice(0, 3), ...behind.slice(0, 4)];
+      mode === "behind"
+        ? [-pacing.spawnBehind, -pacing.spawnBehind * 1.5, -pacing.spawnBehind * 0.7]
+        : mode === "ahead"
+          ? [pacing.spawnAhead, pacing.spawnAhead * 1.4, pacing.spawnAhead * 0.7]
+          : [pacing.spawnAhead * 0.7, -pacing.spawnBehind * 0.6, pacing.spawnAhead * 1.1];
 
     for (const offset of offsets) {
       const node = ctx.nav.nodeAtProgress(playerProgress + offset);
@@ -506,21 +483,11 @@ export class PoliceManager {
       let z = node.z;
 
       if (mode === "side") {
-        /*
-         * Offset across the road rather than sitting on its centre line.
-         *
-         * This used to require a shoulder of at least nine units, and narrowing the course
-         * left exactly one theme of seven that qualified - so side placements failed
-         * essentially always and a third of the spawn budget went nowhere. It now uses
-         * whatever width is there: the run-off when a theme has one, the edge of the
-         * carriageway when it does not.
-         */
         const seg = this.terrain.sample(node.x, node.z).segment;
+        if (seg.shoulder < pacing.sideShoulderMin) continue;
+        // Right-hand perpendicular of the segment direction, either side.
         const side = Math.random() < 0.5 ? 1 : -1;
-        const lateral =
-          seg.shoulder > 3
-            ? seg.halfWidth + seg.shoulder * 0.65
-            : Math.max(0, seg.halfWidth - 2.5);
+        const lateral = seg.halfWidth + seg.shoulder * 0.65;
         x = node.x + seg.dz * lateral * side;
         z = node.z - seg.dx * lateral * side;
         // It has to be able to get *out* again. Run-off is fenced at its outer edge and
@@ -537,27 +504,8 @@ export class PoliceManager {
           ? pacing.minSpawnDistance * pacing.slowSpawnScale
           : pacing.minSpawnDistance;
       if (d < near) continue;
-
-      /*
-       * Never appear where the player is looking.
-       *
-       * Distance alone was not enough: a car materialising two hundred units up an empty
-       * straight is still a car materialising, and it is worse than a near one because you
-       * are staring right at it. Anything inside the forward view cone has to be genuinely
-       * hidden, however far away it is; behind and to the sides, distance still stands in
-       * for concealment, which is what keeps the open themes populated at all.
-       */
       const hidden = !ctx.world.lineOfSight(ctx.player.x, ctx.player.z, x, z);
-      if (!hidden) {
-        const fx = Math.sin(ctx.player.heading);
-        const fz = Math.cos(ctx.player.heading);
-        const ahead = ((x - ctx.player.x) * fx + (z - ctx.player.z) * fz) / Math.max(1, d);
-        // In the forward view it has to be a long way off; elsewhere the usual distance
-        // stands in for concealment. A car arriving down the road is fine - one appearing
-        // beside you is not.
-        const needed = ahead > pacing.viewConeCos ? pacing.viewConeDistance : pacing.farSpawnDistance;
-        if (d < needed) continue;
-      }
+      if (!hidden && d < pacing.farSpawnDistance) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
       if (this.occupied(x, z)) continue;
 
@@ -573,8 +521,7 @@ export class PoliceManager {
       if (!u.active || u.destroyed) continue;
       const dx = u.vehicle.x - x;
       const dz = u.vehicle.z - z;
-      // Two cars four units apart is a scrum, not a bug; only reject a genuine overlap.
-      if (dx * dx + dz * dz < 36) return true;
+      if (dx * dx + dz * dz < 100) return true;
     }
     return false;
   }
@@ -654,7 +601,7 @@ export class PoliceManager {
    * unit inside `enclosureRadius`. This is the whole loss condition: it answers "is there
    * a way out of here", where counting cars only ever answered "how many are touching me".
    */
-  enclosure(x: number, z: number, world?: CollisionWorld, speed = Infinity): number {
+  enclosure(x: number, z: number): number {
     const run = CONFIG.run;
     const covered = new Array<boolean>(run.enclosureSectors).fill(false);
     const r2 = run.enclosureRadius * run.enclosureRadius;
@@ -668,33 +615,6 @@ export class PoliceManager {
       a -= Math.floor(a);
       covered[Math.min(run.enclosureSectors - 1, Math.floor(a * run.enclosureSectors))] = true;
     }
-
-    /*
-     * Walls block a direction just as well as a car does.
-     *
-     * Without this, being shoved into a corner and held there by a single unit did not
-     * register as surrounded at all — there was no *room* for cars in the other sectors,
-     * so the arrest could never complete however hopeless the position was. Counting only
-     * vehicles measures how many police are present; counting geometry too measures what
-     * the rule is actually about, which is whether there is anywhere left to go.
-     */
-    const byPolice = covered.reduce((n, c) => n + (c ? 1 : 0), 0);
-    // Police have to be doing most of the work. Walls can finish a job, never start one.
-    if (byPolice < run.minPoliceSectors) return byPolice;
-
-    let fromWalls = 0;
-    if (world && speed < run.wallEnclosureSpeed) {
-      for (let i = 0; i < run.enclosureSectors && fromWalls < run.maxWallSectors; i++) {
-        if (covered[i]) continue;
-        const angle = ((i + 0.5) / run.enclosureSectors) * Math.PI * 2;
-        const reach = world.raySolid(x, z, Math.sin(angle), Math.cos(angle), run.wallEnclosureRadius);
-        if (reach < run.wallEnclosureRadius) {
-          covered[i] = true;
-          fromWalls++;
-        }
-      }
-    }
-
     return covered.reduce((n, c) => n + (c ? 1 : 0), 0);
   }
 

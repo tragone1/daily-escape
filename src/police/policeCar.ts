@@ -363,9 +363,6 @@ export class PoliceCar {
     } else if (this.role === "rig") {
       this.updateRigPost(dt, ctx);
       goal = rigGoal(ctx, this.rigPost);
-      // Never overtake the player to reach a post. A blockade that arrives by driving
-      // through the thing it is blocking is not a blockade.
-      boxSpeedLimit = Math.min(boxSpeedLimit, CONFIG.police.rig.holdPace);
     } else if (this.boxSlot) {
       // On a station: hold it, then close it.
       const box = CONFIG.police.shared.box;
@@ -619,20 +616,15 @@ export class PoliceCar {
    */
   private updateRigPost(dt: number, ctx: PursuitContext): void {
     const cfg = CONFIG.police.rig;
-    /*
-     * A rig placed on a block holds it. Full stop.
-     *
-     * It used to re-scout the moment the player drew level, pick a spot further up the
-     * road and drive off to it - straight past the player it was supposed to be stopping,
-     * which lifts the blockade at the exact moment the blockade matters. A rig is not a
-     * pursuer that happens to park; it is a piece of road furniture that arrived early.
-     * The director stands it down once the player is well past, and that is the only way
-     * it ever leaves.
-     */
-    if (this.rigPost) return;
-
     this.rigTimer -= dt;
     const playerProgress = ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+    // A block the player has already driven past is not a block. Re-scout immediately
+    // rather than sitting behind them until the timer happens to come round.
+    const passed =
+      this.rigPost !== null &&
+      ctx.terrain.progressAt(this.rigPost.x, this.rigPost.z) < playerProgress + 20;
+    if (this.rigPost && this.rigTimer > 0 && !passed) return;
+    if (passed) this.rigScore = Infinity;
     this.rigTimer = cfg.repickInterval;
     let best: NavNode | null = null;
     let bestScore = Infinity;

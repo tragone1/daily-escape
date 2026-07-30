@@ -362,12 +362,7 @@ export class Game {
 
     // --- Run state ---------------------------------------------------------
     // Directions blocked, not cars counted: the arrest is about having nowhere to go.
-    const boxedIn = this.police.enclosure(
-      this.player.x,
-      this.player.z,
-      this.collision,
-      this.player.speed,
-    );
+    const boxedIn = this.police.enclosure(this.player.x, this.player.z);
     this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);

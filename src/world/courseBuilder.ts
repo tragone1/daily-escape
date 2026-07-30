@@ -537,40 +537,6 @@ function buildProps(
   const rx = seg.dz;
   const rz = -seg.dx;
 
-  /*
-   * Wide sections get a divider: a run of blocks strung along the road rather than a lone
-   * obstacle against a kerb.
-   *
-   * Open road is the one place nothing can go wrong, and a straight with a single crate on
-   * it is still a straight. A barrier you can take either side of turns it into a choice -
-   * shed a tail down one side, dodge a head-on group down the other, or spend the boost
-   * going through it - which is the sort of decision the tight sections get for free from
-   * their walls.
-   */
-  const width = (seg.halfWidth + seg.shoulder) * 2;
-  if (width > DIVIDER_MIN_WIDTH && seg.length > 70 && hash2(seg.ax, seg.bz) < 0.55) {
-    const side = hash2(seg.bx, seg.az) < 0.5 ? 1 : -1;
-    // Offset from the centre line so the two gaps are different sizes; the wider one is
-    // the obvious line and the tighter one is the interesting one.
-    const lateral = seg.halfWidth * 0.22 * side;
-    const blocks = 3 + Math.floor(hash2(seg.az, seg.bx) * 3);
-    const start = seg.length * 0.32;
-    for (let i = 0; i < blocks; i++) {
-      const along = start + i * 7.5;
-      if (along > seg.length - 12) break;
-      const cx = seg.ax + seg.dx * along + rx * lateral;
-      const cz = seg.az + seg.dz * along + rz * lateral;
-      if (onOtherRoad(segments, seg, cx, cz, 2.0)) continue;
-      const mesh = r.createMesh(
-        { kind: "box", width: 2.4, height: 1.8, depth: 5.4 },
-        { color: [0.86, 0.5, 0.12], emissive: 0.5, isStatic: true },
-      );
-      mesh.position.set(cx, seg.ay + seg.grade * along + 0.9, cz);
-      mesh.rotation.y = seg.heading;
-      addCollider(colliders, cx, cz, 2.7, 1.2, seg.heading, seg.ay + seg.grade * along + 1.8);
-    }
-  }
-
   for (let i = 1; i <= count; i++) {
     const along = (i * seg.length) / (count + 1);
     const rnd = hash2(seg.ax + along, seg.az + along * 1.7);
@@ -583,7 +549,6 @@ function buildProps(
     const cz = seg.az + seg.dz * along + rz * lateral;
     const groundY = seg.ay + seg.grade * along;
     if (onOtherRoad(segments, seg, cx, cz, 2.0)) continue;
-
 
     const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
     const size = style.size;
@@ -599,9 +564,6 @@ function buildProps(
     addCollider(colliders, cx, cz, size * 0.7, size / 2, seg.heading, groundY + height);
   }
 }
-
-/** Above this drivable width a section is open enough to want a divider through it. */
-const DIVIDER_MIN_WIDTH = 30;
 
 /** Distance between obstacles per section; sections not listed stay clear. */
 const PROP_SPACING: Partial<Record<SectionId, number>> = {

@@ -42,7 +42,7 @@ export class Game {
   private rockets: RocketSystem;
   private camera: ChaseCamera;
   private hud: Hud;
-  private daily = new DailyUi();
+  private daily: DailyUi | null = null;
   private state = new GameState();
   private audio = new GameAudio();
   private keys = new Input();
@@ -95,6 +95,18 @@ export class Game {
     // Bake the static world into one draw call now that everything is placed.
     this.renderer.bake();
 
+    /*
+     * Optional chrome, constructed defensively. `DailyUi` looks up a dozen elements and
+     * throws if any is missing; as a field initializer that failure killed the whole Game
+     * constructor, so a broken leaderboard meant a black screen instead of a playable game
+     * with no leaderboard.
+     */
+    try {
+      this.daily = new DailyUi();
+    } catch (err) {
+      console.warn("Leaderboard UI unavailable:", err);
+    }
+
     this.hud = new Hud(() => {
       this.audio.init();
       this.restart();
@@ -107,10 +119,10 @@ export class Game {
     });
 
     this.keys.onRestart = () => {
-      if (!this.daily.boardOpen) this.restart();
+      if (!this.daily?.boardOpen) this.restart();
     };
     this.keys.onDrive = () => {
-      if (!this.daily.boardOpen) this.begin();
+      if (!this.daily?.boardOpen) this.begin();
     };
     // Clicking anywhere on the canvas also starts the run and takes keyboard focus.
     canvas.addEventListener("pointerdown", () => {
@@ -375,7 +387,7 @@ export class Game {
       // Arm the submit row for this run. Submission is a deliberate button press rather
       // than automatic: a name has to be chosen, and posting without asking would be a
       // surprise the first time.
-      this.daily.showResult({
+      this.daily?.showResult({
         score: this.state.score,
         section: this.state.section + 1,
         distance: Math.round(this.state.maxProgress),

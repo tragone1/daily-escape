@@ -7,6 +7,7 @@
  * is worth saying out loud in the UI rather than hiding.
  */
 
+import { letterNumberPattern } from "./compat";
 import { dayKey } from "./daily";
 
 const ID_KEY = "dailyEscape.playerId";
@@ -81,9 +82,11 @@ export function setPlayerName(name: string): void {
 }
 
 /** Same rule as the server, so the UI can reject before a round trip. */
+const NAME_PATTERN = letterNumberPattern();
+
 export function nameIsValid(name: string): boolean {
   const n = name.trim().replace(/\s+/g, " ");
-  return n.length >= 2 && n.length <= 18 && /^[\p{L}\p{N} _.'-]+$/u.test(n);
+  return n.length >= 2 && n.length <= 18 && NAME_PATTERN.test(n);
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

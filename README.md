@@ -826,6 +826,37 @@ per-frame cost is multiplied by a squad of up to 20. Two things had to change:
 Measured simulation cost, fixed 60 Hz timestep, excluding render: **0.14 ms/frame** at ten
 police, **0.36 ms/frame** at twenty — about 2% of a frame budget in the worst case.
 
+## Browser support
+
+**WebGL2 is the hard requirement.** Safari only shipped it in version 15 (macOS Monterey);
+before that it was experimental or absent. Everything else degrades.
+
+The renderer has always thrown a clear message when WebGL2 is missing — but nothing caught
+it, so on an unsupported browser the game presented as a black screen and the person looking
+at it had no way to know why. That is the actual bug, and it is fixed in two parts:
+
+- **`#bootError`, in every build.** An inline classic script catches `error` and
+  `unhandledrejection`, prints the message and the user agent on the page, and after six
+  seconds says so explicitly if the bundle never ran at all. Plain ES5 on purpose: it has to
+  work when the module bundle itself fails to parse, which is precisely the case on an engine
+  missing syntax the bundle uses. It previously existed only in the shareable build.
+- **An explicit WebGL2 probe before the game is constructed**, which distinguishes "this
+  browser has no WebGL2" from "it has WebGL2 and refused a context" — the second is usually
+  hardware acceleration being off — and says what to try.
+
+Four smaller compatibility hazards found in the same audit and fixed in `src/compat.ts`:
+
+| Hazard | Floor | Why it mattered |
+| --- | --- | --- |
+| `/\p{L}\p{N}/u` as a literal | Safari 11.1 | A **parse-time** SyntaxError takes the whole bundle down, not just the name check. Built with `new RegExp` in a try/catch now, falling back to Latin-plus-accents. |
+| `replaceChildren` | Safari 14 | Called every time the leaderboard opens. `setChildren` falls back to remove-and-append. |
+| `Intl` with `timeZone` | wide, but not universal | Called at module load to pick the day's map, so a throw meant no game at all. Falls back to the US DST rules — verified identical to `Intl` for all 26,304 hours of 2026-2028, both transitions included. |
+| `DailyUi` construction | — | It looks up a dozen elements and throws if one is missing. As a class field initializer that killed the whole `Game` constructor, so a broken leaderboard meant a black screen rather than a playable game without a leaderboard. Now caught. |
+
+Index widths were checked and are correct: the baked world batch uses `Uint32Array` with
+`UNSIGNED_INT`, which it must, since it is far past 65,535 vertices. `#version 300 es` sits at
+byte zero of both shader sources, which Safari requires and Chrome does not.
+
 ## Rendering
 
 There is no 3D engine dependency. `src/gfx/` is a ~600-line WebGL2 renderer written for

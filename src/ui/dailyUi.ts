@@ -6,6 +6,7 @@
  * path and a frame budget on a dialog.
  */
 
+import { setChildren } from "../compat";
 import { dayKey, dayLabel, dayNumber, msUntilRollover } from "../daily";
 import {
   fetchBoard,
@@ -136,7 +137,7 @@ export class DailyUi {
   private async openBoard(): Promise<void> {
     this.overlay.hidden = false;
     this.meta.textContent = "Loading...";
-    this.list.replaceChildren();
+    setChildren(this.list, []);
     this.you.textContent = "";
 
     try {
@@ -144,8 +145,9 @@ export class DailyUi {
       // Always offer today, even before anyone has posted a score on it.
       const keys = days.map((d) => d.day);
       if (!keys.includes(today)) keys.unshift(today);
-      this.daySelect.replaceChildren(
-        ...keys.map((day) => {
+      setChildren(
+        this.daySelect,
+        keys.map((day) => {
           const opt = document.createElement("option");
           opt.value = day;
           opt.textContent = day === today ? `Today - day ${dayNumber(day)}` : `Day ${dayNumber(day)} - ${day}`;
@@ -169,7 +171,7 @@ export class DailyUi {
       const board = await fetchBoard(day);
       this.paintBoard(board);
     } catch (err) {
-      this.list.replaceChildren();
+      setChildren(this.list, []);
       this.meta.textContent = err instanceof Error ? err.message : "Could not load that day.";
     }
   }
@@ -181,8 +183,9 @@ export class DailyUi {
         ? "Nobody has posted a score for this map yet."
         : `${board.players} ${board.players === 1 ? "driver" : "drivers"} - day ${dayNumber(board.day)}`;
 
-    this.list.replaceChildren(
-      ...board.entries.map((e) => {
+    setChildren(
+      this.list,
+      board.entries.map((e) => {
         const li = document.createElement("li");
         if (e.playerId === me) li.className = "me";
         const rank = document.createElement("span");

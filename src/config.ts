@@ -1438,6 +1438,43 @@ export const CONFIG = {
     enclosureSectors: 8,
     minSectorsToPin: 3,
     fullPinSectors: 5,
+    /**
+     * Walls as blocked directions.
+     *
+     * Held flat against a building by three cars, the old count said three directions
+     * were blocked when the honest answer was eight — the wall was doing most of the
+     * work of the arrest and getting none of the credit, so the meter sat still in the
+     * exact situation it exists to describe.
+     *
+     * Counting walls naively is worse than not counting them, which is what the first
+     * attempt at this proved: left, right and behind are blocked on any narrow street,
+     * and every corner became an arrest. Three guards make it safe, and all three are
+     * load-bearing:
+     *
+     *  - `minPoliceSectors` — cars have to already have hold of you. Geometry only
+     *    tightens a pin, it never starts one, so an empty alley is worth nothing.
+     *  - `escapeArc` — a way out is a contiguous arc, not a headcount. Blocked on both
+     *    sides with the road ahead open is a street, not a box, and stays free however
+     *    many wedges that adds up to.
+     *  - `maxSectors` — capped, so walls can never carry you from below the threshold to
+     *    a full pin on their own.
+     */
+    wallAssist: {
+      enabled: true,
+      /** Directions cars must already hold before geometry counts for anything. */
+      minPoliceSectors: 2,
+      /**
+       * Widest open arc, in wedges, that still counts as an escape route.
+       *
+       * One. Two wedges is ninety degrees of clear road and you drive out of it — at 2
+       * a straight street with two cars behind you read as an arrest, which is the same
+       * false positive that sank the first attempt. A single wedge is a forty-five
+       * degree seam between two obstacles: threadable, but not an exit you can count on.
+       */
+      escapeArc: 1,
+      /** Most wedges walls may ever contribute. */
+      maxSectors: 2,
+    },
     captureSpeed: 17,
     /**
      * Cars inside the radius before the threshold starts rising at all.

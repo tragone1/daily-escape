@@ -20,6 +20,7 @@
  */
 
 import type { Renderer } from "../gfx/renderer";
+import type { CollisionWorld } from "../physics/collisionWorld";
 import { CONFIG, type PoliceRole } from "../config";
 import { forwardOf, headingOf, rightOf } from "../math";
 import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
@@ -637,10 +638,17 @@ export class PoliceManager {
    * The circle is cut into `enclosureSectors` wedges and each is marked by the nearest
    * unit inside `enclosureRadius`. This is the whole loss condition: it answers "is there
    * a way out of here", where counting cars only ever answered "how many are touching me".
+   *
+   * Walls answer the same question and were being ignored, so three cars holding you
+   * flat against a building read as three blocked directions when the true number was
+   * eight. Passing `collision` lets geometry count too - under the guards in
+   * `wallAssist`, which exist because the naive version of this made every narrow street
+   * an arrest.
    */
-  enclosure(x: number, z: number): number {
+  enclosure(x: number, z: number, collision?: CollisionWorld): number {
     const run = CONFIG.run;
-    const covered = new Array<boolean>(run.enclosureSectors).fill(false);
+    const sectors = run.enclosureSectors;
+    const covered = new Array<boolean>(sectors).fill(false);
     const r2 = run.enclosureRadius * run.enclosureRadius;
 
     for (const u of this.units) {
@@ -650,9 +658,56 @@ export class PoliceManager {
       if (dx * dx + dz * dz > r2) continue;
       let a = Math.atan2(dx, dz) / (Math.PI * 2);
       a -= Math.floor(a);
-      covered[Math.min(run.enclosureSectors - 1, Math.floor(a * run.enclosureSectors))] = true;
+      covered[Math.min(sectors - 1, Math.floor(a * sectors))] = true;
     }
-    return covered.reduce((n, c) => n + (c ? 1 : 0), 0);
+    const byPolice = covered.reduce((n, c) => n + (c ? 1 : 0), 0);
+
+    const wall = CONFIG.run.wallAssist;
+    /*
+     * Cars first, always. Geometry only ever *adds* to a squad that already has hold of
+     * you, so an empty corridor - however tight - is worth nothing, and the wall test is
+     * skipped entirely on the frames that matter for cost.
+     */
+    if (!collision || !wall.enabled || byPolice < wall.minPoliceSectors) return byPolice;
+
+    // One ray per wedge, out to the same radius the cars are judged at. `canReach` is the
+    // right test rather than proximity: a kerb is close and drives over, a rail is
+    // further and does not.
+    const blocked = covered.slice();
+    let byWall = 0;
+    for (let i = 0; i < sectors; i++) {
+      if (blocked[i]) continue;
+      const theta = ((i + 0.5) / sectors) * Math.PI * 2;
+      const tx = x + Math.sin(theta) * run.enclosureRadius;
+      const tz = z + Math.cos(theta) * run.enclosureRadius;
+      if (collision.canReach(x, z, tx, tz)) continue;
+      blocked[i] = true;
+      byWall++;
+    }
+    if (byWall === 0) return byPolice;
+
+    /*
+     * The guard that the reverted attempt was missing: a way out is a *contiguous* arc,
+     * not a headcount. Blocked left, blocked right and blocked behind is a street with
+     * the road ahead wide open - the shape of most of the course - and counting those
+     * five wedges made every corner an arrest. Walls only count once the combined gap is
+     * too narrow to be an escape.
+     */
+    let longestGap = 0;
+    let gap = 0;
+    for (let i = 0; i < sectors * 2; i++) {
+      if (blocked[i % sectors]) {
+        gap = 0;
+        continue;
+      }
+      gap++;
+      if (gap > longestGap) longestGap = gap;
+    }
+    if (longestGap > wall.escapeArc) return byPolice;
+
+    // Capped, so geometry can tighten a pin the cars have already started but can never
+    // deliver one by itself.
+    return Math.min(sectors, byPolice + Math.min(byWall, wall.maxSectors));
   }
 
   syncViews(dt: number, elapsed: number): void {

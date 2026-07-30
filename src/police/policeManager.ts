@@ -39,6 +39,8 @@ export class PoliceManager {
   private goalProgress = POLICE_LOOKAHEAD;
   private speedBonus = -1;
   private boxTimer = 0;
+  /** Section the director last ran for; gates how hard placement tries. */
+  private effortSection = 0;
 
   constructor(r: Renderer, nav: NavGraph, private terrain: Terrain) {
     // Build the whole pool up front so meshes exist before the first frame; the director
@@ -162,15 +164,29 @@ export class PoliceManager {
       this.spawnUnit(unit, ctx, playerProgress);
     }
 
+    /*
+     * Fill toward the target. Past `effortFromSection`, keep trying after a refusal.
+     *
+     * Below the gate this is exactly the old loop - two attempts, give up on the first
+     * refusal - because the early sections are tuned and must not move. Above it, refusals
+     * cost an attempt rather than the entire tick's recruitment.
+     */
+    this.effortSection = section;
+    const persistent = section >= pacing.effortFromSection;
     let active = this.activeCount;
-    // Wake at most a couple per tick so a section change ramps in rather than pops.
-    let budget = 2;
-    while (active < target && budget > 0) {
+    let woken = 0;
+    let attempts = 0;
+    const maxAttempts = persistent ? pacing.wakeAttempts : pacing.wakePerTick;
+    while (active < target && woken < pacing.wakePerTick && attempts < maxAttempts) {
+      attempts++;
       const unit = this.pickDormant(section);
       if (!unit) break;
-      if (!this.spawnUnit(unit, ctx, playerProgress)) break;
+      if (!this.spawnUnit(unit, ctx, playerProgress)) {
+        if (!persistent) break;
+        continue;
+      }
       active++;
-      budget--;
+      woken++;
     }
 
     /*
@@ -470,12 +486,25 @@ export class PoliceManager {
     mode: Exclude<SpawnMode, "ambush">,
   ): boolean {
     const pacing = CONFIG.police.pacing;
+    /*
+     * Candidate distances. Three is plenty while the road is quiet; deep in a run most
+     * nearby spots are legitimately taken, so the ladder lengthens past the gate. Behind
+     * gets the most rungs, being the direction the player is not looking in.
+     */
+    const wide = this.effortSection >= pacing.effortFromSection;
     const offsets =
       mode === "behind"
-        ? [-pacing.spawnBehind, -pacing.spawnBehind * 1.5, -pacing.spawnBehind * 0.7]
+        ? wide
+          ? [0.7, 1, 1.3, 1.7, 2.1, 2.6, 3.2].map((k) => -pacing.spawnBehind * k)
+          : [-pacing.spawnBehind, -pacing.spawnBehind * 1.5, -pacing.spawnBehind * 0.7]
         : mode === "ahead"
-          ? [pacing.spawnAhead, pacing.spawnAhead * 1.4, pacing.spawnAhead * 0.7]
-          : [pacing.spawnAhead * 0.7, -pacing.spawnBehind * 0.6, pacing.spawnAhead * 1.1];
+          ? wide
+            ? [1, 1.3, 0.75, 1.7, 2.2].map((k) => pacing.spawnAhead * k)
+            : [pacing.spawnAhead, pacing.spawnAhead * 1.4, pacing.spawnAhead * 0.7]
+          : wide
+            ? [0.7, 1.1, -0.6, -1.2, -1.8].map((k) =>
+                k > 0 ? pacing.spawnAhead * k : pacing.spawnBehind * k)
+            : [pacing.spawnAhead * 0.7, -pacing.spawnBehind * 0.6, pacing.spawnAhead * 1.1];
 
     for (const offset of offsets) {
       const node = ctx.nav.nodeAtProgress(playerProgress + offset);
@@ -484,10 +513,18 @@ export class PoliceManager {
 
       if (mode === "side") {
         const seg = this.terrain.sample(node.x, node.z).segment;
-        if (seg.shoulder < pacing.sideShoulderMin) continue;
+        /*
+         * A shoulder of nine units exists in one theme of seven, so past the gate a side
+         * placement uses whatever width is there rather than refusing outright - otherwise
+         * a quarter of the spawn budget goes nowhere on every tick of the late game.
+         */
+        if (!wide && seg.shoulder < pacing.sideShoulderMin) continue;
         // Right-hand perpendicular of the segment direction, either side.
         const side = Math.random() < 0.5 ? 1 : -1;
-        const lateral = seg.halfWidth + seg.shoulder * 0.65;
+        const lateral =
+          seg.shoulder > 3
+            ? seg.halfWidth + seg.shoulder * 0.65
+            : Math.max(0, seg.halfWidth - 2.5);
         x = node.x + seg.dz * lateral * side;
         z = node.z - seg.dx * lateral * side;
         // It has to be able to get *out* again. Run-off is fenced at its outer edge and

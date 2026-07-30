@@ -1126,6 +1126,26 @@ export const CONFIG = {
       },
       /** Lateral spawns need at least this much run-off to sit in. */
       sideShoulderMin: 9,
+
+      /*
+       * Placement effort, and the section it switches on at.
+       *
+       * The director refuses a lot of placements - no spur in range, nowhere out of sight,
+       * the spot already taken - and it used to abandon recruitment for the whole tick on
+       * the first refusal. Early on that barely shows, because there is room and the target
+       * is low. Deep in a run there are fifteen cars in a narrow corridor, refusals become
+       * the common case, and headcount settles four to six under target: the squad thins
+       * out exactly where it is supposed to be closing in.
+       *
+       * The extra effort is deliberately gated rather than global. Sections one to eleven
+       * play the way they are meant to and must not move; this only changes what happens
+       * after them.
+       */
+      effortFromSection: 11,
+      /** Placements that may be attempted per tick once the gate is open. */
+      wakeAttempts: 24,
+      /** Units that may be woken per tick, gated or not. */
+      wakePerTick: 2,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
       /**

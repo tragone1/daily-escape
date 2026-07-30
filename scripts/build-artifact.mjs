@@ -72,78 +72,13 @@ const out = `<style>
 /* The host supplies <html>/<body>, so the game claims the full viewport from here. */
 html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #05070c; }
 ${styles}
-/* Surfaces a boot failure instead of leaving a silent black canvas. */
-#bootError {
-  position: absolute; inset: auto 16px 16px 16px; z-index: 60;
-  background: rgba(40,10,12,.95); border: 1px solid #ff4d4d; border-radius: 10px;
-  padding: 14px 16px; color: #ffd9d9; font-size: 12px; line-height: 1.5;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  max-height: 45vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
-}
-#bootError[hidden] { display: none; }
-#bootError b { color: #ff4d4d; }
 </style>
 
 ${body.replace('id="buildStamp">', `id="buildStamp">${stamp}`)}
 
-<div id="bootError" hidden></div>
 
 
 <script>
-/*
- * Boot diagnostics.
- *
- * A WebGL game that fails to start is otherwise indistinguishable from a black screen,
- * which makes it impossible to tell a blocked script from a missing GPU context. This
- * captures whatever went wrong and puts it on the page.
- */
-(function () {
-  var box = document.getElementById("bootError");
-  var seen = [];
-  function report(what) {
-    seen.push(what);
-    if (!box) return;
-    box.hidden = false;
-    // Joined with markup rather than newline escapes: this whole block lives inside a
-    // template literal, and a "\\n" here silently became a real line break inside a
-    // string literal, which is a syntax error that took the start button down with it.
-    box.innerHTML = "<b>Daily Escape could not start.</b><br>" + seen.join("<br>");
-  }
-  window.addEventListener("error", function (e) {
-    report((e && e.message ? e.message : "script error") +
-      (e && e.filename ? " @ " + e.filename : "") +
-      (e && e.lineno ? ":" + e.lineno : ""));
-  });
-  window.addEventListener("unhandledrejection", function (e) {
-    report("promise rejection: " + (e && e.reason ? e.reason : "unknown"));
-  });
-  // If the bundle never ran at all, nothing above fires, so check explicitly.
-  window.addEventListener("load", function () {
-    setTimeout(function () {
-      if (!window.__game) {
-        report("Game object never initialised. The bundle did not execute " +
-          "(inline script blocked, payload truncated, or WebGL unavailable).");
-      }
-    }, 1500);
-  });
-})();
-
-(function () {
-  var hint = document.getElementById("focusHint");
-  function start() {
-    if (hint) hint.classList.add("hidden");
-    window.focus();
-    var c = document.getElementById("renderCanvas");
-    if (c) c.focus();
-    if (window.__game) { window.__game.restart(); window.__game.begin(); }
-  }
-  if (hint) hint.addEventListener("click", start);
-  var go = document.getElementById("startGo");
-  if (go) go.addEventListener("click", function (e) { e.stopPropagation(); start(); });
-  // Clicking anywhere in the frame later should also restore keyboard focus.
-  window.addEventListener("mousedown", function () { window.focus(); });
-})();
-</script>
 
 <script>
 ${safeJs}

@@ -23,12 +23,39 @@ const EPOCH_KEY = "2026-07-29";
  * from parts and getting the padding wrong.
  */
 export function dayKey(at: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: DAY_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(at);
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: DAY_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(at);
+  } catch {
+    // A build without timezone data would otherwise throw here - and this is called at
+    // module load to pick the map, so it would take the whole game down rather than
+    // degrade. The US rules below agree with Intl for every date the game will see.
+    return easternKeyFallback(at);
+  }
+}
+
+/**
+ * US Eastern date without Intl, using the DST rules in force since 2007: forward on the
+ * second Sunday in March, back on the first Sunday in November, both at 02:00 local.
+ */
+function easternKeyFallback(at: Date): string {
+  const year = at.getUTCFullYear();
+  const nthSundayUtc = (month: number, nth: number): number => {
+    // 07:00 UTC is 02:00 EST; close enough for a boundary that is hours wide.
+    const first = Date.UTC(year, month, 1, 7);
+    const dow = new Date(first).getUTCDay();
+    const day = 1 + ((7 - dow) % 7) + (nth - 1) * 7;
+    return Date.UTC(year, month, day, 7);
+  };
+  const t = at.getTime();
+  const dst = t >= nthSundayUtc(2, 2) && t < nthSundayUtc(10, 1);
+  const shifted = new Date(t - (dst ? 4 : 5) * 3_600_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
 }
 
 /** Whole days between two `YYYY-MM-DD` keys. */
@@ -64,13 +91,17 @@ export function seedForDay(key: string = dayKey()): number {
 /** e.g. "Wednesday 29 July 2026", for the intro card. */
 export function dayLabel(key: string = dayKey()): string {
   const d = new Date(`${key}T12:00:00Z`);
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "UTC",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(d);
+  } catch {
+    return key;
+  }
 }
 
 /** Milliseconds until the next rollover, for the countdown. */

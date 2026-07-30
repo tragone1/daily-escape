@@ -18,6 +18,7 @@ import { CONFIG } from "../config";
 import { clamp } from "../math";
 import { Node3D, type Mesh, type Renderer } from "../gfx/renderer";
 import type { Vehicle } from "../vehicle/vehicle";
+import type { CollisionWorld } from "../physics/collisionWorld";
 import type { Terrain } from "../world/terrain";
 import type { PoliceCar } from "./policeCar";
 
@@ -47,7 +48,11 @@ export class HazardField {
   private clock = 0;
   private effect: { kind: HazardKind; timer: number } | null = null;
 
-  constructor(r: Renderer, private terrain: Terrain) {
+  constructor(
+    r: Renderer,
+    private terrain: Terrain,
+    private collision: CollisionWorld,
+  ) {
     const cfg = CONFIG.police.hazards;
     for (const kind of ["spike", "oil"] as HazardKind[]) {
       for (let i = 0; i < cfg.maxLive; i++) {
@@ -175,11 +180,10 @@ export class HazardField {
       const seg = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment;
       const road = seg.halfWidth;
       const room = Math.max(0, road - cfg.minGap * 0.5);
-      slot.halfWidth = Math.max(2.2, Math.min(k.halfWidth, room, road * cfg.maxRoadShare));
-      slot.live = true;
-      slot.x = unit.vehicle.x;
-      slot.z = unit.vehicle.z;
-      slot.heading = unit.vehicle.heading;
+      let halfWidth = Math.max(2.2, Math.min(k.halfWidth, room, road * cfg.maxRoadShare));
+      let px = unit.vehicle.x;
+      let pz = unit.vehicle.z;
+      let heading = unit.vehicle.heading;
 
       /*
        * Spikes go against a wall, not wherever the unit happened to be driving.
@@ -195,15 +199,44 @@ export class HazardField {
        * can plan a line around is not the same weapon.
        */
       if (kind === "spike") {
-        const across = (slot.x - seg.ax) * seg.dz - (slot.z - seg.az) * seg.dx;
-        const along = (slot.x - seg.ax) * seg.dx + (slot.z - seg.az) * seg.dz;
-        // Whichever wall the unit is already nearer, so the strip never jumps the road.
-        const side = across >= 0 ? 1 : -1;
-        const lateral = side * Math.max(0, road - slot.halfWidth);
-        slot.x = seg.ax + seg.dx * along + seg.dz * lateral;
-        slot.z = seg.az + seg.dz * along - seg.dx * lateral;
-        slot.heading = Math.atan2(seg.dx, seg.dz);
+        const across = (px - seg.ax) * seg.dz - (pz - seg.az) * seg.dx;
+        const along = (px - seg.ax) * seg.dx + (pz - seg.az) * seg.dz;
+        const cx = seg.ax + seg.dx * along;
+        const cz = seg.az + seg.dz * along;
+        /*
+         * Work inside the lane that is actually open, not the one the road is nominally
+         * wide. A skip or a barrier standing near the kerb is a wall as far as the car is
+         * concerned, so hugging the tarmac edge behind one left the strip spanning every
+         * route through - avoidable on paper, unavoidable in the lane. Probing for the
+         * widest clear run makes the block part of the wall, which is what it already is
+         * to anyone driving at it.
+         */
+        const band = this.clearBand(cx, cz, seg, road) ?? { lo: -road, hi: road };
+        /*
+         * And if that lane cannot take a strip *and* a gap, this is not a place for one.
+         * Laying it anyway is how the unavoidable ones happened: the fallback used to be
+         * the naive wall-hug, applied in exactly the tight spot that needed care most.
+         * Better to wait for a spot that leaves an answer - a hazard with no way past is
+         * not a hazard, it is just damage.
+         */
+        const usable = (band.hi - band.lo - cfg.minGap) * 0.5;
+        if (usable < 2.2) continue;
+        halfWidth = Math.max(2.2, Math.min(halfWidth, usable));
+        // Flush to whichever end of the clear run the unit was already nearer.
+        const lateral =
+          across >= (band.lo + band.hi) * 0.5
+            ? band.hi - halfWidth
+            : band.lo + halfWidth;
+        px = cx + seg.dz * lateral;
+        pz = cz - seg.dx * lateral;
+        heading = Math.atan2(seg.dx, seg.dz);
       }
+
+      slot.halfWidth = halfWidth;
+      slot.live = true;
+      slot.x = px;
+      slot.z = pz;
+      slot.heading = heading;
       slot.y = this.terrain.heightAt(slot.x, slot.z);
       slot.arm = k.armTime;
       slot.life = k.life;
@@ -224,6 +257,53 @@ export class HazardField {
       this.cooldown = cfg.globalCooldown * rate * (kind === "oil" ? 1.6 : 1);
       return;
     }
+  }
+
+  /**
+   * The widest run of laterally clear road across a point, as offsets from the centreline.
+   *
+   * Answers "where could a car actually be here", not "how wide is the tarmac". Props
+   * standing near the kerb — skips, barriers, stacked crates — are solid, so the lane
+   * they leave is the one that matters when deciding where a strip may span. Returns
+   * null when nothing is in the way and the caller can just use the road.
+   *
+   * Only runs on deployment, which the cooldowns keep rare, so probing is cheap enough
+   * to do properly.
+   */
+  private clearBand(
+    cx: number,
+    cz: number,
+    seg: { dx: number; dz: number },
+    road: number,
+  ): { lo: number; hi: number } | null {
+    const PROBES = 33;
+    // A shade under half the car, so a gap only counts when it is genuinely drivable.
+    const probeRadius = 0.95;
+    let bestLo = 0;
+    let bestHi = 0;
+    let runLo: number | null = null;
+    let blocked = false;
+
+    for (let i = 0; i < PROBES; i++) {
+      const lat = -road + (2 * road * i) / (PROBES - 1);
+      const px = cx + seg.dz * lat;
+      const pz = cz - seg.dx * lat;
+      const clear = this.collision.isClear(px, pz, probeRadius);
+      if (!clear) blocked = true;
+      if (clear) {
+        if (runLo === null) runLo = lat;
+        if (lat - runLo > bestHi - bestLo) {
+          bestLo = runLo;
+          bestHi = lat;
+        }
+      } else {
+        runLo = null;
+      }
+    }
+    // Nothing solid anywhere across the road: the plain wall-hug is already correct.
+    // A band narrower than the strip needs is still reported rather than discarded — the
+    // caller declines to lay there, which is the whole point of measuring.
+    return blocked ? { lo: bestLo, hi: bestHi } : null;
   }
 
   /** Oriented-rect test against the car's centre, ignoring anything jumped clean over. */

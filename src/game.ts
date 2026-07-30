@@ -87,7 +87,7 @@ export class Game {
     );
 
     this.police = new PoliceManager(this.renderer, this.world.nav, this.world.terrain);
-    this.hazards = new HazardField(this.renderer, this.world.terrain);
+    this.hazards = new HazardField(this.renderer, this.world.terrain, this.collision);
     this.pickups = new PickupSystem(this.renderer, this.world.terrain);
     this.rockets = new RocketSystem(this.renderer);
     this.camera = new ChaseCamera(this.renderer, this.collision, this.world.terrain);

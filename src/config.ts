@@ -1422,12 +1422,13 @@ export const CONFIG = {
      * or the speed threshold up much further and the run stops being winnable at all.
      */
     /*
-     * Set so the *fastest* possible arrest takes 2.2s: at a full seal the crowd
-     * multiplier is 0.95, and 2.09 / 0.95 is 2.2. That is the floor, so being surrounded
-     * always leaves at least two and a bit seconds to drive out of it; a partial pin at
-     * four wedges runs 0.75 and takes 2.79s.
+     * Set so the *fastest* possible arrest takes 1.8s: at a full seal the crowd
+     * multiplier is 0.95, and 1.71 / 0.95 is 1.8. That is the floor rather than the
+     * average - with `fullPinSectors` at 6 the ramp now has three rungs rather than two,
+     * so a four-wedge pin takes 2.50s, five takes 2.09s, and only a complete seal at six
+     * or more closes in 1.8s.
      */
-    captureDuration: 2.09,
+    captureDuration: 1.71,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1464,7 +1465,16 @@ export const CONFIG = {
     enclosureRadius: 15,
     enclosureSectors: 8,
     minSectorsToPin: 3,
-    fullPinSectors: 5,
+    /**
+     * Wedges at which the meter runs flat out.
+     *
+     * Six rather than five, to give the ramp a middle. Walls contribute a flat 2 when
+     * they count at all, so against a span of only 3-to-5 any wall pin landed straight on
+     * the ceiling — surrounded and half-surrounded closed the run out at the same rate.
+     * At 6 the three rungs are distinct: 2.50s at four wedges, 2.09s at five, 1.80s only
+     * once you are genuinely sealed.
+     */
+    fullPinSectors: 6,
     /**
      * Walls as blocked directions.
      *

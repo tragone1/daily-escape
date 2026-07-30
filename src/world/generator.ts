@@ -42,6 +42,15 @@ interface Theme {
   hills: number;
   /** Chance per section of a launch ramp. */
   ramps: number;
+  /**
+   * Narrowest this theme's road, or a spur off it, may be tightened to.
+   *
+   * Per-theme rather than global. The hard-walled corridors — the canyon and the
+   * downtown blocks — are the ones that played too mean to thread, and only those were
+   * meant to open up; the barrier and rail themes have run-off to spill into and were
+   * fine as they were.
+   */
+  minHalfWidth: number;
 }
 
 /**
@@ -60,23 +69,25 @@ interface Theme {
  * heavy units and the roadblocks had nothing to work with.
  */
 /**
- * Narrowest half-width anything on the course may be, main road or spur.
+ * Floor for the hard-walled corridors: the canyon and the downtown blocks.
  *
- * Almost every spur lands on this floor (0.62 of a road that is itself already tightened)
- * and so do the canyon and final themes in the late sections, which makes this single
- * number the width of most of the tight corridors in the game. It was 6.5 and they played
- * a shade too mean - a strip laid across one left barely a car's width either side of it.
+ * These two are the only themes with no shoulder *and* a solid wall — rock one side,
+ * building the other — so tightening them produced passages with nothing to spill into,
+ * where a strip laid across left barely a car's width to either side. Ten percent up
+ * from the 6.5 everything else still uses.
  */
-const MIN_HALF_WIDTH = 7.15;
+const CORRIDOR_MIN_HALF_WIDTH = 7.15;
+/** Floor for every other theme: what the whole course used before. */
+const OPEN_MIN_HALF_WIDTH = 6.5;
 
 const THEMES: Theme[] = [
-  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 7, hills: 1.0, ramps: 0.25 },
-  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 8.5, shoulder: 3, hills: 0.25, ramps: 0.8 },
-  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 9, shoulder: 0, hills: 0.0, ramps: 0.0 },
-  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 11, shoulder: 11, hills: 0.35, ramps: 0.7 },
-  { id: "canyon", surface: "gravel", wall: "rock", halfWidth: 7.5, shoulder: 0, hills: 0.6, ramps: 0.2 },
-  { id: "industrial", surface: "asphalt", wall: "fence", halfWidth: 9, shoulder: 0, hills: 0.15, ramps: 0.3 },
-  { id: "final", surface: "gravel", wall: "barrier", halfWidth: 8, shoulder: 4, hills: 0.5, ramps: 0.35 },
+  { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 7, hills: 1.0, ramps: 0.25, minHalfWidth: OPEN_MIN_HALF_WIDTH },
+  { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 8.5, shoulder: 3, hills: 0.25, ramps: 0.8, minHalfWidth: OPEN_MIN_HALF_WIDTH },
+  { id: "downtown", surface: "asphalt", wall: "building", halfWidth: 9, shoulder: 0, hills: 0.0, ramps: 0.0, minHalfWidth: CORRIDOR_MIN_HALF_WIDTH },
+  { id: "offroad", surface: "dirt", wall: "open", halfWidth: 11, shoulder: 11, hills: 0.35, ramps: 0.7, minHalfWidth: OPEN_MIN_HALF_WIDTH },
+  { id: "canyon", surface: "gravel", wall: "rock", halfWidth: 7.5, shoulder: 0, hills: 0.6, ramps: 0.2, minHalfWidth: CORRIDOR_MIN_HALF_WIDTH },
+  { id: "industrial", surface: "asphalt", wall: "fence", halfWidth: 9, shoulder: 0, hills: 0.15, ramps: 0.3, minHalfWidth: OPEN_MIN_HALF_WIDTH },
+  { id: "final", surface: "gravel", wall: "barrier", halfWidth: 8, shoulder: 4, hills: 0.5, ramps: 0.35, minHalfWidth: OPEN_MIN_HALF_WIDTH },
 ];
 
 export interface GeneratedCourse {
@@ -127,7 +138,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     // than it was, because the themes now start tight enough that compounding a third off
     // the top of them produced roads a car could not turn around in.
     const tighten = Math.min(0.22, s * 0.014);
-    const halfWidth = Math.max(MIN_HALF_WIDTH, theme.halfWidth * (1 - tighten));
+    const halfWidth = Math.max(theme.minHalfWidth, theme.halfWidth * (1 - tighten));
     const shoulder = theme.shoulder * (1 - tighten);
 
     // One ramp per section at most, placed on a middle leg.
@@ -266,7 +277,7 @@ function makeSpur(
     bz: z + Math.cos(angle) * length,
     // Flat: a sloping dead end is a place for a unit to get wedged, not a hiding place.
     by: y,
-    halfWidth: Math.max(MIN_HALF_WIDTH, halfWidth * 0.62),
+    halfWidth: Math.max(theme.minHalfWidth, halfWidth * 0.62),
     surface: theme.surface,
     // "open" has no wall to speak of, and a spur with no walls hides nothing.
     wall: theme.wall === "open" ? "fence" : theme.wall,

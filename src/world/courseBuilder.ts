@@ -234,10 +234,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
     if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments);
-    if (seg.capEnd) {
-      capDeadEnd(r, seg, colliders, wallShades);
-      markSpurMouth(r, seg);
-    }
+    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);
   }
 
@@ -480,35 +477,6 @@ function buildJunctionCaps(
         mesh.rotation.y = heading;
         addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
       }
-    }
-  }
-}
-
-/**
- * Flag the mouth of a spur so it does not read as a fork in the road.
- *
- * A side road leaving the carriageway at an angle looks exactly like the route continuing,
- * and taking it the first time means driving into a dead end at speed with no warning.
- * Striped posts either side of the opening say "service entrance", not "this way", which is
- * the distinction a driver needs at a hundred and forty.
- */
-function markSpurMouth(r: Renderer, seg: CourseSegment): void {
-  const rx = seg.dz;
-  const rz = -seg.dx;
-  for (const side of [-1, 1]) {
-    const cx = seg.ax + rx * (seg.halfWidth + 1.4) * side + seg.dx * 3;
-    const cz = seg.az + rz * (seg.halfWidth + 1.4) * side + seg.dz * 3;
-    for (let band = 0; band < 3; band++) {
-      const post = r.createMesh(
-        { kind: "box", width: 0.7, height: 1.1, depth: 0.7 },
-        {
-          color: band % 2 === 0 ? [0.95, 0.55, 0.05] : [0.92, 0.92, 0.95],
-          emissive: 0.75,
-          isStatic: true,
-        },
-      );
-      post.position.set(cx, seg.ay + 0.55 + band * 1.1, cz);
-      post.rotation.y = seg.heading;
     }
   }
 }

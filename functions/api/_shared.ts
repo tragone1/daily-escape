@@ -38,6 +38,43 @@ export function bad(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
+/**
+ * Wrap a handler so it can never return Cloudflare's bare 1101.
+ *
+ * An unhandled throw in a Pages Function surfaces as "error code: 1101" and nothing else —
+ * no message, no stack, no clue which of a dozen things went wrong. Catching here turns
+ * every failure into a JSON error the caller can actually read, which matters most for the
+ * one that is easy to hit and impossible to guess: Pages configures bindings *separately*
+ * for Production and Preview, so a database bound only to Production leaves `env.DB`
+ * undefined on every branch deployment.
+ */
+export function guarded(
+  handler: (ctx: EventContext<Env, string, unknown>) => Promise<Response>,
+): PagesFunction<Env> {
+  return async (ctx) => {
+    if (!ctx.env?.DB) {
+      return json(
+        {
+          error:
+            "No D1 binding named DB on this deployment. Pages configures bindings per " +
+            "environment - check that DB is bound for Preview as well as Production.",
+          binding: "missing",
+        },
+        503,
+      );
+    }
+    try {
+      return await handler(ctx);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Missing tables are the other predictable failure: the binding exists but the
+      // migration has not been applied to that database yet.
+      const migrated = !/no such table/i.test(message);
+      return json({ error: message, binding: "ok", migrated }, 500);
+    }
+  };
+}
+
 /** Player ids are generated in the browser, so their shape has to be checked here. */
 export function validPlayerId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9]{16,32}$/.test(id);

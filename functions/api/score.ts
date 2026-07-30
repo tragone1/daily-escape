@@ -12,7 +12,7 @@
  * simulation to be deterministic, which it is not yet.
  */
 
-import { bad, cleanName, dayKey, json, validPlayerId, type Env } from "./_shared";
+import { bad, cleanName, dayKey, guarded, json, validPlayerId } from "./_shared";
 
 /**
  * Fastest the game can physically bank score, per second.
@@ -43,7 +43,7 @@ interface Body {
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost = guarded(async ({ request, env }) => {
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -129,4 +129,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     improved: !existing || score > existing.score,
     rank: rank?.rank ?? null,
   });
-};
+});

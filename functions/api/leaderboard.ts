@@ -8,14 +8,14 @@
  * `days` instead returns a summary per day, for the recent-days picker.
  */
 
-import { bad, dayKey, json, validPlayerId, type Env } from "./_shared";
+import { bad, dayKey, guarded, json, validPlayerId } from "./_shared";
 
 const TOP = 25;
 const HISTORY_DAYS = 14;
 
 const isDay = (v: string | null): v is string => v !== null && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet = guarded(async ({ request, env }) => {
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode");
   const today = dayKey();
@@ -96,4 +96,4 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   return json({ day, today, players: total?.n ?? 0, entries, you });
-};
+});

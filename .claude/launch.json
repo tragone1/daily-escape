@@ -28,6 +28,7 @@
         "dev",
         "dist",
         "--d1=DB=DB",
+        "--compatibility-date=2026-07-01",
         "--port",
         "8788"
       ],

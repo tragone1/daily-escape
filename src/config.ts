@@ -1455,7 +1455,7 @@ export const CONFIG = {
      *    tightens a pin, it never starts one, so an empty alley is worth nothing.
      *  - `escapeArc` — a way out is a contiguous arc, not a headcount. Blocked on both
      *    sides with the road ahead open is a street, not a box, and stays free however
-     *    many wedges that adds up to.
+     *    many wedges that adds up to. At 0, any gap at all is a way out.
      *  - `maxSectors` — capped, so walls can never carry you from below the threshold to
      *    a full pin on their own.
      */
@@ -1466,13 +1466,23 @@ export const CONFIG = {
       /**
        * Widest open arc, in wedges, that still counts as an escape route.
        *
-       * One. Two wedges is ninety degrees of clear road and you drive out of it — at 2
-       * a straight street with two cars behind you read as an arrest, which is the same
-       * false positive that sank the first attempt. A single wedge is a forty-five
-       * degree seam between two obstacles: threadable, but not an exit you can count on.
+       * Zero: every direction has to be shut before geometry counts for anything. Two
+       * wedges is ninety degrees of clear road and you simply drive out of it, and even
+       * one — a forty-five degree seam between two obstacles — turned out to be far too
+       * generous in play. At 1 the meter went from never running with three cars on you
+       * to running at its ceiling, because `maxSectors` adds a flat 2 to a ramp that is
+       * only 2 wide, so a wall pin skipped the entire middle of the scale. Requiring a
+       * full seal keeps the fix aimed at its actual case — nowhere left to go — instead
+       * of at ordinary driving near a building.
        */
-      escapeArc: 1,
-      /** Most wedges walls may ever contribute. */
+      escapeArc: 0,
+      /**
+       * Most wedges walls may ever contribute.
+       *
+       * Held at 2 deliberately. It saturates the ramp, but with `escapeArc` at 0 that
+       * only happens when the player is genuinely sealed in, which is the one situation
+       * that should close a run out fast.
+       */
       maxSectors: 2,
     },
     captureSpeed: 17,

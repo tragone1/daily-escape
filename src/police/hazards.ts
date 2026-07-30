@@ -172,14 +172,39 @@ export class HazardField {
 
       const k = CONFIG.police.hazards[kind];
       // Never span the whole carriageway: a hazard has to leave a line to take.
-      const road = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment.halfWidth;
+      const seg = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment;
+      const road = seg.halfWidth;
       const room = Math.max(0, road - cfg.minGap * 0.5);
       slot.halfWidth = Math.max(2.2, Math.min(k.halfWidth, room, road * cfg.maxRoadShare));
       slot.live = true;
       slot.x = unit.vehicle.x;
       slot.z = unit.vehicle.z;
-      slot.y = this.terrain.heightAt(slot.x, slot.z);
       slot.heading = unit.vehicle.heading;
+
+      /*
+       * Spikes go against a wall, not wherever the unit happened to be driving.
+       *
+       * `minGap` is meant to guarantee a way past, but a strip dropped at the unit's own
+       * position lands mid-road, and the gap it leaves comes out as two useless halves -
+       * in a corridor, barely a car's width each, with the car itself two units wide.
+       * Pushed flush to one side the same clearance becomes a single lane you can
+       * actually take. The strip is squared to the road at the same time, since an edge
+       * can only sit against a wall if it is parallel to one.
+       *
+       * Oil is deliberately left where it falls: it is the chaotic one, and a slick you
+       * can plan a line around is not the same weapon.
+       */
+      if (kind === "spike") {
+        const across = (slot.x - seg.ax) * seg.dz - (slot.z - seg.az) * seg.dx;
+        const along = (slot.x - seg.ax) * seg.dx + (slot.z - seg.az) * seg.dz;
+        // Whichever wall the unit is already nearer, so the strip never jumps the road.
+        const side = across >= 0 ? 1 : -1;
+        const lateral = side * Math.max(0, road - slot.halfWidth);
+        slot.x = seg.ax + seg.dx * along + seg.dz * lateral;
+        slot.z = seg.az + seg.dz * along - seg.dx * lateral;
+        slot.heading = Math.atan2(seg.dx, seg.dz);
+      }
+      slot.y = this.terrain.heightAt(slot.x, slot.z);
       slot.arm = k.armTime;
       slot.life = k.life;
       slot.root.position.set(slot.x, slot.y + 0.06, slot.z);

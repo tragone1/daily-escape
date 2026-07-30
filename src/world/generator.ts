@@ -59,6 +59,16 @@ interface Theme {
  * across, which made the whole course a motorway — nothing could trap you on it, so the
  * heavy units and the roadblocks had nothing to work with.
  */
+/**
+ * Narrowest half-width anything on the course may be, main road or spur.
+ *
+ * Almost every spur lands on this floor (0.62 of a road that is itself already tightened)
+ * and so do the canyon and final themes in the late sections, which makes this single
+ * number the width of most of the tight corridors in the game. It was 6.5 and they played
+ * a shade too mean - a strip laid across one left barely a car's width either side of it.
+ */
+const MIN_HALF_WIDTH = 7.15;
+
 const THEMES: Theme[] = [
   { id: "hills", surface: "asphalt", wall: "rail", halfWidth: 10, shoulder: 7, hills: 1.0, ramps: 0.25 },
   { id: "construction", surface: "dirt", wall: "barrier", halfWidth: 8.5, shoulder: 3, hills: 0.25, ramps: 0.8 },
@@ -117,7 +127,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     // than it was, because the themes now start tight enough that compounding a third off
     // the top of them produced roads a car could not turn around in.
     const tighten = Math.min(0.22, s * 0.014);
-    const halfWidth = Math.max(6.5, theme.halfWidth * (1 - tighten));
+    const halfWidth = Math.max(MIN_HALF_WIDTH, theme.halfWidth * (1 - tighten));
     const shoulder = theme.shoulder * (1 - tighten);
 
     // One ramp per section at most, placed on a middle leg.
@@ -256,7 +266,7 @@ function makeSpur(
     bz: z + Math.cos(angle) * length,
     // Flat: a sloping dead end is a place for a unit to get wedged, not a hiding place.
     by: y,
-    halfWidth: Math.max(6.5, halfWidth * 0.62),
+    halfWidth: Math.max(MIN_HALF_WIDTH, halfWidth * 0.62),
     surface: theme.surface,
     // "open" has no wall to speak of, and a spur with no walls hides nothing.
     wall: theme.wall === "open" ? "fence" : theme.wall,

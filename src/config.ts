@@ -1400,7 +1400,13 @@ export const CONFIG = {
      * tuned to make being *hit* survivable and being *held* fatal. Push the crowd bonus
      * or the speed threshold up much further and the run stops being winnable at all.
      */
-    captureDuration: 1.4,
+    /*
+     * Set so the *fastest* possible arrest takes 2.2s: at a full seal the crowd
+     * multiplier is 0.95, and 2.09 / 0.95 is 2.2. That is the floor, so being surrounded
+     * always leaves at least two and a bit seconds to drive out of it; a partial pin at
+     * four wedges runs 0.75 and takes 2.79s.
+     */
+    captureDuration: 2.09,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.

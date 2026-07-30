@@ -141,9 +141,13 @@ export const START_HEADING = 0; // facing +Z
  *
  * Endless mode has no finish, but the world is still generated once up front rather than
  * streamed: it keeps building, batching and collider indexing to a single startup pass.
- * The difficulty ramp ends runs long before anyone sees the end of this.
+ *
+ * Forty was not enough. Somebody reached the end of it, and the end of the course is a bad
+ * place: `nodeAtProgress` clamps there, so every unit the director tries to place ahead
+ * lands on the same terminal node, is rejected as occupied, and the road empties out
+ * exactly when it should be at its worst.
  */
-export const SECTION_COUNT = 40;
+export const SECTION_COUNT = 70;
 
 /**
  * Today's course.

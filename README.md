@@ -402,6 +402,28 @@ The slope came *down* again once the capture meter learned to count a crowd. Ele
 in section 5 that could not actually finish you was the worst of both worlds — punishing
 to drive through and harmless to be caught by.
 
+### Why it got easier the deeper you went
+
+Someone reached section 40 and found the road empty. Measured, headcount ran five or six
+*under* target from the mid-game on — target 20, actual 13 — so the game got easier exactly
+where it was meant to get worse. Three compounding causes, none of them tuning:
+
+- **The director gave up on the first refusal.** Placement fails often and legitimately: no
+  spur in range, nowhere out of sight, the spot already taken. A single refusal `break`ed
+  the whole recruitment loop for that tick, and by section 11 three quarters of attempts
+  were being refused. Wakes and attempts are budgeted separately now.
+- **Side placements were impossible in six themes of seven.** They required nine units of
+  run-off, and narrowing the course left only the flats qualifying — so a third of the
+  spawn budget went nowhere every tick. They now use whatever width is there.
+- **The offset ladder was three guesses long.** Deep in a run there are fifteen-plus cars in
+  a narrow corridor, so most nearby spots are legitimately taken and most spots ahead are in
+  plain view. Behind now gets an eight-rung ladder, since behind is by definition outside
+  the forward view cone.
+
+And the course itself ran out. `nodeAtProgress` clamps at the end, so every unit placed
+ahead landed on the same terminal node and was rejected as occupied. It is 70 sections and
+40.5 km now; headcount holds at 17-19 against a target of 20 all the way to section 63.
+
 ### What still escalates, and when
 
 Everything below used to stop by section 13. Past that point the only thing that changed

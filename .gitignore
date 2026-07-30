@@ -5,3 +5,7 @@ dist
 
 # Machine-local Claude Code permissions; nothing another checkout needs.
 .claude/settings.local.json
+
+# Local wrangler/miniflare state: the local D1 database lives here, and it is machine
+# specific dev data rather than anything a checkout should carry.
+.wrangler

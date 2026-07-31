@@ -716,6 +716,16 @@ export const CONFIG = {
        * brutal. Its job is to be somewhere you cannot go, not to serve you.
        */
       contactBoost: 1.1,
+      /**
+       * Extra shove when the hit lands across the player's flank rather than fore or aft.
+       *
+       * `contactBoost` stays at 1.1 for the reason above — a big general shove threw you
+       * clear with speed still on, which is mercy dressed as violence. A broadside is the
+       * opposite: the impulse runs along the contact normal, so on a T-bone it carries
+       * you sideways into whatever is there rather than down the road. That is the hit
+       * this class is supposed to land, so it is the only one that gets amplified.
+       */
+      broadsideBoost: 2.7,
       /** Commits from further out than a rammer; it cannot correct late. */
       flankRange: 58,
       flankOffset: 9,
@@ -873,6 +883,8 @@ export const CONFIG = {
         halfLength: 3.0,
         halfWidth: 1.5,
       }),
+      /** As the juggernaut: the sweep attack is a flank hit, so that is what gets teeth. */
+      broadsideBoost: 2.2,
       /** Sits within this distance of the last junction on your route. */
       parkRadius: 8,
       /** Player inside this range with line of sight triggers an attack. */
@@ -1251,10 +1263,49 @@ export const CONFIG = {
         blocker: 1.0,
         heavy: 2.4,
         elite: 3.0,
-        juggernaut: 3.4,
-        warden: 2.2,
+        /*
+         * The two armoured classes are deliberately scarce now, down from 3.4 and 2.2.
+         *
+         * They were the heaviest-weighted things in the table at exactly the point the
+         * lighter classes retire, so the late mix became mostly them - and five metres of
+         * juggernaut in a corridor is not a threat you answer, it is a cork. Rare enough
+         * to be an event, and paid for with a broadside that actually hurts.
+         */
+        juggernaut: 1.5,
+        warden: 1.1,
         rig: 2.6,
       } as Record<PoliceRole, number>,
+      /**
+       * Classes that will not be sent into a narrow stretch of road.
+       *
+       * A juggernaut is a metre wider than a patrol car and five times the mass, so in a
+       * canyon or a downtown block it stops being something you get around and becomes
+       * something that seals the passage. Its whole design is to arrive at your flank and
+       * put you into the scenery, which needs room to happen in — pointed down a corridor
+       * it just plugs it.
+       *
+       * The window looks behind as well as ahead so one is never woken just short of a
+       * pinch it would immediately follow you into, and an active one that ends up in a
+       * corridor anyway is stood down once it is out of sight.
+       */
+      openRoad: {
+        roles: ["juggernaut", "warden"] as PoliceRole[],
+        /**
+         * Road half-width, in units, a stretch must hold throughout the window.
+         *
+         * At 7.6 this is the hills and the flats, and the earlier sections of everything
+         * else before tightening bites. The canyon and downtown floors (7.15) sit just
+         * under it, which is the intent: those two are the corridors the complaint was
+         * about.
+         */
+        minHalfWidth: 7.6,
+        /** Window ahead of the player that must be open for one to be sent. */
+        lookAhead: 165,
+        /** ...and behind, so it is not woken on the wrong side of a pinch. */
+        lookBehind: 45,
+        /** An active one this far from the player may be stood down out of a corridor. */
+        withdrawDistance: 55,
+      },
       /**
        * Section after which a class stops being sent at all.
        *
@@ -1349,6 +1400,13 @@ export const CONFIG = {
      * hitting each other now mostly just jostle, so a pile-up stays a pile-up.
      */
     policeImpulseScale: 0.2,
+    /**
+     * How square a hit must be to count as a broadside, as |cos| against the player's
+     * own axis. At 0.72 it is roughly the middle 45 degrees of each flank: a genuine
+     * T-bone qualifies, a glancing scrape down the side does not, and the boost is scaled
+     * by the alignment on top of that so it arrives gradually rather than as a switch.
+     */
+    broadsideAlignment: 0.72,
     /** Yaw kick applied on off-centre impacts, rad/s per unit of impact speed. */
     spinFactor: 0.022,
     /** Max yaw kick from a single impact, rad/s. */

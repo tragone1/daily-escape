@@ -101,11 +101,19 @@ export class Vehicle {
    * Collision modifiers. Heavy police and the shield power-up tune these rather than
    * touching the collision solver, so every vehicle keeps using one code path.
    * `impactResistance` scales speed lost per hit, `pushResistance` scales effective mass
-   * when being shoved, `contactBoost` scales the shove this vehicle delivers.
+   * when being shoved, `contactBoost` scales the shove this vehicle delivers, and
+   * `broadsideBoost` replaces it on hits that land across the player's flank.
    */
   impactResistance = 1;
   pushResistance = 1;
   contactBoost = 1;
+  /**
+   * Shove multiplier for a T-bone, used instead of `contactBoost` when this vehicle hits
+   * a player square in the side. Separate because the two hits do opposite things: a
+   * nose-to-tail shove hands the player speed down the road, a broadside carries them
+   * across it into the scenery.
+   */
+  broadsideBoost = 1;
 
   /**
    * Tyre condition, as multipliers on grip and pace. Police deployables drive these down

@@ -136,6 +136,7 @@ export class PoliceCar {
       impactResistance?: number;
       pushResistance?: number;
       contactBoost?: number;
+      broadsideBoost?: number;
     };
     const params = roleCfg.vehicle;
     this.vehicle = new Vehicle(params, { ...CONFIG.police.boost });
@@ -144,6 +145,7 @@ export class PoliceCar {
     this.vehicle.impactResistance = roleCfg.impactResistance ?? 1;
     this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
     this.vehicle.contactBoost = roleCfg.contactBoost ?? 1;
+    this.vehicle.broadsideBoost = roleCfg.broadsideBoost ?? 1;
     this.baseContactBoost = this.vehicle.contactBoost;
     this.vehicle.isPolice = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);

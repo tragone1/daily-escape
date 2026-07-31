@@ -43,7 +43,11 @@ export class PoliceManager {
   /** Section the director last ran for; gates how hard placement tries. */
   private effortSection = 0;
 
-  constructor(r: Renderer, nav: NavGraph, private terrain: Terrain) {
+  constructor(
+    r: Renderer,
+    private nav: NavGraph,
+    private terrain: Terrain,
+  ) {
     // Build the whole pool up front so meshes exist before the first frame; the director
     // decides which of them are awake at any moment.
     for (const [role, count] of Object.entries(CONFIG.police.pool)) {
@@ -149,6 +153,24 @@ export class PoliceManager {
         if (playerProgress - unitProgress > CONFIG.police.rig.retirePast) unit.deactivate();
         continue;
       }
+      /*
+       * An armoured class that has ended up in a corridor is stood down rather than left
+       * to cork it. It can get there legitimately - woken on open road that narrows, or
+       * carried in chasing you - and the spawn gate alone does not cover that.
+       *
+       * Distance and line of sight both still apply, so one never blinks out in front of
+       * you; it goes when you are not looking, like every other stand-down here.
+       */
+      if (esc.openRoad.roles.includes(unit.role)) {
+        const seg = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment;
+        const dx = unit.vehicle.x - ctx.player.x;
+        const dz = unit.vehicle.z - ctx.player.z;
+        const far = dx * dx + dz * dz > esc.openRoad.withdrawDistance ** 2;
+        if (seg.halfWidth < esc.openRoad.minHalfWidth && far && !this.onScreen(unit, ctx)) {
+          unit.deactivate();
+          continue;
+        }
+      }
       if (playerProgress - unitProgress <= pacing.retireBehind) continue;
       // Never while the player can see it.
       if (this.onScreen(unit, ctx)) continue;
@@ -174,13 +196,14 @@ export class PoliceManager {
      */
     this.effortSection = section;
     const persistent = section >= pacing.effortFromSection;
+    const openRoad = this.openRoadAhead(playerProgress);
     let active = this.activeCount;
     let woken = 0;
     let attempts = 0;
     const maxAttempts = persistent ? pacing.wakeAttempts : pacing.wakePerTick;
     while (active < target && woken < pacing.wakePerTick && attempts < maxAttempts) {
       attempts++;
-      const unit = this.pickDormant(section);
+      const unit = this.pickDormant(section, openRoad);
       if (!unit) break;
       if (!this.spawnUnit(unit, ctx, playerProgress)) {
         if (!persistent) break;
@@ -206,7 +229,7 @@ export class PoliceManager {
       if (spare) {
         this.spawnOnRoute(spare, ctx, playerProgress, "behind");
       } else if (active < target) {
-        const unit = this.pickDormant(section);
+        const unit = this.pickDormant(section, openRoad);
         if (unit && this.spawnOnRoute(unit, ctx, playerProgress, "behind")) active++;
       }
     }
@@ -355,14 +378,38 @@ export class PoliceManager {
     return true;
   }
 
+  /**
+   * Is the road open enough, over the whole window around the player, for an armoured
+   * class to be worth sending?
+   *
+   * Sampled rather than assumed from the theme, because tightening means a theme's width
+   * depends on how deep the run is. The window reaches behind as well as ahead so one is
+   * never woken just short of a pinch it would walk straight into.
+   */
+  private openRoadAhead(playerProgress: number): boolean {
+    const cfg = CONFIG.police.escalation.openRoad;
+    const step = 15;
+    for (let d = -cfg.lookBehind; d <= cfg.lookAhead; d += step) {
+      const node = this.nav.nodeAtProgress(playerProgress + d);
+      if (!node) continue;
+      if (this.terrain.sample(node.x, node.z).segment.halfWidth < cfg.minHalfWidth) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** Weighted pick over dormant units whose class has unlocked for this section. */
-  private pickDormant(section: number): PoliceCar | null {
+  private pickDormant(section: number, openRoad: boolean): PoliceCar | null {
     const esc = CONFIG.police.escalation;
     let total = 0;
     const candidates: Array<{ unit: PoliceCar; weight: number }> = [];
     for (const unit of this.units) {
       if (unit.active || unit.destroyed) continue;
       if (section < (esc.unlock[unit.role] ?? 0)) continue;
+      // The armoured classes need somewhere to swing. In a corridor they are not a
+      // threat that can be answered, they are the corridor being closed.
+      if (!openRoad && esc.openRoad.roles.includes(unit.role)) continue;
       // Past its retirement the class is simply no longer dispatched. Headcount is
       // capped, so the mix is what escalation has left to turn once the cap is reached.
       if (section > (esc.retire[unit.role] ?? 999)) continue;

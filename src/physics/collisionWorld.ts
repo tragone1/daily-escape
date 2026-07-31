@@ -11,7 +11,7 @@
  */
 
 import { CONFIG } from "../config";
-import { clamp } from "../math";
+import { clamp, rightOf } from "../math";
 import type { Vehicle } from "../vehicle/vehicle";
 import type { OBB } from "./collision";
 import { obbVsOBB, segmentVsOBB } from "./collision";
@@ -171,9 +171,30 @@ export class CollisionWorld {
      */
     const player = a.isPolice ? (b.isPolice ? null : b) : a;
     const settling = player !== null && player.speed < c.pinSettleSpeed;
+    /*
+     * A T-bone is its own hit.
+     *
+     * The impulse runs along the contact normal, so when that normal lies across the
+     * player's own axis the shove carries them sideways - into the wall, the scenery, or
+     * the rest of the squad - rather than down the road. The armoured classes are built
+     * to land exactly that and nothing else, so they get their weight there instead of on
+     * the general shove, which at any size just hands the player speed and a way out.
+     */
+    let boost = Math.max(a.contactBoost, b.contactBoost);
+    if (player !== null && !friendly) {
+      const striker = player === a ? b : a;
+      if (striker.broadsideBoost > 1) {
+        const right = rightOf(player.heading);
+        // 1 when the hit is dead on the flank, 0 when it is nose or tail.
+        const flank = Math.abs(hit.nx * right.x + hit.nz * right.z);
+        if (flank > c.broadsideAlignment) {
+          boost = Math.max(boost, striker.broadsideBoost * flank);
+        }
+      }
+    }
     const shove =
       c.carImpulse *
-      Math.max(a.contactBoost, b.contactBoost) *
+      boost *
       (friendly ? c.policeImpulseScale : 1) *
       (settling ? c.pinShoveScale : 1);
     const bounce = settling ? c.pinRestitution : c.restitution;

@@ -155,18 +155,18 @@ export class PoliceManager {
       }
       /*
        * An armoured class that has ended up in a corridor is stood down rather than left
-       * to cork it. It can get there legitimately - woken on open road that narrows, or
-       * carried in chasing you - and the spawn gate alone does not cover that.
+       * to cork it. It gets there legitimately: woken on open road that then narrows, or
+       * simply chasing you in.
        *
-       * Distance and line of sight both still apply, so one never blinks out in front of
-       * you; it goes when you are not looking, like every other stand-down here.
+       * Line of sight is the only condition. It used to also require the unit be
+       * `withdrawDistance` away, and that is exactly backwards - a corridor is *narrow*,
+       * so the ones doing the damage are the close ones, and the rule stood down only the
+       * distant units that were not in the way to begin with. Nothing is ever removed in
+       * view; that is what keeps this honest without needing a distance at all.
        */
       if (esc.openRoad.roles.includes(unit.role)) {
         const seg = this.terrain.sample(unit.vehicle.x, unit.vehicle.z).segment;
-        const dx = unit.vehicle.x - ctx.player.x;
-        const dz = unit.vehicle.z - ctx.player.z;
-        const far = dx * dx + dz * dz > esc.openRoad.withdrawDistance ** 2;
-        if (seg.halfWidth < esc.openRoad.minHalfWidth && far && !this.onScreen(unit, ctx)) {
+        if (seg.halfWidth < esc.openRoad.minHalfWidth && !this.onScreen(unit, ctx)) {
           unit.deactivate();
           continue;
         }
@@ -184,7 +184,15 @@ export class PoliceManager {
         unit.deactivate();
         continue;
       }
-      this.spawnUnit(unit, ctx, playerProgress);
+      /*
+       * A straggler that cannot be re-placed is stood down rather than left to trail.
+       * This matters for the armoured classes specifically: every candidate spot around a
+       * player who is in a corridor is now refused, so without this they simply stayed
+       * awake and kept following you through it.
+       */
+      if (!this.spawnUnit(unit, ctx, playerProgress)) {
+        if (esc.openRoad.roles.includes(unit.role)) unit.deactivate();
+      }
     }
 
     /*
@@ -399,6 +407,20 @@ export class PoliceManager {
     return true;
   }
 
+  /**
+   * May an armoured class stand at this spot? True for everything else.
+   *
+   * The single placement rule, applied at the point a position is chosen rather than at
+   * the point a class is picked, because most placements do not pick a class at all — the
+   * recycler and the "something is always behind you" reposition both move units that are
+   * already awake.
+   */
+  private armouredMayStand(role: PoliceRole, x: number, z: number): boolean {
+    const cfg = CONFIG.police.escalation.openRoad;
+    if (!cfg.roles.includes(role)) return true;
+    return this.terrain.sample(x, z).segment.halfWidth >= cfg.minHalfWidth;
+  }
+
   /** Weighted pick over dormant units whose class has unlocked for this section. */
   private pickDormant(section: number, openRoad: boolean): PoliceCar | null {
     const esc = CONFIG.police.escalation;
@@ -495,6 +517,13 @@ export class PoliceManager {
     for (const spur of SPURS) {
       const lead = spur.progress - playerProgress;
       if (lead < pacing.ambushLeadMin || lead > pacing.ambushLeadMax) continue;
+      /*
+       * Never ambush with an armoured class. A spur is 0.62 of an already-tightened road
+       * and almost always sitting on the width floor, so it is the narrowest geometry in
+       * the game — and a juggernaut coming out of one does not cut you off, it corks the
+       * mouth of the passage it came from.
+       */
+      if (!this.armouredMayStand(unit.role, spur.ax, spur.az)) continue;
       candidates.push(spur);
     }
     if (candidates.length === 0) return false;
@@ -556,6 +585,11 @@ export class PoliceManager {
 
     for (const offset of offsets) {
       const node = ctx.nav.nodeAtProgress(playerProgress + offset);
+      // Armoured classes are refused a narrow spot wherever the request came from. The
+      // role gate in `pickDormant` only covers *waking* one; the recycler re-places units
+      // that are already awake and never re-picks a class, so without a check here a
+      // juggernaut that fell behind was simply teleported back into the corridor.
+      if (!this.armouredMayStand(unit.role, node.x, node.z)) continue;
       let x = node.x;
       let z = node.z;
 

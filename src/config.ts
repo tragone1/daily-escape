@@ -14,7 +14,6 @@ export type PoliceRole =
   | "heavy"
   | "elite"
   | "juggernaut"
-  | "warden"
   | "rig";
 
 /** Terrain surface tuning. Every value is a plain multiplier so effects stay readable. */
@@ -360,12 +359,6 @@ export const CONFIG = {
       /** Seconds a surviving police car is left spinning and driverless. */
       policeDisableTime: 4.2,
       /**
-       * The warden is only wrecked by a near-direct hit; anything less just staggers it.
-       * Killing the keeper with your one rocket should feel like a deliberate play.
-       */
-      wardenKillRadius: 6,
-      wardenDisableTime: 1.6,
-      /**
        * Fraction of the blast the player takes.
        *
        * Zero. Your own rocket knocking you backwards is a self-inflicted wound in a game
@@ -623,7 +616,7 @@ export const CONFIG = {
      */
     charge: {
       /** Classes that can do it. */
-      roles: ["rammer", "heavy", "elite", "juggernaut", "warden"],
+      roles: ["rammer", "heavy", "elite", "juggernaut"],
       /** Range band to start one in. */
       minRange: 8,
       maxRange: 58,
@@ -754,7 +747,7 @@ export const CONFIG = {
       /** Wide: it closes to alongside and stays there rather than passing through. */
       strikeRange: 34,
       maxInterceptLead: 2.6,
-      /** Like the warden, only a near-direct rocket hit wrecks one. */
+      /** Only a near-direct rocket hit wrecks one. */
       rocketKillRadius: 8,
       rocketDisableTime: 2.2,
     },
@@ -911,56 +904,6 @@ export const CONFIG = {
       rocketDisableTime: 2.4,
     },
 
-    /**
-     * WARDEN — the keeper on the exit ramp. A heavy SUV that never leaves the final
-     * junction and cycles between two attacks, so the last corner is a fight rather than
-     * a formality. Its mass means shunting it aside is not an option; you go around it,
-     * time it, or spend the rocket on it.
-     */
-    warden: {
-      vehicle: policeVehicle({
-        maxSpeed: 44,
-        accel: 34,
-        steerRateMax: 2.15,
-        gripNormal: 9.0,
-        // Four times the player's mass: it barely notices contact, you get thrown.
-        mass: 4.0,
-        halfLength: 3.0,
-        halfWidth: 1.5,
-      }),
-      /** As the juggernaut: it is a flank hitter, so that is what gets the teeth. */
-      broadsideBoost: 2.2,
-      /** The same broadside run as the juggernaut, on the same numbers. */
-      broadside: {
-        alongWindow: 7,
-        throughDepth: 8,
-        lead: 0.4,
-      },
-      /*
-       * Ranges for the two-stage approach it now shares with the juggernaut.
-       *
-       * It used to hold a gate on your route and commit to 2.8-second attack runs on a
-       * 30-unit leash, regrouping between them. That is a gatekeeper, and it read as one:
-       * across seven late sections it landed no hits on the player at all — it shepherded
-       * you and went home. These two are the same machine with different numbers, so they
-       * now hunt the same way, and the difference between them is what it always should
-       * have been: this one is quicker and turns better, the juggernaut is heavier and
-       * hits harder.
-       */
-      /*
-       * Matched to the juggernaut's, not shortened.
-       *
-       * Tighter ranges (52/30) were the obvious call for the more agile of the two, and
-       * they were wrong: outside them the unit falls back to plain path-following, loses
-       * the player, and never gets into position at all. It measured 2 contacts where the
-       * juggernaut on the same active time managed 73. Same hunt, same distances - the
-       * difference between the pair is the chassis, which is where it should be.
-       */
-      flankRange: 58,
-      flankOffset: 9,
-      strikeRange: 34,
-      maxInterceptLead: 2.0,
-    },
 
     /**
      * Deployables — the weapons the squad leaves on the road rather than driving into you.
@@ -1279,7 +1222,7 @@ export const CONFIG = {
      *
      * Units are drawn from a pre-built pool as the run goes on. Two things ramp: how many
      * cars are on you, and which classes are allowed to show up. The first sections are
-     * patrol cars only; by section 5 heavies are routine; past 11 the wardens come out.
+     * patrol cars only; by section 5 heavies are routine; past 11 the juggernauts come out.
      * The run always ends in a pile-up — the only question is when.
      */
     escalation: {
@@ -1302,7 +1245,7 @@ export const CONFIG = {
        */
       /*
        * Headcount for the *main fleet* only - patrol, rammer, interceptor, blocker, heavy
-       * and elite. The juggernaut, warden and rig are specialists and are budgeted
+       * and elite. The juggernaut and the rig are specialists and are budgeted
        * separately, so adding one never costs the chase a car. They used to share this
        * number, which meant every ambusher waiting in an alley was one fewer unit on the
        * road behind you.
@@ -1332,7 +1275,6 @@ export const CONFIG = {
         heavy: 4,
         elite: 6,
         juggernaut: 7,
-        warden: 9,
         rig: 5,
       } as Record<PoliceRole, number>,
       /**
@@ -1355,7 +1297,6 @@ export const CONFIG = {
          * to be an event, and paid for with a broadside that actually hurts.
          */
         juggernaut: 1.5,
-        warden: 1.1,
         rig: 2.6,
       } as Record<PoliceRole, number>,
       /**
@@ -1371,7 +1312,7 @@ export const CONFIG = {
        * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
       openRoad: {
-        roles: ["juggernaut", "warden"] as PoliceRole[],
+        roles: ["juggernaut"] as PoliceRole[],
         /**
          * How many may be lying in wait at once, counted apart from the main fleet.
          *
@@ -1448,7 +1389,7 @@ export const CONFIG = {
        *
        * This is the escalation that costs nothing at runtime. Headcount has to be capped
        * for frame time, so past the cap the *mix* is the only thing left to turn — and
-       * "twenty cars" meaning juggernauts, wardens and rigs is a completely
+       * "twenty cars" meaning juggernauts and rigs is a completely
        * different section from "twenty cars" meaning eight patrols and some rammers.
        * Before this, nothing whatsoever changed after section 13.
        */
@@ -1460,7 +1401,6 @@ export const CONFIG = {
         heavy: 999,
         elite: 999,
         juggernaut: 999,
-        warden: 999,
         rig: 999,
       } as Record<PoliceRole, number>,
 
@@ -1496,8 +1436,7 @@ export const CONFIG = {
       blocker: 5,
       heavy: 17,
       elite: 17,
-      juggernaut: 5,
-      warden: 4,
+      juggernaut: 9,
       rig: 4,
     } as Record<PoliceRole, number>,
   },

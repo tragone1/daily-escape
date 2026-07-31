@@ -49,9 +49,8 @@ export interface BoxSlot {
 /**
  * What `heavyGoal` needs from a role, structurally rather than by name.
  *
- * Three classes share that approach on different numbers, and one of them (the warden)
- * carries nothing else in common with the others — spelling the shape out here beats
- * widening a union every time another role adopts it.
+ * Spelled out structurally rather than as a union of named role configs, so a role can
+ * adopt the approach without widening a type every time.
  */
 interface FlankConfig {
   readonly flankRange: number;
@@ -408,9 +407,6 @@ export function goalFor(
       return rammerGoal(self, ctx);
     case "blocker":
       return blockerGoal(self, ctx, tuning);
-    case "warden":
-      // Same hunter as the juggernaut, on its own numbers. It used to hold a gate and
-      // attack in leashed bursts, which never connected.
-      return heavyGoal(self, ctx, CONFIG.police.warden);
+
   }
 }

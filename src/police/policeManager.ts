@@ -158,8 +158,8 @@ export class PoliceManager {
     /*
      * Two budgets, not one.
      *
-     * `target` is the main fleet: everything that actually chases you. The juggernaut and
-     * warden are traps with their own small allowance, and the rig has always had its
+     * `target` is the main fleet: everything that actually chases you. The juggernaut is a
+     * trap with their own small allowance, and the rig has always had its
      * own cap of one. Sharing a single number meant an ambusher parked in an alley - or a
      * spent one waiting to be stood down - was counted as part of the chase and cost the
      * road a car.
@@ -355,7 +355,7 @@ export class PoliceManager {
     for (const u of this.units) {
       if (!u.active || u.destroyed || u.role === "rig") continue;
       /*
-       * Never a juggernaut or warden. This picked whatever was furthest up the road,
+       * Never a juggernaut. This picked whatever was furthest up the road,
        * and the furthest thing up the road was usually an ambusher waiting in its
        * alley - which was then teleported to the player's back as a plain chaser,
        * ambush state wiped by the move. A juggernaut hunting you down from behind is
@@ -378,7 +378,7 @@ export class PoliceManager {
    *
    * Each slot goes to whichever unassigned unit is closest to it, so the box forms from
    * whatever happens to be around rather than every car converging on the same corner.
-   * Rigs, wardens and anything mid-charge are left out: they have jobs that a station
+   * Rigs, traps and anything mid-charge are left out: they have jobs that a station
    * would only interrupt.
    */
   private assignBox(ctx: PursuitContext): void {

@@ -36,9 +36,6 @@ const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
   // Blood orange on charcoal. It should not look like the rest of the squad, because
   // trading paint with it is not the same decision as trading paint with the rest.
   juggernaut: [1.0, 0.28, 0.04],
-  // Hot amber on charcoal: the keeper has to be identifiable at a glance, at speed,
-  // against a night palette — you need to know which one you cannot simply shove aside.
-  warden: [1.0, 0.5, 0.02],
   // Hazard yellow on charcoal, like a works vehicle. It is not chasing anybody.
   rig: [0.98, 0.78, 0.06],
 };
@@ -154,7 +151,7 @@ export class PoliceCar {
       r,
       policeStyle(
         ROLE_ACCENT[role],
-        role === "warden" || role === "juggernaut" || role === "rig",
+        role === "juggernaut" || role === "rig",
       ),
       params.halfLength,
       params.halfWidth,

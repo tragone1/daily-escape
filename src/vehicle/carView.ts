@@ -19,7 +19,7 @@ export interface CarStyle {
   accent: Rgb;
   /** Adds a flashing light bar. */
   police: boolean;
-  /** Taller cab, roof rack and a bull bar — the warden SUV. */
+  /** Taller cab, roof rack and a bull bar — the armoured chassis. */
   heavy?: boolean;
 }
 

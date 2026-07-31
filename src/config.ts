@@ -1234,8 +1234,15 @@ export const CONFIG = {
       effortFromSection: 11,
       /** Placements that may be attempted per tick once the gate is open. */
       wakeAttempts: 24,
-      /** Units that may be woken per tick, gated or not. */
+      /** Units that may be woken per tick below the effort gate. */
       wakePerTick: 2,
+      /**
+       * Per tick past the gate. With the ceiling at 30 the old rate of two could not
+       * outpace the churn of stragglers being recycled, so the road equilibrated around
+       * twenty whatever the target said. Gated, so sections one through eleven keep the
+       * exact wake rhythm they were tuned with.
+       */
+      wakePerTickLate: 3,
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
       /**
@@ -1306,13 +1313,16 @@ export const CONFIG = {
       baseActive: 7,
       activePerSection: 1.15,
       /**
-       * Ceiling, for fairness and frame time alike.
+       * Ceiling, for frame time more than fairness.
        *
        * Was 20 and reached at section 13, which is precisely where the run stopped
-       * getting harder by headcount. At 24 the climb continues to section 16, and past
-       * that the mix carries it.
+       * getting harder by headcount; then 24, reached at 16. Now 30, reached at section
+       * 21, so the count itself keeps climbing deep into the run - the formula sits
+       * under the old cap until section 16, so nothing before that moves at all. Past
+       * 21 the mix and the speed bonus carry it. Watch frame time if this rises again:
+       * the car-pair collision pass grows with the square of the head count.
        */
-      maxActive: 24,
+      maxActive: 30,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1484,8 +1494,8 @@ export const CONFIG = {
       rammer: 8,
       interceptor: 8,
       blocker: 5,
-      heavy: 13,
-      elite: 13,
+      heavy: 17,
+      elite: 17,
       juggernaut: 5,
       warden: 4,
       rig: 4,

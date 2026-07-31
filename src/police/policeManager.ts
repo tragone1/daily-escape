@@ -257,7 +257,8 @@ export class PoliceManager {
     let woken = 0;
     let attempts = 0;
     const maxAttempts = persistent ? pacing.wakeAttempts : pacing.wakePerTick;
-    while (active < target && woken < pacing.wakePerTick && attempts < maxAttempts) {
+    const perTick = persistent ? pacing.wakePerTickLate : pacing.wakePerTick;
+    while (active < target && woken < perTick && attempts < maxAttempts) {
       attempts++;
       const unit = this.pickDormant(section, "main");
       if (!unit) break;

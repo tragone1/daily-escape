@@ -716,18 +716,17 @@ function sealBoundary(
     if (head) {
       const styleName = (head.wall in WALL_STYLE ? head.wall : "fence") as Exclude<WallStyle, "none">;
       const style = WALL_STYLE[styleName];
-      const shades = wallShades[styleName];
       const width = (head.halfWidth + head.shoulder) * 2 + 8;
       const height = style.minHeight + 0.5;
       const bx = head.ax - head.dx * (3 + style.thickness / 2);
       const bz = head.az - head.dz * (3 + style.thickness / 2);
       const groundY = terrain.heightAt(bx, bz);
-      const mesh = r.createMesh(
-        { kind: "box", width, height, depth: style.thickness },
-        { color: [...shades[1]], emissive: 0.24, isStatic: true },
-      );
-      mesh.position.set(bx, groundY + height / 2, bz);
-      mesh.rotation.y = head.heading;
+      /*
+       * Collider only - no mesh. The chase camera sits behind the car at spawn, and a
+       * visible wall three units back filled the whole opening frame before the player
+       * had touched a key. An invisible barrier contains identically and shows nothing;
+       * the void behind the start never enters view once the car is moving.
+       */
       addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height);
     }
   }
@@ -749,7 +748,7 @@ function sealBoundary(
         let i = 0;
         let flip = 0;
         while (i < run.length - 1) {
-          const j = Math.min(run.length - 1, i + 3);
+          const j = Math.min(run.length - 1, i + 2);
           const ax = run[i].x;
           const az = run[i].z;
           const bx = run[j].x;
@@ -795,8 +794,8 @@ function sealBoundary(
         const gx = bx + seg.dz * (edge + 0.5) * side;
         const gz = bz - seg.dx * (edge + 0.5) * side;
         if (guarded(gx, gz, 0.6)) { flush(); continue; }
-        const px = bx + seg.dz * (edge + 1.4) * side;
-        const pz = bz - seg.dx * (edge + 1.4) * side;
+        const px = bx + seg.dz * (edge + 0.95) * side;
+        const pz = bz - seg.dx * (edge + 0.95) * side;
         run.push({ x: px, z: pz });
       }
       flush();

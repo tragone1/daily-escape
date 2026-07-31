@@ -127,6 +127,17 @@ export interface CourseSegment {
   overlay: boolean;
   /** Higher wins when several segments contain the same point. */
   priority: number;
+  /**
+   * Drivable apron extending past each end of the segment, in units.
+   *
+   * Consecutive legs meet at an angle, and the wedge between their run-off rectangles
+   * was dead black ground standing inside the course walls - unplayable, force-fielded
+   * by the off-course push, and wrong-looking. The extensions fill those wedges with
+   * grass. Zero where continuation would break something: behind the start line, past a
+   * dead-end cap, and past a ramp lip, where the jump needs the ground to fall away.
+   */
+  extA: number;
+  extB: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +257,8 @@ function makeSegment(
     grade: (to.y - from.y) / length,
     branch,
     capEnd,
+    extA: 0,
+    extB: 0,
     overlay,
     priority: overlay ? 1 : 0,
   };
@@ -326,6 +339,24 @@ export function buildCourseSegments(): BuiltCourse {
         true,
       ),
     );
+  }
+
+  /*
+   * End aprons. Everything gets one unless continuation would break the thing the end
+   * is for: the course head stays sealed at the start wall, a capEnd keeps its dead-end
+   * wall on the boundary, and a ramp keeps the drop its jump is made of.
+   */
+  let firstSpine = true;
+  for (const seg of segments) {
+    if (seg.overlay) continue;
+    seg.extA = 9;
+    seg.extB = 9;
+    if (!seg.branch && firstSpine) {
+      seg.extA = 0;
+      firstSpine = false;
+    }
+    if (seg.capEnd) seg.extB = 0;
+    if (seg.ramp > 0) seg.extB = 0;
   }
 
   return { segments, spine, branchSegments };

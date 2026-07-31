@@ -1189,6 +1189,18 @@ export const CONFIG = {
       /** Never appear closer than this to the player. */
       minSpawnDistance: 80,
       /**
+       * Never appear closer than this *in front* of the player, hidden or not.
+       *
+       * The base minimum plus the out-of-sight rule allowed a spawn eighty units up the
+       * road behind a corner, which the player then rounded two seconds later - a car
+       * materialising a few lengths ahead, in plain view of where they were looking.
+       * Ahead of the player, distance is the only honest concealment: spawn deep and
+       * drive in like everything else does. Rear and side spawns keep the old rules,
+       * including the closer allowance around a slowed player - nobody is watching
+       * their mirrors mid-pile-up.
+       */
+      minAheadSpawnDistance: 145,
+      /**
        * Spawn distance is scaled down for a player who has come to a halt.
        *
        * Standing still used to mean waiting the better part of a minute while the squad

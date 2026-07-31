@@ -89,6 +89,7 @@ export class Terrain {
     let bestMargin = -Infinity;
     let bestPriority = -1;
     let bestAlong = 0;
+    let bestInApron = false;
 
     let nearest: CourseSegment = this.segments[0];
     let nearestDist = Infinity;
@@ -112,12 +113,29 @@ export class Terrain {
           ? seg.halfWidth - acrossAbs + ROAD_PRIORITY
           : seg.halfWidth + seg.shoulder - acrossAbs;
       const rawAlong = Math.min(along, seg.length - along);
+      /*
+       * End aprons: the segment's drivable footprint continues `extA`/`extB` past its
+       * ends, filling the wedge between this leg's run-off and the next one's. Apron
+       * containment is ranked *barely* inside - a genuine containment by any segment
+       * beats it by orders of magnitude - so the apron never steals a point from the
+       * road that actually owns it, which is what kept surfaces from flickering at
+       * joints when the tolerance overlap was added for the same reason.
+       */
+      const inApron =
+        rawAlong < 0 &&
+        ((along < 0 && along >= -seg.extA) ||
+          (along > seg.length && along <= seg.length + seg.extB));
       // Only lean on the tolerance when the point is genuinely off the end, and rank any
       // segment that needs it below one that contains the point outright.
       const insideAlong =
-        rawAlong >= 0 ? rawAlong : rawAlong + JOINT_TOLERANCE - TOLERANCE_PENALTY;
+        rawAlong >= 0 ? rawAlong : inApron ? 0.05 : rawAlong + JOINT_TOLERANCE - TOLERANCE_PENALTY;
       // A point past the segment's ends is outside regardless of the road bonus.
-      const margin = insideAlong < 0 ? insideAlong : Math.min(insideAcross, insideAlong + ROAD_PRIORITY);
+      const margin =
+        insideAlong < 0
+          ? insideAlong
+          : inApron
+            ? Math.min(insideAcross, 0.05)
+            : Math.min(insideAcross, insideAlong + ROAD_PRIORITY);
       // Priority first: a narrow rut laid over a wide mud lane must win, even though the
       // point sits far more deeply inside the lane beneath it.
       const inside = margin >= 0;
@@ -133,6 +151,7 @@ export class Terrain {
         bestPriority = inside ? seg.priority : -1;
         best = seg;
         bestAlong = clamped;
+        bestInApron = inApron;
       }
 
       // Distance to the segment's centre line, for the off-course fallback.
@@ -155,7 +174,8 @@ export class Terrain {
 
     return {
       height: seg.ay + seg.grade * along,
-      surface: onShoulder ? "grass" : seg.surface,
+      // An apron is grass whatever the road surface was: it is the corner's run-off.
+      surface: onShoulder || bestInApron ? "grass" : seg.surface,
       gradX: seg.grade * seg.dx,
       gradZ: seg.grade * seg.dz,
       onCourse,

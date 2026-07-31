@@ -217,7 +217,17 @@ export class PoliceManager {
        * them clogging a corridor is that they never linger in one.
        */
       if (unit.spent && !this.onScreen(unit, ctx)) {
-        unit.deactivate();
+        // Cosmetics only: stand a spent trap down behind the player or at distance,
+        // not just around a corner ahead where the removal is watchable next second.
+        const fwdX = Math.sin(ctx.player.heading);
+        const fwdZ = Math.cos(ctx.player.heading);
+        const ax = unit.vehicle.x - ctx.player.x;
+        const az = unit.vehicle.z - ctx.player.z;
+        const aheadOf = ax * fwdX + az * fwdZ;
+        if (aheadOf < 10 || Math.hypot(ax, az) > 130) {
+          unit.deactivate();
+          continue;
+        }
         continue;
       }
       if (playerProgress - unitProgress <= pacing.retireBehind) continue;
@@ -686,6 +696,17 @@ export class PoliceManager {
         ctx.player.speed < pacing.slowPlayerSpeed
           ? pacing.minSpawnDistance * pacing.slowSpawnScale
           : pacing.minSpawnDistance;
+      /*
+       * Spots in front of the player answer to a deeper minimum, hidden or not. A spawn
+       * eighty units ahead behind a corner is in plain view two seconds later; the same
+       * car placed at 145 drives in like everything else and nobody sees it arrive. The
+       * pressure is unchanged - the wake loop simply lands the same car deeper on the
+       * same tick - but the arrival is never watchable.
+       */
+      const fwdX = Math.sin(ctx.player.heading);
+      const fwdZ = Math.cos(ctx.player.heading);
+      const aheadOf = (x - ctx.player.x) * fwdX + (z - ctx.player.z) * fwdZ;
+      if (aheadOf > 15 && d < pacing.minAheadSpawnDistance) continue;
       if (d < near) continue;
       const hidden = !ctx.world.lineOfSight(ctx.player.x, ctx.player.z, x, z);
       /*

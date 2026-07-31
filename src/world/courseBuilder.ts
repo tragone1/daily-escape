@@ -285,6 +285,40 @@ export function buildWorld(r: Renderer): BuiltWorld {
       apron.rotation.x = pitch;
     }
 
+    /*
+     * Grass over the end aprons the terrain now treats as drivable, so the ground looks
+     * like what it is. Drawn a hair lower than the neighbouring road and run-off so the
+     * overlap renders as the road on top of grass rather than two coplanar surfaces
+     * fighting; the wedges between legs read as mown corners instead of holes in the
+     * world.
+     */
+    for (const [ext, endX, endZ, endY, dir] of [
+      [seg.extA, seg.ax, seg.az, seg.ay, -1],
+      [seg.extB, seg.bx, seg.bz, seg.by, 1],
+    ] as const) {
+      if (ext <= 0) continue;
+      const cx = endX + seg.dx * dir * (ext / 2);
+      const cz = endZ + seg.dz * dir * (ext / 2);
+      const pad = r.createMesh(
+        {
+          kind: "box",
+          width: (seg.halfWidth + seg.shoulder) * 2,
+          height: APRON_THICKNESS,
+          depth: ext + 0.6,
+        },
+        { color: [...SURFACE_COLOR.grass], emissive: 0.3, isStatic: true },
+      );
+      pad.position.set(cx, endY - APRON_THICKNESS / 2 - 0.09, cz);
+      pad.rotation.y = seg.heading;
+      // And a skirt below it, so the apron does not hang over the void at its outer edge.
+      const skirt = r.createMesh(
+        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2, height: 12, depth: ext + 0.6 },
+        { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
+      );
+      skirt.position.set(cx, endY - 12 / 2 - 0.3, cz);
+      skirt.rotation.y = seg.heading;
+    }
+
     if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments);
     if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);

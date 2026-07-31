@@ -75,6 +75,26 @@ export class PoliceManager {
     return this.units.filter((u) => u.role === "rig" && u.active && !u.destroyed).length;
   }
 
+  /** Units that actually chase: the budget the difficulty curve is written against. */
+  private get mainFleetCount(): number {
+    const esc = CONFIG.police.escalation;
+    return this.units.filter(
+      (u) =>
+        u.active &&
+        !u.destroyed &&
+        u.role !== "rig" &&
+        !esc.openRoad.roles.includes(u.role),
+    ).length;
+  }
+
+  /** Traps lying in wait, counted apart from the chase. */
+  private get ambusherCount(): number {
+    const esc = CONFIG.police.escalation;
+    return this.units.filter(
+      (u) => u.active && !u.destroyed && esc.openRoad.roles.includes(u.role),
+    ).length;
+  }
+
   get activeCount(): number {
     return this.units.filter((u) => u.active && !u.destroyed).length;
   }
@@ -135,9 +155,22 @@ export class PoliceManager {
     const esc = CONFIG.police.escalation;
     const pacing = CONFIG.police.pacing;
 
+    /*
+     * Two budgets, not one.
+     *
+     * `target` is the main fleet: everything that actually chases you. The juggernaut and
+     * warden are traps with their own small allowance, and the rig has always had its
+     * own cap of one. Sharing a single number meant an ambusher parked in an alley - or a
+     * spent one waiting to be stood down - was counted as part of the chase and cost the
+     * road a car.
+     */
     const target = Math.min(
       esc.maxActive,
       Math.round(esc.baseActive + section * esc.activePerSection),
+    );
+    const ambushTarget = Math.min(
+      esc.openRoad.maxActive,
+      1 + (section >= esc.openRoad.secondAt ? 1 : 0) + (section >= esc.openRoad.thirdAt ? 1 : 0),
     );
 
     // Recycle stragglers first; they may well cover the whole deficit on their own.
@@ -196,13 +229,13 @@ export class PoliceManager {
      */
     this.effortSection = section;
     const persistent = section >= pacing.effortFromSection;
-    let active = this.activeCount;
+    let active = this.mainFleetCount;
     let woken = 0;
     let attempts = 0;
     const maxAttempts = persistent ? pacing.wakeAttempts : pacing.wakePerTick;
     while (active < target && woken < pacing.wakePerTick && attempts < maxAttempts) {
       attempts++;
-      const unit = this.pickDormant(section);
+      const unit = this.pickDormant(section, "main");
       if (!unit) break;
       if (!this.spawnUnit(unit, ctx, playerProgress)) {
         if (!persistent) break;
@@ -210,6 +243,24 @@ export class PoliceManager {
       }
       active++;
       woken++;
+    }
+
+    /*
+     * The traps, on their own allowance.
+     *
+     * Kept to a single wake per tick and generous on attempts, because a spur has to be
+     * in range for one to go anywhere at all and a refusal here must never eat into the
+     * chase - which, with a shared budget and a shared loop, is exactly what it did.
+     */
+    let ambushers = this.ambusherCount;
+    let ambushAttempts = 0;
+    while (ambushers < ambushTarget && ambushAttempts < pacing.wakeAttempts) {
+      ambushAttempts++;
+      const unit = this.pickDormant(section, "ambush");
+      if (!unit) break;
+      if (!this.spawnUnit(unit, ctx, playerProgress)) continue;
+      ambushers++;
+      break;
     }
 
     /*
@@ -228,7 +279,9 @@ export class PoliceManager {
       if (spare) {
         this.spawnOnRoute(spare, ctx, playerProgress, "behind");
       } else if (active < target) {
-        const unit = this.pickDormant(section);
+        // Chase filler, so main fleet only - an ambusher belongs in an alley, not
+        // dropped in behind you to make up the numbers.
+        const unit = this.pickDormant(section, "main");
         if (unit && this.spawnOnRoute(unit, ctx, playerProgress, "behind")) active++;
       }
     }
@@ -380,12 +433,15 @@ export class PoliceManager {
 
 
   /** Weighted pick over dormant units whose class has unlocked for this section. */
-  private pickDormant(section: number): PoliceCar | null {
+  private pickDormant(section: number, group: "main" | "ambush"): PoliceCar | null {
     const esc = CONFIG.police.escalation;
     let total = 0;
     const candidates: Array<{ unit: PoliceCar; weight: number }> = [];
     for (const unit of this.units) {
       if (unit.active || unit.destroyed) continue;
+      // Each budget draws only from its own classes.
+      const isAmbusher = esc.openRoad.roles.includes(unit.role);
+      if (group === "ambush" ? !isAmbusher : isAmbusher) continue;
       if (section < (esc.unlock[unit.role] ?? 0)) continue;
       // Past its retirement the class is simply no longer dispatched. Headcount is
       // capped, so the mix is what escalation has left to turn once the cap is reached.

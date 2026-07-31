@@ -850,8 +850,17 @@ export const CONFIG = {
         halfWidth: 1.85,
       }),
       impactResistance: 0.2,
-      /** Immovable at speed, shiftable with a boost behind you. */
-      pushResistance: 1.35,
+      /**
+       * Immovable at speed, shiftable with a boost behind you.
+       *
+       * At 1.35 the second half of that was not true. A boosting player barges at
+       * `boostBargeScale`, which left the rig an effective 2.4 against the player's 1.0 —
+       * so the charge still bounced off, and a rig sealing a gap with no rocket in hand
+       * was simply the end of the run. At 0.65 the boost brings the two to near parity
+       * and shoves it aside, while an unboosted hit still meets 5.2 against 1.0 and reads
+       * as driving into a parked lorry, which is what it should be.
+       */
+      pushResistance: 0.65,
       contactBoost: 1.0,
       /**
        * How far up the route it is placed. It arrives by being *put* there, out of sight,
@@ -1284,10 +1293,26 @@ export const CONFIG = {
        * is a better section, and it leaves the ceiling until section 19 instead of 12,
        * which is most of where the late game's escalation now lives.
        */
+      /*
+       * Headcount for the *main fleet* only - patrol, rammer, interceptor, blocker, heavy
+       * and elite. The juggernaut, warden and rig are specialists and are budgeted
+       * separately, so adding one never costs the chase a car. They used to share this
+       * number, which meant every ambusher waiting in an alley was one fewer unit on the
+       * road behind you.
+       *
+       * Base and slope are untouched: the curve through section nine is the one that
+       * plays well and it is not being altered. Only the ceiling moved.
+       */
       baseActive: 7,
       activePerSection: 1.15,
-      /** Ceiling, for fairness and frame time alike. */
-      maxActive: 20,
+      /**
+       * Ceiling, for fairness and frame time alike.
+       *
+       * Was 20 and reached at section 13, which is precisely where the run stopped
+       * getting harder by headcount. At 24 the climb continues to section 16, and past
+       * that the mix carries it.
+       */
+      maxActive: 24,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1337,6 +1362,17 @@ export const CONFIG = {
        */
       openRoad: {
         roles: ["juggernaut", "warden"] as PoliceRole[],
+        /**
+         * How many may be lying in wait at once, counted apart from the main fleet.
+         *
+         * One from the moment they unlock, a second past `secondAt`, a third past
+         * `thirdAt`. They are traps rather than pursuit, so the number stays tiny and
+         * grows slowly - and because the budget is separate, every one of them is an
+         * addition to the squad rather than a substitution for part of it.
+         */
+        maxActive: 3,
+        secondAt: 14,
+        thirdAt: 26,
         ambush: {
           /**
            * Slack on the unit's own timing estimate, seconds.
@@ -1429,13 +1465,27 @@ export const CONFIG = {
      * The heavy end has to be deep enough to fill the entire active cap on its own, since
      * past section 26 nothing else is being sent.
      */
+    /*
+     * How many of each class exist. Not a tuning dial - a hard ceiling on what the
+     * director can ever put on the road, and the cause of the late game emptying out.
+     *
+     * Retirement removes patrol at 13, rammer at 19, blocker at 22 and interceptor at 26,
+     * so from section 27 the only classes still dispatched were heavy and elite: twelve
+     * cars in existence against a target of twenty. The squad did not thin out because of
+     * placement or pacing, it thinned out because there was nothing left to send. Measured
+     * on road: 17.1 at section 13 falling to 10.9 by section 40, below where section 5 sat.
+     *
+     * The rule now is that whatever survives to a given section must be able to cover the
+     * target on its own. Heavy and elite carry the end of the run alone, so between them
+     * they hold more than `maxActive`.
+     */
     pool: {
       patrol: 8,
-      rammer: 6,
-      interceptor: 5,
-      blocker: 3,
-      heavy: 6,
-      elite: 6,
+      rammer: 8,
+      interceptor: 8,
+      blocker: 5,
+      heavy: 13,
+      elite: 13,
       juggernaut: 5,
       warden: 4,
       rig: 4,

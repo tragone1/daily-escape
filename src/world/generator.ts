@@ -98,6 +98,8 @@ export interface GeneratedCourse {
   sectionNames: SectionId[];
   /** Dead-end side roads the police ambush from. */
   spurs: SpurDef[];
+  /** One 0..1 roll per wall style, picking the day's palette variant. */
+  wallRolls: Record<string, number>;
 }
 
 /** Ambush spurs per section, from section 1 on. */
@@ -114,12 +116,69 @@ const LATERAL_LIMIT = 460;
  * the course is finite so the whole world can be built, batched and indexed once at
  * startup rather than streamed. Raise the count if runs ever get that far.
  */
+/**
+ * The day's section order.
+ *
+ * The fixed cycle made every day legible after one run: section 3 was always the
+ * downtown, 5 always the canyon, and a regular could pace a whole run from memory. The
+ * order is now drawn per day from a shuffled bag - the bag keeps the theme mix even, so
+ * a day is never five canyons - under three rules that protect drivability rather than
+ * rhythm: the run never opens in a corridor, the two corridor themes never lead into
+ * each other, and no theme repeats back to back.
+ */
+function dailyThemeOrder(rnd: () => number, sections: number): Theme[] {
+  const corridor = new Set<SectionId>(["downtown", "canyon"]);
+  const order: Theme[] = [];
+  let bag: Theme[] = [];
+  while (order.length < sections) {
+    if (bag.length === 0) {
+      bag = [...THEMES];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+    }
+    const prev = order[order.length - 1];
+    let idx = bag.findIndex((t) => {
+      if (order.length === 0) return !corridor.has(t.id);
+      if (prev.id === t.id) return false;
+      if (corridor.has(prev.id) && corridor.has(t.id)) return false;
+      return true;
+    });
+    // A bag can dead-end (only a forbidden theme left); taking it anyway would break
+    // the rules, so borrow the first legal theme from a fresh cycle instead.
+    if (idx < 0) {
+      bag = [...THEMES].filter(
+        (t) => t.id !== prev.id && !(corridor.has(prev.id) && corridor.has(t.id)),
+      );
+      idx = Math.floor(rnd() * bag.length);
+    }
+    order.push(bag.splice(idx, 1)[0]);
+  }
+  return order;
+}
+
 export function generateCourse(sections: number, seed = 20260728): GeneratedCourse {
   const rnd = makeRandom(seed);
   const legs: LegDef[] = [];
   const sectionStarts: number[] = [];
   const sectionNames: SectionId[] = [];
   const spurs: SpurDef[] = [];
+
+  const order = dailyThemeOrder(rnd, sections);
+  /*
+   * Daily size character, per theme. A day can run its canyons a touch wider and its
+   * flats a touch meaner, which changes what the hard sections *are* - but the floors
+   * below are hard floors, so no day is ever tighter than the tuned minimums.
+   */
+  const widthVar = new Map<SectionId, number>();
+  const shoulderVar = new Map<SectionId, number>();
+  for (const t of THEMES) {
+    widthVar.set(t.id, 0.94 + rnd() * 0.18);
+    shoulderVar.set(t.id, 0.85 + rnd() * 0.3);
+  }
+  const wallRolls: Record<string, number> = {};
+  for (const w of ["building", "barrier", "rail", "rock", "fence", "open"]) wallRolls[w] = rnd();
 
   let x = 0;
   let z = -140;
@@ -130,7 +189,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
   let grade = 0;
 
   for (let s = 0; s < sections; s++) {
-    const theme = THEMES[s % THEMES.length];
+    const theme = order[s];
     sectionStarts.push(progress);
     sectionNames.push(theme.id);
 
@@ -138,8 +197,11 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     // than it was, because the themes now start tight enough that compounding a third off
     // the top of them produced roads a car could not turn around in.
     const tighten = Math.min(0.22, s * 0.014);
-    const halfWidth = Math.max(theme.minHalfWidth, theme.halfWidth * (1 - tighten));
-    const shoulder = theme.shoulder * (1 - tighten);
+    const halfWidth = Math.max(
+      theme.minHalfWidth,
+      theme.halfWidth * (widthVar.get(theme.id) ?? 1) * (1 - tighten),
+    );
+    const shoulder = theme.shoulder * (shoulderVar.get(theme.id) ?? 1) * (1 - tighten);
 
     // One ramp per section at most, placed on a middle leg.
     const rampLeg = rnd() < theme.ramps ? 1 + Math.floor(rnd() * (LEGS_PER_SECTION - 2)) : -1;
@@ -236,7 +298,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     }
   }
 
-  return { legs, sectionStarts, sectionNames, spurs };
+  return { legs, sectionStarts, sectionNames, spurs, wallRolls };
 }
 
 /**

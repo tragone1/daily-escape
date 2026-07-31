@@ -166,6 +166,8 @@ export const SECTION_STARTS = GENERATED.sectionStarts;
  * keep, and a number is the honest label for how far you have got.
  */
 export const SECTION_THEMES = GENERATED.sectionNames;
+/** The day's palette rolls, one per wall style. */
+export const WALL_ROLLS = GENERATED.wallRolls;
 
 /** Which section (0-based) a given distance along the course falls in. */
 export function sectionIndexAt(progress: number): number {

@@ -11,6 +11,7 @@ import type { Renderer } from "../gfx/renderer";
 
 import type { StaticCollider } from "../physics/collisionWorld";
 import type { CourseSegment, SectionId, Surface, WallStyle } from "./course";
+import { WALL_ROLLS } from "./course";
 import { buildCourseSegments } from "./course";
 import { NavGraph } from "./navGraph";
 import { Terrain } from "./terrain";
@@ -64,6 +65,53 @@ const SECTION_TINT: Partial<Record<SectionId, Rgb>> = {
   final: [0.9, 0.9, 0.96],
 };
 
+/**
+ * Palette variants per wall style, picked once per day from the course seed.
+ *
+ * The geometry of a day already varies; the light does not, and a canyon that is always
+ * the same brown reads as the same canyon whatever shape it takes. Every variant is
+ * hand-chosen to keep the same value range as the original so readability at speed -
+ * dark charcoal squad cars against mid-tone walls - never depends on the day's roll.
+ */
+const WALL_VARIANTS: Record<Exclude<WallStyle, "none">, Rgb[]> = {
+  building: [
+    [0.24, 0.26, 0.33],
+    [0.3, 0.26, 0.24],
+    [0.22, 0.29, 0.27],
+    [0.28, 0.24, 0.32],
+  ],
+  barrier: [
+    [0.76, 0.6, 0.18],
+    [0.78, 0.44, 0.16],
+    [0.62, 0.66, 0.2],
+    [0.75, 0.55, 0.35],
+  ],
+  rail: [
+    [0.5, 0.53, 0.58],
+    [0.56, 0.52, 0.48],
+    [0.45, 0.55, 0.52],
+    [0.55, 0.5, 0.6],
+  ],
+  rock: [
+    [0.34, 0.29, 0.24],
+    [0.42, 0.28, 0.24],
+    [0.32, 0.32, 0.34],
+    [0.4, 0.34, 0.22],
+  ],
+  fence: [
+    [0.42, 0.44, 0.38],
+    [0.38, 0.42, 0.48],
+    [0.48, 0.42, 0.36],
+    [0.36, 0.46, 0.42],
+  ],
+  open: [
+    [0.5, 0.46, 0.38],
+    [0.46, 0.5, 0.4],
+    [0.54, 0.44, 0.34],
+    [0.44, 0.46, 0.5],
+  ],
+};
+
 /** Wall look per style: colour, height and how wide a chunk is. */
 const WALL_STYLE: Record<
   Exclude<WallStyle, "none">,
@@ -103,10 +151,14 @@ export function buildWorld(r: Renderer): BuiltWorld {
   const terrain = new Terrain(segments);
   const colliders: StaticCollider[] = [];
 
-  // Palette. Wall variants are shade-shifted copies so a run of chunks is not flat.
+  // Palette. The day's roll picks each style's variant; shades are shifted copies so a
+  // run of chunks is not flat.
   const wallShades: Record<string, Rgb[]> = {};
   for (const [name, style] of Object.entries(WALL_STYLE)) {
-    wallShades[name] = [0, 1, 2].map((i) => scale(style.color, 0.82 + i * 0.14));
+    const variants = WALL_VARIANTS[name as Exclude<WallStyle, "none">] ?? [style.color];
+    const roll = WALL_ROLLS[name] ?? 0;
+    const color = variants[Math.floor(roll * 997) % variants.length];
+    wallShades[name] = [0, 1, 2].map((i) => scale(color, 0.82 + i * 0.14));
   }
 
   // --- Void floor ----------------------------------------------------------
@@ -807,6 +859,81 @@ function buildProps(
   const count = Math.floor(seg.length / spacing);
   const rx = seg.dz;
   const rz = -seg.dx;
+  const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
+
+  /*
+   * Layout mode, per leg, from the same position hash that drives everything else - so
+   * it reshuffles with the daily seed. "Edge" is the original alternating-kerb rhythm;
+   * "centre" puts a short row down the middle and makes the decision *which side*, and
+   * "gate" narrows the line to a chosen slot. Every mode guarantees a lane at least two
+   * and a half car widths wide: centre needs halfWidth - size/2 of daylight each side,
+   * and a gate keeps a 6.8-wide slot, both above the 5.5 the hazards are tuned around.
+   * Legs too narrow for a mode fall back to edge rather than squeezing.
+   */
+  const modeRoll = hash2(seg.ax * 1.31, seg.az * 0.73);
+  const size = style.size;
+  const height = style.height;
+  const drop = (cx: number, cz: number, groundY: number, w: number) => {
+    if (onOtherRoad(segments, seg, cx, cz, 2.0)) return;
+    const mesh = r.createMesh(
+      { kind: "box", width: w, height, depth: w * 1.4 },
+      { color: [...style.color], emissive: 0.45, isStatic: true },
+    );
+    mesh.position.set(cx, groundY + height / 2, cz);
+    mesh.rotation.y = seg.heading;
+    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height);
+  };
+
+  const mode =
+    modeRoll < 0.14 ? "none"
+    : modeRoll < 0.34 && seg.halfWidth - size / 2 >= 5.5 ? "centre"
+    : modeRoll < 0.5 && seg.halfWidth >= 3.4 + size + 0.5 ? "gate"
+    : "edge";
+
+  if (mode === "none") return;
+
+  if (mode === "centre") {
+    /*
+     * A short row up the middle of the leg - but shifted a car's width off the exact
+     * centreline, alternating sides by hash. The nav graph runs the centreline and every
+     * pursuer path-follows it, so a block dead on the line would have the whole squad
+     * ploughing into it; offset, it reads as mid-road to the player while leaving the
+     * canonical line open, and the wide side always carries at least eight units.
+     */
+    const blocks = 1 + (Math.floor(hash2(seg.az, seg.ax) * 3) % 3);
+    const rowShift = (hash2(seg.ax * 0.37, seg.az * 1.11) < 0.5 ? 1 : -1) * 2.6;
+    const mid = seg.length / 2;
+    for (let b = 0; b < blocks; b++) {
+      const along = mid + (b - (blocks - 1) / 2) * (size * 2.4);
+      if (along < 8 || along > seg.length - 8) continue;
+      drop(
+        seg.ax + seg.dx * along + rx * rowShift,
+        seg.az + seg.dz * along + rz * rowShift,
+        seg.ay + seg.grade * along,
+        size,
+      );
+    }
+    return;
+  }
+
+  if (mode === "gate") {
+    // Two blocks framing a 6.8-wide slot, biased toward one side of the centreline so
+    // the fast line moves day to day.
+    const along = seg.length * (0.35 + hash2(seg.ax * 0.7, seg.az * 1.7) * 0.3);
+    const slotShift = (hash2(seg.az * 1.9, seg.ax * 0.4) - 0.5) * (seg.halfWidth - 3.4 - size);
+    const groundY = seg.ay + seg.grade * along;
+    for (const side of [-1, 1]) {
+      const lateral = slotShift + side * (3.4 + size / 2);
+      if (Math.abs(lateral) + size / 2 > seg.halfWidth - 0.4) continue;
+      drop(
+        seg.ax + seg.dx * along + rx * lateral,
+        seg.az + seg.dz * along + rz * lateral,
+        groundY,
+        size,
+      );
+    }
+    return;
+  }
 
   for (let i = 1; i <= count; i++) {
     const along = (i * seg.length) / (count + 1);
@@ -816,23 +943,12 @@ function buildProps(
     // Alternate kerbs; obstacles hug a side so a clean line always exists.
     const side = i % 2 === 0 ? 1 : -1;
     const lateral = (seg.halfWidth - 2.2) * side;
-    const cx = seg.ax + seg.dx * along + rx * lateral;
-    const cz = seg.az + seg.dz * along + rz * lateral;
-    const groundY = seg.ay + seg.grade * along;
-    if (onOtherRoad(segments, seg, cx, cz, 2.0)) continue;
-
-    const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
-    const size = style.size;
-    const height = style.height;
-
-    const mesh = r.createMesh(
-      { kind: "box", width: size, height, depth: size * 1.4 },
-      { color: [...style.color], emissive: 0.45, isStatic: true },
+    drop(
+      seg.ax + seg.dx * along + rx * lateral,
+      seg.az + seg.dz * along + rz * lateral,
+      seg.ay + seg.grade * along,
+      size,
     );
-    mesh.position.set(cx, groundY + height / 2, cz);
-    mesh.rotation.y = seg.heading;
-
-    addCollider(colliders, cx, cz, size * 0.7, size / 2, seg.heading, groundY + height);
   }
 }
 

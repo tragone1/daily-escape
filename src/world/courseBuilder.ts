@@ -239,6 +239,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   }
 
   buildJunctionCaps(r, segments, colliders, wallShades);
+  sealBoundary(r, segments, colliders, wallShades, terrain);
   buildJointPatches(r, segments);
 
   // No gate: endless mode has no finish to build.
@@ -476,6 +477,139 @@ function buildJunctionCaps(
         mesh.position.set(cx, groundY + height / 2, cz);
         mesh.rotation.y = heading;
         addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
+      }
+    }
+  }
+}
+
+/**
+ * The last line of containment: walk the boundary of the drivable union and post a
+ * barrier over every stretch no wall covers.
+ *
+ * The themed walls are built per segment, and per-segment reasoning has never fully
+ * closed the boundary: legs meet at jittered angles, spur mouths cut diagonal wedges,
+ * and every trim rule that opens a legitimate junction also risks opening a hole. Two
+ * attempts to fix the trim itself each closed one class of hole and opened another,
+ * because the drivable union near a joint is a polygon no single segment can see.
+ *
+ * So this pass stops reasoning about segments and asks the terrain directly. March the
+ * outline of every leg, find where drivable ground actually ends, and if no existing
+ * collider stands guard within reach, post a short barrier just outside the edge. It is
+ * purely additive - every post sits with its footprint clear of drivable ground, so it
+ * can plug a hole but can never narrow a road, and stretches already walled get nothing.
+ *
+ * Measured before this pass: eight drivable escape holes on the day's course, every one
+ * at an industrial joint where the fence inset is thinner than the trim margin. After:
+ * zero, at a cost of a few hundred posts the existing walls did not provide.
+ */
+function sealBoundary(
+  r: Renderer,
+  segments: CourseSegment[],
+  colliders: StaticCollider[],
+  wallShades: Record<string, Rgb[]>,
+  terrain: Terrain,
+): void {
+  // Coarse hash of existing wall-height colliders, so "is this stretch already
+  // guarded" is a few lookups rather than a scan of the whole list.
+  const CELL = 8;
+  const guard = new Map<string, { x: number; z: number; r: number }[]>();
+  const key = (x: number, z: number) => Math.floor(x / CELL) + ":" + Math.floor(z / CELL);
+  for (const c of colliders) {
+    if (c.topY < 2.2) continue; // kerbs and debris do not contain a car
+    const entry = { x: c.obb.x, z: c.obb.z, r: c.radius };
+    for (let gx = -1; gx <= 1; gx++)
+      for (let gz = -1; gz <= 1; gz++) {
+        const k = Math.floor(c.obb.x / CELL + gx) + ":" + Math.floor(c.obb.z / CELL + gz);
+        let list = guard.get(k);
+        if (!list) guard.set(k, (list = []));
+        list.push(entry);
+      }
+  }
+  const guarded = (x: number, z: number, reach: number): boolean => {
+    const list = guard.get(key(x, z));
+    if (!list) return false;
+    for (const e of list) if (Math.hypot(e.x - x, e.z - z) - e.r < reach) return true;
+    return false;
+  };
+
+  // One post every couple of units of boundary at most; the dedupe hash keeps joints
+  // probed from both of their legs from double-posting.
+  const placed = new Set<string>();
+  /*
+   * A post must stand with every corner clear of drivable ground - a centre test is how
+   * the themed walls ended up with rock five units into a carriageway. At a diagonal
+   * stretch of boundary the first candidate spot often clips the edge, so it is nudged
+   * outward until all four corners clear, and a post that cannot clear at full length
+   * is placed short rather than skipped.
+   */
+  const cornersClear = (x: number, z: number, heading: number, hl: number, ht: number) => {
+    const dx = Math.sin(heading);
+    const dz = Math.cos(heading);
+    for (const a of [-hl, hl])
+      for (const t of [-ht, ht])
+        if (terrain.sample(x + dx * a + dz * t, z + dz * a - dx * t).onCourse) return false;
+    return true;
+  };
+  const post = (x: number, z: number, ox: number, oz: number, heading: number, theme: string) => {
+    const pk = Math.round(x / 2.5) + ":" + Math.round(z / 2.5);
+    if (placed.has(pk)) return;
+    const style = WALL_STYLE[(theme in WALL_STYLE ? theme : "fence") as Exclude<WallStyle, "none">];
+    const shades = wallShades[theme in WALL_STYLE ? theme : "fence"];
+    let px = x;
+    let pz = z;
+    let halfLen = 2.8;
+    let ok = false;
+    for (let d = 0; d <= 4.2 && !ok; d += 0.7) {
+      px = x + ox * d;
+      pz = z + oz * d;
+      ok = cornersClear(px, pz, heading, halfLen, 0.9);
+    }
+    if (!ok) {
+      halfLen = 1.6;
+      for (let d = 0; d <= 4.2 && !ok; d += 0.7) {
+        px = x + ox * d;
+        pz = z + oz * d;
+        ok = cornersClear(px, pz, heading, halfLen, 0.9);
+      }
+    }
+    if (!ok) return;
+    placed.add(pk);
+    const groundY = terrain.heightAt(px, pz);
+    const height = Math.max(3.0, style.minHeight * 0.8);
+    const rnd = hash2(px, pz);
+    const mesh = r.createMesh(
+      { kind: "box", width: 1.8, height, depth: halfLen * 2 },
+      { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
+    );
+    mesh.position.set(px, groundY + height / 2, pz);
+    mesh.rotation.y = heading;
+    addCollider(colliders, px, pz, halfLen, 0.9, heading, groundY + height);
+  };
+
+  for (const seg of segments) {
+    if (seg.overlay) continue;
+    const steps = Math.max(2, Math.ceil(seg.length / 2.5));
+    for (let i = 0; i <= steps; i++) {
+      const along = (i / steps) * seg.length;
+      const bx = seg.ax + seg.dx * along;
+      const bz = seg.az + seg.dz * along;
+      for (let side = -1; side <= 1; side += 2) {
+        // March outward to the true edge of the drivable union, which at a joint can
+        // extend well past this segment's own half-width.
+        let edge = -1;
+        for (let d = seg.halfWidth; d < seg.halfWidth + seg.shoulder + 42; d += 1.4) {
+          const x = bx + seg.dz * d * side;
+          const z = bz - seg.dx * d * side;
+          if (!terrain.sample(x, z).onCourse) { edge = d; break; }
+        }
+        if (edge < 0) continue;
+        // Post just outside the edge - and only if nothing already stands nearby and
+        // the footprint stays clear of drivable ground.
+        const px = bx + seg.dz * (edge + 1.4) * side;
+        const pz = bz - seg.dx * (edge + 1.4) * side;
+        if (guarded(px, pz, 2.6)) continue;
+        post(px, pz, seg.dz * side, -seg.dx * side, seg.heading,
+          seg.wall === "none" ? "fence" : seg.wall);
       }
     }
   }

@@ -726,6 +726,28 @@ export const CONFIG = {
        * this class is supposed to land, so it is the only one that gets amplified.
        */
       broadsideBoost: 2.7,
+      /**
+       * The broadside run: hold the flank until actually abeam, then drive *through*.
+       *
+       * Without this the class was not a T-bone specialist in any measurable sense — only
+       * 44% of its hits landed on a flank, against 65% for the plain heavy. The cause is
+       * `strikeRange`: at 34 units it abandoned the flank and drove straight at the player
+       * while still behind them, which is a rear-end. Nose-to-tail is the one hit that
+       * hands the player speed, so the class was spending its weight on the wrong contact.
+       *
+       * Two changes. It stays on the flank until its along-axis offset is inside
+       * `alongWindow`, however close it gets; and when it does commit it aims at a point
+       * `throughDepth` past the player's far side rather than at the player, so the
+       * approach vector is across their axis and the contact normal comes out lateral.
+       */
+      broadside: {
+        /** Fore-and-aft offset, in units, inside which it counts as abeam and may commit. */
+        alongWindow: 7,
+        /** How far past the player's far side to aim, so it drives through rather than at. */
+        throughDepth: 9,
+        /** Seconds of player travel to lead by while lining the run up. */
+        lead: 0.45,
+      },
       /** Commits from further out than a rammer; it cannot correct late. */
       flankRange: 58,
       flankOffset: 9,
@@ -885,6 +907,19 @@ export const CONFIG = {
       }),
       /** As the juggernaut: the sweep attack is a flank hit, so that is what gets teeth. */
       broadsideBoost: 2.2,
+      /**
+       * The sweep, run as a proper broadside.
+       *
+       * Measured across seven late sections the warden landed no hits on the player at
+       * all. It holds a post, attacks in short bursts, and the sweep aimed *alongside*
+       * the player rather than through them — so it shepherded without ever connecting.
+       * Same rule as the juggernaut: wait until abeam, then drive through the far side.
+       */
+      broadside: {
+        alongWindow: 8,
+        throughDepth: 8,
+        lead: 0.4,
+      },
       /** Sits within this distance of the last junction on your route. */
       parkRadius: 8,
       /** Player inside this range with line of sight triggers an attack. */

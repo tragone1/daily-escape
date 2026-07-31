@@ -168,7 +168,37 @@ export function heavyGoal(
   const d = dist(self.x, self.z, player.x, player.z);
   const visible = ctx.world.lineOfSight(self.x, self.z, player.x, player.z);
 
+  const broadside = "broadside" in cfg ? cfg.broadside : null;
+
   if (visible && d < cfg.strikeRange) {
+    /*
+     * A specialist waits for the angle. Driving at the intercept the moment the player is
+     * inside `strikeRange` means committing from wherever it happens to be, which from
+     * behind is a rear-end - and nose-to-tail is the one contact that hands the player
+     * speed. So it only commits once it is abeam, and then it aims *through* the far
+     * side rather than at the player, which is what makes the contact normal lateral.
+     */
+    if (broadside) {
+      const right = rightOf(player.heading);
+      const fwd = forwardOf(player.heading);
+      const along = (self.x - player.x) * fwd.x + (self.z - player.z) * fwd.z;
+      const side = (self.x - player.x) * right.x + (self.z - player.z) * right.z >= 0 ? 1 : -1;
+      if (Math.abs(along) <= broadside.alongWindow) {
+        const lead = leadPoint(player, broadside.lead);
+        return {
+          kind: "direct",
+          x: lead.x - right.x * broadside.throughDepth * side,
+          z: lead.z - right.z * broadside.throughDepth * side,
+        };
+      }
+      // Not abeam yet: keep pacing it on the flank rather than lunging early.
+      const aim = interceptPoint(self, player, cfg.maxInterceptLead);
+      return {
+        kind: "direct",
+        x: aim.x + right.x * cfg.flankOffset * side,
+        z: aim.z + right.z * cfg.flankOffset * side,
+      };
+    }
     const aim = interceptPoint(self, player, cfg.maxInterceptLead);
     return { kind: "direct", x: aim.x, z: aim.z };
   }
@@ -345,13 +375,31 @@ export function wardenGoal(
 
   if (attack === "sweep") {
     const right = rightOf(player.heading);
-    // Push from whichever side we are already on, so the player gets driven wide.
-    const side = (self.x - player.x) * right.x + (self.z - player.z) * right.z >= 0 ? -1 : 1;
+    const fwd = forwardOf(player.heading);
+    /*
+     * The sweep is the warden's broadside, and it was not landing one.
+     *
+     * Aiming `sweepOffset` to the side of the intercept put the run *alongside* the
+     * player: it shepherded them wide without ever making contact, which measured as
+     * zero hits across seven late sections. It now waits until it is abeam and then
+     * drives through the far side, so the run ends in the car rather than beside it.
+     */
+    const along = (self.x - player.x) * fwd.x + (self.z - player.z) * fwd.z;
+    const onSide = (self.x - player.x) * right.x + (self.z - player.z) * right.z >= 0 ? 1 : -1;
+    if (Math.abs(along) <= cfg.broadside.alongWindow) {
+      const lead = leadPoint(player, cfg.broadside.lead);
+      return {
+        kind: "direct",
+        x: lead.x - right.x * cfg.broadside.throughDepth * onSide,
+        z: lead.z - right.z * cfg.broadside.throughDepth * onSide,
+      };
+    }
+    // Still fore or aft of them: close to alongside first rather than shoving at an angle.
     const aim = interceptPoint(self, player, cfg.maxInterceptLead);
     return {
       kind: "direct",
-      x: aim.x + right.x * cfg.sweepOffset * side,
-      z: aim.z + right.z * cfg.sweepOffset * side,
+      x: aim.x + right.x * cfg.sweepOffset * onSide,
+      z: aim.z + right.z * cfg.sweepOffset * onSide,
     };
   }
 

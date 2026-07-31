@@ -24,7 +24,6 @@ import {
   type BoxSlot,
   type Goal,
   type PursuitContext,
-  type WardenAttack,
 } from "./behaviors";
 
 const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
@@ -64,12 +63,6 @@ export class PoliceCar {
   /** Wrecked by a rocket: out of the run for good, but still a solid obstacle. */
   private wrecked = false;
 
-  // Warden attack cycle. postX/postZ remember the gate it is meant to be holding.
-  private postX: number | null = null;
-  private postZ = 0;
-  private wardenAttack: WardenAttack | null = null;
-  private wardenTimer = 0;
-  private wardenAttackCount = 0;
   private reverseTimer = 0;
   /** Latched turn direction for near-180-degree corrections; 0 = not turning around. */
   private turnSign = 0;
@@ -160,9 +153,8 @@ export class PoliceCar {
     );
   }
 
-  /** The warden sits on a wider post than the light blockers do. */
+  /** Rigs sit on a wider post than the light blockers do. */
   private get parkRadius(): number {
-    if (this.role === "warden") return CONFIG.police.warden.parkRadius;
     if (this.role === "rig") return CONFIG.police.rig.parkRadius;
     return CONFIG.police.blocker.parkRadius;
   }
@@ -193,10 +185,6 @@ export class PoliceCar {
     this.vehicle.contactBoost = this.baseContactBoost;
     this.vehicle.drive = 1;
     this.disabledTimer = 0;
-    this.wardenAttack = null;
-    this.wardenTimer = 0;
-    this.wardenAttackCount = 0;
-    this.postX = null;
     if (this.wrecked) {
       this.wrecked = false;
       this.view.setWrecked(false);
@@ -306,7 +294,6 @@ export class PoliceCar {
     this.repostTimer -= dt;
     this.updateCharge(dt, ctx);
     this.updateCatchUp(ctx);
-    if (this.role === "warden") this.updateWardenAttack(dt, ctx);
 
     let goal: Goal;
     /** Pace to hold while boxing; Infinity when not on a station. */
@@ -407,7 +394,7 @@ export class PoliceCar {
         : Infinity;
     } else {
       this.boxPress = 0;
-      goal = goalFor(this.role, v, ctx, this.tuning, this.wardenAttack);
+      goal = goalFor(this.role, v, ctx, this.tuning);
     }
 
     let steerTargetX: number;
@@ -442,8 +429,6 @@ export class PoliceCar {
 
       if (goal.kind === "park") {
         const post = ctx.nav.nodes[targetNodeId];
-        this.postX = post.x;
-        this.postZ = post.z;
         parkDistance = dist(v.x, v.z, post.x, post.z);
         // Slow down on the approach. Arriving at 40+ meant sailing straight past the
         // post and then having to turn around, which repeatedly wedged units against
@@ -672,46 +657,7 @@ export class PoliceCar {
     v.heading += clamp(err, -step, step);
   }
 
-  /**
-   * Warden attack cycle: hold the gate, commit to an attack when the player comes into
-   * range, break off, regroup, then commit again with the *other* attack. Alternating is
-   * what stops one memorised approach line from beating it every run.
-   */
-  private updateWardenAttack(dt: number, ctx: PursuitContext): void {
-    const cfg = CONFIG.police.warden;
-    const v = this.vehicle;
-    this.wardenTimer -= dt;
-
-    if (this.wardenAttack !== null) {
-      // Leash: a keeper that chases you halfway across the city has abandoned the goal.
-      // Breaking off once it strays too far from its post is what keeps the ramp shut.
-      const strayed =
-        this.postX !== null &&
-        dist(v.x, v.z, this.postX, this.postZ) > cfg.leashRange;
-      if (this.wardenTimer <= 0 || strayed) {
-        // Break off and regroup before the next commitment.
-        this.wardenAttack = null;
-        this.wardenTimer = cfg.recoverTime;
-        this.replanTimer = 0;
-        this.repostTimer = 0;
-      }
-      return;
-    }
-
-    if (this.wardenTimer > 0) return; // still recovering
-
-    const inRange = this.distanceToPlayer(ctx.player) < cfg.engageRange;
-    if (inRange && ctx.world.lineOfSight(v.x, v.z, ctx.player.x, ctx.player.z)) {
-      this.wardenAttack = this.wardenAttackCount % 2 === 0 ? "charge" : "sweep";
-      this.wardenAttackCount++;
-      this.wardenTimer = cfg.attackTime;
-      this.path = [];
-      this.committed = null;
-      this.goalNodeId = -1;
-    }
-  }
-
-  /**
+    /**
    * How fast we can afford to be travelling when we reach the current waypoint, based on
    * how sharp the turn after it is. Without this, units arrive at junctions flat out and
    * understeer into the corner building.
@@ -874,10 +820,9 @@ export class PoliceCar {
     const cfg = CONFIG.police.boost;
     if (parkDistance < Infinity) return false;
     if (headingError > cfg.maxHeadingError) return false;
-    // The warden boosts *into* its attack rather than to close distance — a two-tonne
-    // SUV arriving fast is the whole point of the encounter.
+    // The armoured pair boost *into* the broadside rather than to close distance — two
+    // tonnes arriving fast is the whole point of the encounter.
     if (this.charging) return speed > 6;
-    if (this.role === "warden" && this.wardenAttack !== null) return speed > 8;
     if (speed < cfg.minSpeed) return false;
     return this.distanceToPlayer(ctx.player) > cfg.minDistance;
   }

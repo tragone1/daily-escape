@@ -479,6 +479,22 @@ export class PoliceManager {
     // It never chases and never overtakes - it is simply there when you arrive.
     if (unit.role === "rig") return this.placeRig(unit, ctx, playerProgress);
 
+    /*
+     * The armoured pair arrive from the side and nowhere else.
+     *
+     * Appearing on the road ahead makes them a roadblock you drive up to and read at
+     * leisure, which is the opposite of the class: their whole job is to come across you
+     * from a direction you were not checking and put you into a wall. Behind is no better
+     * - it turns a specialist into another tailgater. So they get one spawn mode, and if
+     * there is no room at the side of the road they simply are not sent.
+     */
+    if (CONFIG.police.escalation.openRoad.roles.includes(unit.role)) {
+      return (
+        this.spawnOnRoute(unit, ctx, playerProgress, "side") ||
+        this.spawnOnRoute(unit, ctx, playerProgress, "behind")
+      );
+    }
+
     // Try the preferred placement first, then fall through the rest: a spur may be out of
     // range, and a walled section has no run-off to sit in, but *something* has to spawn.
     const first = this.pickSpawnMode();
@@ -569,6 +585,7 @@ export class PoliceManager {
      * gets the most rungs, being the direction the player is not looking in.
      */
     const wide = this.effortSection >= pacing.effortFromSection;
+    const armoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
     const offsets =
       mode === "behind"
         ? wide
@@ -599,8 +616,12 @@ export class PoliceManager {
          * A shoulder of nine units exists in one theme of seven, so past the gate a side
          * placement uses whatever width is there rather than refusing outright - otherwise
          * a quarter of the spawn budget goes nowhere on every tick of the late game.
+         *
+         * The armoured pair are exempt outright: they are already restricted to open road,
+         * and side is the only arrival they are allowed, so holding them to a nine-unit
+         * shoulder as well left them spawning almost never at all.
          */
-        if (!wide && seg.shoulder < pacing.sideShoulderMin) continue;
+        if (!wide && !armoured && seg.shoulder < pacing.sideShoulderMin) continue;
         // Right-hand perpendicular of the segment direction, either side.
         const side = Math.random() < 0.5 ? 1 : -1;
         const lateral =
@@ -624,6 +645,26 @@ export class PoliceManager {
           : pacing.minSpawnDistance;
       if (d < near) continue;
       const hidden = !ctx.world.lineOfSight(ctx.player.x, ctx.player.z, x, z);
+      /*
+       * Everything else may appear in plain sight if it is far enough away, on the theory
+       * that at distance you cannot tell an arrival from a car that drove in. That theory
+       * does not hold for these two: they are rare, unmistakable, and the encounter is
+       * supposed to start with you not having seen them coming. Watching one blink into
+       * the road ahead is the exact opposite of the ambush it is meant to be.
+       *
+       * The test is "not in front of you" rather than the geometric `hidden`, because the
+       * camera looks forward: a car appearing behind you is already off screen whether or
+       * not a wall happens to be in the way. Demanding geometric concealment as well left
+       * them almost never spawning at all - 1.2 active minutes against the heavy's 32.8,
+       * with the class weight raised to 6 to try to compensate. Placement was the binding
+       * constraint, not rarity.
+       */
+      if (armoured && !hidden) {
+        const fx = Math.sin(ctx.player.heading);
+        const fz = Math.cos(ctx.player.heading);
+        const ahead = ((x - ctx.player.x) * fx + (z - ctx.player.z) * fz) / Math.max(1, d);
+        if (ahead > -0.15) continue;
+      }
       if (!hidden && d < pacing.farSpawnDistance) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
       if (this.occupied(x, z)) continue;

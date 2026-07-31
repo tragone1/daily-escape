@@ -905,39 +905,38 @@ export const CONFIG = {
         halfLength: 3.0,
         halfWidth: 1.5,
       }),
-      /** As the juggernaut: the sweep attack is a flank hit, so that is what gets teeth. */
+      /** As the juggernaut: it is a flank hitter, so that is what gets the teeth. */
       broadsideBoost: 2.2,
-      /**
-       * The sweep, run as a proper broadside.
-       *
-       * Measured across seven late sections the warden landed no hits on the player at
-       * all. It holds a post, attacks in short bursts, and the sweep aimed *alongside*
-       * the player rather than through them — so it shepherded without ever connecting.
-       * Same rule as the juggernaut: wait until abeam, then drive through the far side.
-       */
+      /** The same broadside run as the juggernaut, on the same numbers. */
       broadside: {
-        alongWindow: 8,
+        alongWindow: 7,
         throughDepth: 8,
         lead: 0.4,
       },
-      /** Sits within this distance of the last junction on your route. */
-      parkRadius: 8,
-      /** Player inside this range with line of sight triggers an attack. */
-      engageRange: 62,
-      /** Length of one attack run before it breaks off, seconds. */
-      attackTime: 2.8,
-      /** Regroup time after an attack before it can commit again, seconds. */
-      recoverTime: 1.1,
-      /** How far to the player's side the sweep attack aims, units. */
-      sweepOffset: 11,
-      /** Cap on the intercept lead used by the charge attack, seconds. */
-      maxInterceptLead: 2.0,
-      /**
-       * Breaks off an attack once it strays this far from the gate it is holding. Kept
-       * short: at 42 the momentum of a two-tonne SUV carried it ~70 units past the gate
-       * and it needed eight seconds to get back, leaving the ramp wide open.
+      /*
+       * Ranges for the two-stage approach it now shares with the juggernaut.
+       *
+       * It used to hold a gate on your route and commit to 2.8-second attack runs on a
+       * 30-unit leash, regrouping between them. That is a gatekeeper, and it read as one:
+       * across seven late sections it landed no hits on the player at all — it shepherded
+       * you and went home. These two are the same machine with different numbers, so they
+       * now hunt the same way, and the difference between them is what it always should
+       * have been: this one is quicker and turns better, the juggernaut is heavier and
+       * hits harder.
        */
-      leashRange: 30,
+      /*
+       * Matched to the juggernaut's, not shortened.
+       *
+       * Tighter ranges (52/30) were the obvious call for the more agile of the two, and
+       * they were wrong: outside them the unit falls back to plain path-following, loses
+       * the player, and never gets into position at all. It measured 2 contacts where the
+       * juggernaut on the same active time managed 73. Same hunt, same distances - the
+       * difference between the pair is the chassis, which is where it should be.
+       */
+      flankRange: 58,
+      flankOffset: 9,
+      strikeRange: 34,
+      maxInterceptLead: 2.0,
     },
 
     /**

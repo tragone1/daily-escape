@@ -47,6 +47,26 @@ export interface BoxSlot {
 }
 
 /**
+ * What `heavyGoal` needs from a role, structurally rather than by name.
+ *
+ * Three classes share that approach on different numbers, and one of them (the warden)
+ * carries nothing else in common with the others — spelling the shape out here beats
+ * widening a union every time another role adopts it.
+ */
+interface FlankConfig {
+  readonly flankRange: number;
+  readonly flankOffset: number;
+  readonly strikeRange: number;
+  readonly maxInterceptLead: number;
+  /** Present only on the classes that specialise in the broadside. */
+  readonly broadside?: {
+    readonly alongWindow: number;
+    readonly throughDepth: number;
+    readonly lead: number;
+  };
+}
+
+/**
  * Hold a station around the player rather than driving at them.
  *
  * This is the difference between a scrum and a cage. Every unit charging the same point
@@ -162,7 +182,7 @@ export function patrolGoal(self: Vehicle, ctx: PursuitContext): Goal {
 export function heavyGoal(
   self: Vehicle,
   ctx: PursuitContext,
-  cfg: typeof CONFIG.police.heavy | typeof CONFIG.police.juggernaut = CONFIG.police.heavy,
+  cfg: FlankConfig = CONFIG.police.heavy,
 ): Goal {
   const player = ctx.player;
   const d = dist(self.x, self.z, player.x, player.z);
@@ -343,82 +363,11 @@ export function blockerGoal(self: Vehicle, ctx: PursuitContext, tuning: Behavior
   return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
 }
 
-/** Which attack the warden is currently running. */
-export type WardenAttack = "charge" | "sweep";
-
-/**
- * WARDEN — the keeper on the exit ramp.
- *
- * Unlike the other roles it does not pursue at all. It holds the last junction on your
- * route and, when you come into range, commits to one of two attacks, alternating between
- * them so the same approach does not work twice:
- *
- *   charge — solves the intercept and drives head-on through you.
- *   sweep  — aims past your flank to shove you off line and into the scenery.
- *
- * Between attacks it returns to the post, which is what makes the final corner a fight
- * you have to solve rather than a straight you can carry speed through.
- */
-export function wardenGoal(
-  self: Vehicle,
-  ctx: PursuitContext,
-  tuning: BehaviorTuning,
-  attack: WardenAttack | null,
-): Goal {
-  const cfg = CONFIG.police.warden;
-  const player = ctx.player;
-
-  if (attack === "charge") {
-    const aim = interceptPoint(self, player, cfg.maxInterceptLead);
-    return { kind: "direct", x: aim.x, z: aim.z };
-  }
-
-  if (attack === "sweep") {
-    const right = rightOf(player.heading);
-    const fwd = forwardOf(player.heading);
-    /*
-     * The sweep is the warden's broadside, and it was not landing one.
-     *
-     * Aiming `sweepOffset` to the side of the intercept put the run *alongside* the
-     * player: it shepherded them wide without ever making contact, which measured as
-     * zero hits across seven late sections. It now waits until it is abeam and then
-     * drives through the far side, so the run ends in the car rather than beside it.
-     */
-    const along = (self.x - player.x) * fwd.x + (self.z - player.z) * fwd.z;
-    const onSide = (self.x - player.x) * right.x + (self.z - player.z) * right.z >= 0 ? 1 : -1;
-    if (Math.abs(along) <= cfg.broadside.alongWindow) {
-      const lead = leadPoint(player, cfg.broadside.lead);
-      return {
-        kind: "direct",
-        x: lead.x - right.x * cfg.broadside.throughDepth * onSide,
-        z: lead.z - right.z * cfg.broadside.throughDepth * onSide,
-      };
-    }
-    // Still fore or aft of them: close to alongside first rather than shoving at an angle.
-    const aim = interceptPoint(self, player, cfg.maxInterceptLead);
-    return {
-      kind: "direct",
-      x: aim.x + right.x * cfg.sweepOffset * onSide,
-      z: aim.z + right.z * cfg.sweepOffset * onSide,
-    };
-  }
-
-  // Not attacking: hold the gate.
-  const route = ctx.escapeRoute;
-  if (route.length === 0) return nodeGoal(ctx.nav, player.x, player.z);
-  const lastPostable = Math.max(0, route.length - 2);
-  const depth = tuning.routeDepth ?? -2;
-  const index = depth < 0 ? route.length + depth : depth;
-  const post = route[clamp(index, 0, lastPostable)];
-  return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
-}
-
 export function goalFor(
   role: PoliceRole,
   self: Vehicle,
   ctx: PursuitContext,
   tuning: BehaviorTuning,
-  wardenAttack: WardenAttack | null = null,
 ): Goal {
   switch (role) {
     case "rig":
@@ -439,6 +388,8 @@ export function goalFor(
     case "blocker":
       return blockerGoal(self, ctx, tuning);
     case "warden":
-      return wardenGoal(self, ctx, tuning, wardenAttack);
+      // Same hunter as the juggernaut, on its own numbers. It used to hold a gate and
+      // attack in leashed bursts, which never connected.
+      return heavyGoal(self, ctx, CONFIG.police.warden);
   }
 }

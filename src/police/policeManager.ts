@@ -175,6 +175,30 @@ export class PoliceManager {
 
     // Recycle stragglers first; they may well cover the whole deficit on their own.
     for (const unit of this.units) {
+      /*
+       * Wrecks return to the pool once the run has left them behind.
+       *
+       * They used to be skipped here forever: every rocket kill permanently removed a
+       * unit from the pool for the rest of the run. Sections one through nine never
+       * showed it - the pool was still deep - but a player who uses the rocket steadily
+       * had burned through enough of it by section ten that the director had nothing
+       * left to send, and the road emptied out exactly when the target was climbing.
+       * The harness never caught this because the harness never fires rockets.
+       *
+       * The hulk stays put as debris while it is anywhere near you; only once it is far
+       * behind and out of sight does it stop being scenery and become a car again.
+       */
+      if (unit.active && unit.destroyed) {
+        const wreckProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
+        if (
+          playerProgress - wreckProgress > CONFIG.police.pacing.retireBehind &&
+          !this.onScreen(unit, ctx)
+        ) {
+          unit.reset();
+          unit.deactivate();
+        }
+        continue;
+      }
       if (!unit.active || unit.destroyed) continue;
       const unitProgress = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
       // A rig the player has driven past has done its job, one way or the other.
@@ -306,8 +330,12 @@ export class PoliceManager {
     const player = ctx.player;
     const fwd = forwardOf(player.heading);
     let n = 0;
+    const traps = CONFIG.police.escalation.openRoad.roles;
     for (const u of this.units) {
       if (!u.active || u.destroyed) continue;
+      // A trap idling in an alley behind you is not pressure, and letting it count
+      // suppressed the reposition that keeps a real chaser at your back.
+      if (u.role === "rig" || traps.includes(u.role)) continue;
       const dx = u.vehicle.x - player.x;
       const dz = u.vehicle.z - player.z;
       const along = dx * fwd.x + dz * fwd.z;
@@ -322,8 +350,17 @@ export class PoliceManager {
     const fwd = forwardOf(player.heading);
     let best: PoliceCar | null = null;
     let bestAlong = 0;
+    const traps = CONFIG.police.escalation.openRoad.roles;
     for (const u of this.units) {
       if (!u.active || u.destroyed || u.role === "rig") continue;
+      /*
+       * Never a juggernaut or warden. This picked whatever was furthest up the road,
+       * and the furthest thing up the road was usually an ambusher waiting in its
+       * alley - which was then teleported to the player's back as a plain chaser,
+       * ambush state wiped by the move. A juggernaut hunting you down from behind is
+       * the exact thing that class is no longer supposed to be.
+       */
+      if (traps.includes(u.role)) continue;
       // Only ever move one the player is not watching.
       if (this.onScreen(u, ctx)) continue;
       const along = (u.vehicle.x - player.x) * fwd.x + (u.vehicle.z - player.z) * fwd.z;
@@ -353,7 +390,8 @@ export class PoliceManager {
     for (const u of this.units) {
       u.boxSlot = null;
       if (!u.active || u.destroyed || u.disabled) continue;
-      if (u.role === "rig" || u.role === "warden") continue;
+      if (u.role === "rig" || CONFIG.police.escalation.openRoad.roles.includes(u.role))
+        continue;
       // A unit lying in wait is not available for a station.
       if (u.ambushAt) continue;
       if (u.distanceToPlayer(player) > cfg.range) continue;

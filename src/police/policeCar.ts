@@ -368,7 +368,23 @@ export class PoliceCar {
      */
     if (this.springFrom) {
       const cfg = this.ambushTuning;
-      if (dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
+      /*
+       * The shot exists only while the unit is still across or ahead of the player.
+       *
+       * `homeDistance` alone kept the strike alive for its full length even when the
+       * launch had already missed - and a missed juggernaut homing on an intercept
+       * point from behind is indistinguishable from a chaser, which players duly
+       * reported. Behind the player by more than a car length, the T-bone is gone,
+       * so the run is over: it rolls out, hits whatever its momentum takes it into,
+       * and is done. A miss that crosses in *front* keeps its momentum into the far
+       * wall, which is the block the near-miss is supposed to read as.
+       */
+      const fwdX = Math.sin(ctx.player.heading);
+      const fwdZ = Math.cos(ctx.player.heading);
+      const along =
+        (v.x - ctx.player.x) * fwdX + (v.z - ctx.player.z) * fwdZ;
+      const missed = this.isAmbusher && along < -8;
+      if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
         // One alley, one strike. Whatever happened, this unit is finished.
         if (this.isAmbusher) {

@@ -855,12 +855,12 @@ export const CONFIG = {
        *
        * At 1.35 the second half of that was not true. A boosting player barges at
        * `boostBargeScale`, which left the rig an effective 2.4 against the player's 1.0 —
-       * so the charge still bounced off, and a rig sealing a gap with no rocket in hand
-       * was simply the end of the run. At 0.65 the boost brings the two to near parity
-       * and shoves it aside, while an unboosted hit still meets 5.2 against 1.0 and reads
-       * as driving into a parked lorry, which is what it should be.
+       * the charge just bounced off, and a rig sealing a gap with no rocket in hand was
+       * the end of the run. At 0.4 the boost outweighs it (0.70 against your 1.0) and
+       * shoves it aside decisively, while an unboosted hit still meets 3.2 against 1.0 —
+       * a parked lorry, but one worth charging.
        */
-      pushResistance: 0.65,
+      pushResistance: 0.4,
       contactBoost: 1.0,
       /**
        * How far up the route it is placed. It arrives by being *put* there, out of sight,

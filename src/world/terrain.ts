@@ -52,17 +52,71 @@ export class Terrain {
   private readonly spineStart: number[] = [];
   readonly mainLength: number;
 
+  /*
+   * Uniform grid over segment bounding boxes. The curved world is thousands of short
+   * slices instead of a few hundred long legs, and sample() runs for every car every
+   * frame - a linear scan stopped being viable the day the segments got fine. Cells
+   * hold indices of every segment whose padded bounds touch them.
+   */
+  private readonly gridCell = 48;
+  private readonly grid = new Map<number, number[]>();
+  private gridKey(cx: number, cz: number): number {
+    return cx * 100003 + cz;
+  }
+
   constructor(readonly segments: CourseSegment[]) {
     let acc = 0;
     for (const s of segments) {
       if (s.branch || s.overlay) {
         this.spineStart.push(-1);
-        continue;
+      } else {
+        this.spineStart.push(acc);
+        acc += s.length;
       }
-      this.spineStart.push(acc);
-      acc += s.length;
     }
     this.mainLength = acc;
+    for (let i = 0; i < segments.length; i += 8) this.coarse.push(segments[i]);
+
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i];
+      const pad = s.halfWidth + s.shoulder + Math.max(s.extA, s.extB) + 4;
+      const minX = Math.min(s.ax, s.bx) - pad;
+      const maxX = Math.max(s.ax, s.bx) + pad;
+      const minZ = Math.min(s.az, s.bz) - pad;
+      const maxZ = Math.max(s.az, s.bz) + pad;
+      for (let cx = Math.floor(minX / this.gridCell); cx <= Math.floor(maxX / this.gridCell); cx++)
+        for (let cz = Math.floor(minZ / this.gridCell); cz <= Math.floor(maxZ / this.gridCell); cz++) {
+          const k = this.gridKey(cx, cz);
+          let list = this.grid.get(k);
+          if (!list) this.grid.set(k, (list = []));
+          list.push(i);
+        }
+    }
+  }
+
+  /** A thin sample of the spine for nearest-fallback when a point is far off-world. */
+  private coarse: CourseSegment[] = [];
+
+  /** Indices of segments whose padded bounds cover the point - for build-time queries. */
+  segmentsNear(x: number, z: number): number[] | null {
+    return this.candidates(x, z);
+  }
+
+  /** Segments whose padded bounds cover this point, gathered from the 3x3 cell block. */
+  private candidates(x: number, z: number): number[] | null {
+    const cx = Math.floor(x / this.gridCell);
+    const cz = Math.floor(z / this.gridCell);
+    const centre = this.grid.get(this.gridKey(cx, cz));
+    if (centre) return centre;
+    // Off the padded bounds of everything in this cell: check the ring before giving up.
+    let ring: number[] | null = null;
+    for (let gx = -1; gx <= 1; gx++)
+      for (let gz = -1; gz <= 1; gz++) {
+        if (gx === 0 && gz === 0) continue;
+        const list = this.grid.get(this.gridKey(cx + gx, cz + gz));
+        if (list) ring = ring ? ring.concat(list) : list;
+      }
+    return ring;
   }
 
   /** Local coordinates of a point relative to a segment: distance along and across. */
@@ -95,7 +149,17 @@ export class Terrain {
     let nearestDist = Infinity;
     let nearestAlong = 0;
 
-    for (const seg of this.segments) {
+    /*
+     * No candidate cell means the point is beyond the padded bounds of every segment -
+     * definitively off-course - and the only thing still owed is a plausible nearest
+     * segment for the height fallback, which a thin sample of the spine answers. The
+     * full scan this used to do ran during boundary sealing for every off-world probe,
+     * hundreds of thousands of times, and turned world build from seconds into minutes.
+     */
+    const cand = this.candidates(x, z);
+    const list: ArrayLike<number> | CourseSegment[] = cand ?? this.coarse;
+    for (let ci = 0; ci < list.length; ci++) {
+      const seg = cand ? this.segments[(list as number[])[ci]] : (list as CourseSegment[])[ci];
       const { along, across } = this.local(seg, x, z);
       const clamped = Math.max(0, Math.min(seg.length, along));
 

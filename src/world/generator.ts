@@ -100,6 +100,8 @@ export interface GeneratedCourse {
   spurs: SpurDef[];
   /** One 0..1 roll per wall style, picking the day's palette variant. */
   wallRolls: Record<string, number>;
+  /** Index into `legs` of each section's first leg - sections vary in leg count. */
+  sectionFirstLeg: number[];
 }
 
 /** Ambush spurs per section, from section 1 on. */
@@ -188,9 +190,11 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
   // Gradient carries across legs so climbs and descents ease rather than snap.
   let grade = 0;
 
+  const sectionFirstLeg: number[] = [];
   for (let s = 0; s < sections; s++) {
     const theme = order[s];
     sectionStarts.push(progress);
+    sectionFirstLeg.push(legs.length);
     sectionNames.push(theme.id);
 
     // Difficulty tightening: later sections are narrower and have less run-off. Gentler
@@ -298,7 +302,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     }
   }
 
-  return { legs, sectionStarts, sectionNames, spurs, wallRolls };
+  return { legs, sectionStarts, sectionNames, spurs, wallRolls, sectionFirstLeg };
 }
 
 /**

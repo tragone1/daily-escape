@@ -64,6 +64,18 @@ void main() {
 
 export type Shape =
   | { kind: "box"; width: number; height: number; depth: number }
+  | {
+      /**
+       * Arbitrary pre-built triangle geometry, in the mesh's local space.
+       *
+       * Exists for the ground: a curved course cannot be tiled out of boxes without
+       * either gaps or overlapping coplanar faces, and both of those looks are exactly
+       * what the terrain overhaul removed. Custom meshes are expected to be static and
+       * flat-shaded - callers duplicate vertices per face and supply face normals.
+       */
+      kind: "custom";
+      geometry: Geometry;
+    }
   | { kind: "cylinder"; diameterTop: number; diameterBottom: number; height: number; tessellation?: number }
   | { kind: "sphere"; diameter: number; segments?: number }
   | { kind: "torus"; diameter: number; thickness: number; tessellation?: number }
@@ -71,6 +83,8 @@ export type Shape =
 
 function geometryFor(shape: Shape): Geometry {
   switch (shape.kind) {
+    case "custom":
+      return shape.geometry;
     case "box":
       return boxGeometry(shape.width, shape.height, shape.depth);
     case "cylinder":
@@ -162,6 +176,8 @@ export class Mesh extends Node3D {
 interface GpuGeometry {
   vao: WebGLVertexArrayObject;
   indexCount: number;
+  /** gl.UNSIGNED_SHORT or gl.UNSIGNED_INT, matching the uploaded index array. */
+  indexType: number;
 }
 
 export class Renderer {
@@ -261,8 +277,25 @@ export class Renderer {
     return new Node3D();
   }
 
+  private customCache = new WeakMap<Geometry, GpuGeometry>();
+
   /** Upload a unit primitive once and reuse it for every mesh of that shape. */
   private gpuFor(shape: Shape): GpuGeometry {
+    if (shape.kind === "custom") {
+      const hit = this.customCache.get(shape.geometry);
+      if (hit) return hit;
+      const geo = shape.geometry;
+      const vertexCount = geo.positions.length / 3;
+      const colors = new Float32Array(vertexCount * 4);
+      for (let i = 0; i < vertexCount; i++) {
+        colors[i * 4] = 1;
+        colors[i * 4 + 1] = 1;
+        colors[i * 4 + 2] = 1;
+      }
+      const made = this.upload(geo.positions, geo.normals, colors, geo.indices);
+      this.customCache.set(shape.geometry, made);
+      return made;
+    }
     const key = JSON.stringify(shape);
     const hit = this.cache.get(key);
     if (hit) return hit;
@@ -309,7 +342,11 @@ export class Renderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices as unknown as ArrayBufferView, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
 
-    return { vao, indexCount: indices.length };
+    return {
+      vao,
+      indexCount: indices.length,
+      indexType: indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+    };
   }
 
   /**
@@ -462,6 +499,6 @@ export class Renderer {
     );
     gl.uniform1f(u.uAlpha, mesh.alpha);
     gl.bindVertexArray(geo.vao);
-    gl.drawElements(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_SHORT, 0);
+    gl.drawElements(gl.TRIANGLES, geo.indexCount, geo.indexType, 0);
   }
 }

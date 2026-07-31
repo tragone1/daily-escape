@@ -9,7 +9,7 @@
 export interface Geometry {
   positions: Float32Array;
   normals: Float32Array;
-  indices: Uint16Array;
+  indices: Uint16Array | Uint32Array;
 }
 
 function build(

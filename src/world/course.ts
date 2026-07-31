@@ -272,12 +272,133 @@ export interface BuiltCourse {
   branchSegments: Map<string, CourseSegment[]>;
 }
 
+/**
+ * The smooth spine: the generator's coarse polyline resampled along a Catmull-Rom
+ * spline into ~6-unit micro-legs.
+ *
+ * This is the whole "curved world" in one function. The generator still thinks in
+ * five-leg sections, straight lines and sharp joints - all its daily-variety logic is
+ * untouched - but what the rest of the game sees is the smooth curve threaded through
+ * those control points. Every consumer downstream (terrain, walls, nav, police, the
+ * boundary sealer) already works per-segment, so curving the world is a matter of
+ * making the segments fine enough that a chain of them IS the curve. Facets run ~6
+ * units, matching the game's low-poly look.
+ *
+ * Guarantees preserved by construction:
+ *  - the spline passes exactly through every control point, so everything anchored to
+ *    node coordinates (spur mouths, the start, ramp lips) stays on the road;
+ *  - widths blend smoothly between legs and across section boundaries, and are floored
+ *    by each leg's own generated width, so no slice is ever narrower than the tuned
+ *    minimums;
+ *  - a leg's ramp lands exactly on the sample at its end control, so `crossedRamp`
+ *    keeps firing at the lip.
+ */
+const SLICE_LENGTH = 6;
+
+function smoothSpine(start: PathNode, legs: LegDef[]): { micro: LegDef[]; controlProgress: number[] } {
+  const pts: PathNode[] = [start, ...legs.map((l) => ({ x: l.x, z: l.z, y: l.y }))];
+  const P = (i: number) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+  const cr = (a: number, b: number, c: number, d: number, t: number) => {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (
+      0.5 *
+      (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * (b - c) - a + d) * t3)
+    );
+  };
+
+  const micro: LegDef[] = [];
+  const controlProgress: number[] = [0];
+  let arc = 0;
+  let prevX = start.x;
+  let prevZ = start.z;
+
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const a = P(i - 1);
+    const b = P(i);
+    const c = P(i + 1);
+    const d = P(i + 2);
+    const chord = Math.hypot(c.x - b.x, c.z - b.z);
+    const n = Math.max(2, Math.round(chord / SLICE_LENGTH));
+
+    // Width rides a tent across the span: the leg's own width mid-span, averaged with
+    // its neighbours at the joints, so section transitions ease over a leg rather than
+    // snapping at a line. The max() floors every sample at the tuned leg widths.
+    const prevLeg = legs[i - 1] ?? leg;
+    const nextLeg = legs[i + 1] ?? leg;
+    const wJoinA = (prevLeg.halfWidth + leg.halfWidth) / 2;
+    const wJoinB = (leg.halfWidth + nextLeg.halfWidth) / 2;
+    const sJoinA = ((prevLeg.shoulder ?? 0) + (leg.shoulder ?? 0)) / 2;
+    const sJoinB = ((leg.shoulder ?? 0) + (nextLeg.shoulder ?? 0)) / 2;
+
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      const x = k === n ? c.x : cr(a.x, b.x, c.x, d.x, t);
+      const z = k === n ? c.z : cr(a.z, b.z, c.z, d.z, t);
+      const y = k === n ? c.y : cr(a.y, b.y, c.y, d.y, t);
+      const w =
+        t < 0.5
+          ? wJoinA + (leg.halfWidth - wJoinA) * (t * 2)
+          : leg.halfWidth + (wJoinB - leg.halfWidth) * ((t - 0.5) * 2);
+      const sh =
+        t < 0.5
+          ? sJoinA + ((leg.shoulder ?? 0) - sJoinA) * (t * 2)
+          : (leg.shoulder ?? 0) + (sJoinB - (leg.shoulder ?? 0)) * ((t - 0.5) * 2);
+      arc += Math.hypot(x - prevX, z - prevZ);
+      prevX = x;
+      prevZ = z;
+      micro.push({
+        x,
+        z,
+        y,
+        section: leg.section,
+        surface: leg.surface,
+        wall: leg.wall,
+        halfWidth: w,
+        shoulder: sh,
+        // The lip fires on crossing the END of the slice that lands on the control.
+        ramp: k === n ? (leg.ramp ?? 0) : 0,
+      });
+    }
+    controlProgress.push(arc);
+  }
+  return { micro, controlProgress };
+}
+
+const SMOOTHED = smoothSpine(COURSE_START, MAIN_LEGS);
+/** The micro-legs everything downstream is actually built from. */
+export const SMOOTH_LEGS: LegDef[] = SMOOTHED.micro;
+
+/*
+ * Re-anchor everything that was measured against the coarse polyline onto the smooth
+ * arc, which is a few percent longer. Section starts come from control indices (five
+ * legs per section), and spur mouths sit exactly on control points, so both re-anchor
+ * exactly rather than approximately.
+ */
+{
+  // Sections are five legs, six when a ramp adds its landing - so the mapping comes
+  // from the generator's own record of each section's first leg, never from division.
+  for (let sIdx = 0; sIdx < SECTION_COUNT; sIdx++) {
+    SECTION_STARTS[sIdx] = SMOOTHED.controlProgress[GENERATED.sectionFirstLeg[sIdx]];
+  }
+  const controlByKey = new Map<string, number>();
+  for (let i = 0; i < MAIN_LEGS.length; i++) {
+    const l = MAIN_LEGS[i];
+    controlByKey.set(l.x.toFixed(2) + ":" + l.z.toFixed(2), SMOOTHED.controlProgress[i + 1]);
+  }
+  for (const spur of SPURS) {
+    const hit = controlByKey.get(spur.ax.toFixed(2) + ":" + spur.az.toFixed(2));
+    if (hit !== undefined) spur.progress = hit;
+  }
+}
+
 export function buildCourseSegments(): BuiltCourse {
   const segments: CourseSegment[] = [];
   const spine: PathNode[] = [COURSE_START];
 
   let prev: PathNode = COURSE_START;
-  for (const leg of MAIN_LEGS) {
+  for (const leg of SMOOTH_LEGS) {
     segments.push(makeSegment(segments.length, prev, leg, false));
     prev = leg;
     spine.push({ x: leg.x, z: leg.z, y: leg.y });
@@ -349,8 +470,10 @@ export function buildCourseSegments(): BuiltCourse {
   let firstSpine = true;
   for (const seg of segments) {
     if (seg.overlay) continue;
-    seg.extA = 9;
-    seg.extB = 9;
+    // Micro-joints bend a few degrees at most, so a two-unit apron seals their wedges;
+    // a spur still meets the spine at a real angle and keeps the deep one at its mouth.
+    seg.extA = seg.branch ? 9 : 2;
+    seg.extB = 2;
     if (!seg.branch && firstSpine) {
       seg.extA = 0;
       firstSpine = false;

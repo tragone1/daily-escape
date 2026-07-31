@@ -66,25 +66,33 @@ export class NavGraph {
     for (const b of BRANCHES) branchWeight.set(b.name, b.policyWeight);
 
     // Main spine first, accumulating progress so units can reason about "ahead".
+    // Node spacing accumulates ACROSS segments: the curved world's spine is thousands
+    // of ~6-unit slices, and a node per slice made every A* and every replan several
+    // times heavier than the game was tuned for. Distance-based emission keeps the old
+    // ~40-unit rhythm whatever the slice grain is.
     let progress = 0;
     let prev: NavNode | null = null;
+    let sinceNode = 0;
     for (const seg of segments) {
       if (seg.branch || seg.overlay) continue;
       if (!prev) prev = g.addNode(seg.ax, seg.az, seg.ay, progress);
 
-      const steps = Math.max(1, Math.round(seg.length / NODE_SPACING));
-      for (let i = 1; i <= steps; i++) {
-        const t = i / steps;
-        const node = g.addNode(
-          seg.ax + (seg.bx - seg.ax) * t,
-          seg.az + (seg.bz - seg.az) * t,
-          seg.ay + (seg.by - seg.ay) * t,
-          progress + seg.length * t,
-        );
+      sinceNode += seg.length;
+      if (sinceNode >= NODE_SPACING) {
+        sinceNode = 0;
+        const node = g.addNode(seg.bx, seg.bz, seg.by, progress + seg.length);
         g.connect(prev, node);
         prev = node;
       }
       progress += seg.length;
+    }
+    // Always land a final node on the course end so lookahead queries clamp cleanly.
+    {
+      const last = segments.filter((sg) => !sg.branch && !sg.overlay).pop();
+      if (last && prev && (prev.x !== last.bx || prev.z !== last.bz)) {
+        const node = g.addNode(last.bx, last.bz, last.by, progress);
+        g.connect(prev, node);
+      }
     }
 
     // Branches: chain their own nodes, then stitch both ends into the spine.

@@ -509,11 +509,16 @@ function sealBoundary(
    * the start line came from.
    */
   const CELL = 8;
-  const guard = new Map<string, { x: number; z: number; r: number }[]>();
+  type GuardBox = { x: number; z: number; dx: number; dz: number; hl: number; ht: number };
+  const guard = new Map<string, GuardBox[]>();
   const key = (x: number, z: number) => Math.floor(x / CELL) + ":" + Math.floor(z / CELL);
   for (const c of colliders) {
     if (c.topY - terrain.heightAt(c.obb.x, c.obb.z) < 1.6) continue;
-    const entry = { x: c.obb.x, z: c.obb.z, r: c.radius };
+    const entry: GuardBox = {
+      x: c.obb.x, z: c.obb.z,
+      dx: Math.sin(c.obb.heading), dz: Math.cos(c.obb.heading),
+      hl: c.obb.halfLength, ht: c.obb.halfWidth,
+    };
     for (let gx = -1; gx <= 1; gx++)
       for (let gz = -1; gz <= 1; gz++) {
         const k = Math.floor(c.obb.x / CELL + gx) + ":" + Math.floor(c.obb.z / CELL + gz);
@@ -522,20 +527,58 @@ function sealBoundary(
         list.push(entry);
       }
   }
+  /*
+   * True distance to the guarding box, not to its bounding circle. The circumradius of
+   * a long chunk over-covers its ends by most of its length, which is exactly where the
+   * cracks are - two chunk ends a car-nose apart tested as "already walled" and the
+   * crack between them never got a patch. Grazing-angle drive tests found cars slipping
+   * through two of those seams diagonally.
+   */
   const guarded = (x: number, z: number, reach: number): boolean => {
     const list = guard.get(key(x, z));
     if (!list) return false;
-    for (const e of list) if (Math.hypot(e.x - x, e.z - z) - e.r < reach) return true;
+    for (const e of list) {
+      const rx = x - e.x;
+      const rz = z - e.z;
+      const la = Math.abs(rx * e.dx + rz * e.dz);
+      const lt = Math.abs(rx * e.dz - rz * e.dx);
+      const da = Math.max(0, la - e.hl);
+      const dt = Math.max(0, lt - e.ht);
+      if (Math.hypot(da, dt) < reach) return true;
+    }
     return false;
   };
 
+  /*
+   * Clear means clear along the whole face, not just at three stations - a drivable
+   * bulge narrower than the sample gap slid under a patch face and read, in play, as
+   * the wall pinching the road. Samples run every ~1.4 units and the drivable test
+   * carries a 0.35 buffer beyond the face, so a patch keeps daylight between itself
+   * and the ground a car can actually use.
+   */
   const cornersClear = (x: number, z: number, heading: number, hl: number, ht: number) => {
     const dx = Math.sin(heading);
     const dz = Math.cos(heading);
-    for (const a of [-hl, 0, hl])
-      for (const t of [-ht, ht])
+    const n = Math.max(2, Math.ceil((hl * 2) / 1.4));
+    for (let i = 0; i <= n; i++) {
+      const a = -hl + (i / n) * hl * 2;
+      for (const t of [-(ht + 0.35), ht + 0.35])
         if (terrain.sample(x + dx * a + dz * t, z + dz * a - dx * t).onCourse) return false;
+    }
     return true;
+  };
+
+  /*
+   * No patches in a jump's flight path. A ramp launches the player off the lip and the
+   * ground past it sits well below the flight line, so a patch standing there fights
+   * the lip and skirt slabs for pixels - the flicker reported at the section 12 ramp -
+   * while sealing nothing a car at ramp speed could reach sideways.
+   */
+  const lips: { x: number; z: number }[] = [];
+  for (const seg of segments) if (seg.ramp > 0) lips.push({ x: seg.bx, z: seg.bz });
+  const nearLip = (x: number, z: number): boolean => {
+    for (const l of lips) if (Math.hypot(l.x - x, l.z - z) < 16) return true;
+    return false;
   };
 
   /*
@@ -577,6 +620,20 @@ function sealBoundary(
       }
     }
     if (!ok) return;
+    // Nudging can land a piece on a wall band the pre-check could not see from the
+    // original spot; a patch flush against existing wall is the shimmer, not a seal.
+    if (guarded(px, pz, 0.35)) return;
+    if (nearLip(px, pz)) return;
+    /*
+     * And never across a sharp height break. heightAt is read at the centre, so a piece
+     * spanning a slope edge floats at one end and sinks at the other - which reads as
+     * broken geometry even when the collider is fine.
+     */
+    const dxh = Math.sin(heading);
+    const dzh = Math.cos(heading);
+    const yA = terrain.heightAt(px - dxh * hl, pz - dzh * hl);
+    const yB = terrain.heightAt(px + dxh * hl, pz + dzh * hl);
+    if (Math.abs(yA - yB) > 2.2) return;
     placed.add(pk);
     const groundY = terrain.heightAt(px, pz);
     const rnd = hash2(px, pz);
@@ -596,16 +653,50 @@ function sealBoundary(
    * segment - a hole at a jittered joint runs diagonally, and pieces that follow it read
    * as a wall that was always there instead of a row of stubs.
    */
+  /*
+   * The rear of the start line. Every leg's sides are marched below, but nothing ever
+   * walks an end face, and the course head is the one end not butted against another
+   * leg - reversing off the start line simply left the world. One themed wall across
+   * the back, a few units behind the spawn, closes it.
+   */
+  {
+    const head = segments.find((s) => !s.branch && !s.overlay);
+    if (head) {
+      const styleName = (head.wall in WALL_STYLE ? head.wall : "fence") as Exclude<WallStyle, "none">;
+      const style = WALL_STYLE[styleName];
+      const shades = wallShades[styleName];
+      const width = (head.halfWidth + head.shoulder) * 2 + 8;
+      const height = style.minHeight + 0.5;
+      const bx = head.ax - head.dx * (3 + style.thickness / 2);
+      const bz = head.az - head.dz * (3 + style.thickness / 2);
+      const groundY = terrain.heightAt(bx, bz);
+      const mesh = r.createMesh(
+        { kind: "box", width, height, depth: style.thickness },
+        { color: [...shades[1]], emissive: 0.24, isStatic: true },
+      );
+      mesh.position.set(bx, groundY + height / 2, bz);
+      mesh.rotation.y = head.heading;
+      addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height);
+    }
+  }
+
   for (const seg of segments) {
     if (seg.overlay) continue;
-    const steps = Math.max(2, Math.ceil(seg.length / 2.5));
+    /*
+     * March at 1.2 units. At 2.5 a two-unit crack between chunk ends could sit exactly
+     * between samples, each of which read "guarded" from its own side - and a car at a
+     * grazing angle slipped through the one such crack on the course. Half the step
+     * guarantees a sample lands inside anything a car could possibly thread.
+     */
+    const steps = Math.max(2, Math.ceil(seg.length / 1.2));
     for (let side = -1; side <= 1; side += 2) {
       const run: { x: number; z: number }[] = [];
       const flush = () => {
         if (run.length === 0) return;
         // Emit the run as pieces of up to ~9 units, heading fitted to the local stretch.
         let i = 0;
-        while (i < run.length) {
+        let flip = 0;
+        while (i < run.length - 1) {
           const j = Math.min(run.length - 1, i + 3);
           const ax = run[i].x;
           const az = run[i].z;
@@ -613,18 +704,23 @@ function sealBoundary(
           const bz = run[j].z;
           const span = Math.hypot(bx - ax, bz - az);
           const heading = span > 0.5 ? Math.atan2(bx - ax, bz - az) : Math.atan2(seg.dx, seg.dz);
+          // Consecutive pieces share an endpoint (i = j, not j + 1) so the line has no
+          // cracks of its own, and alternate a hand's width of lateral offset so their
+          // long faces are never coplanar - coplanar patch faces were the shimmer.
+          const jitter = (flip++ % 2 === 0 ? 1 : -1) * 0.14;
           piece(
-            (ax + bx) / 2,
-            (az + bz) / 2,
+            (ax + bx) / 2 + seg.dz * side * jitter,
+            (az + bz) / 2 - seg.dx * side * jitter,
             seg.dz * side,
             -seg.dx * side,
             heading,
-            Math.max(1.6, span / 2 + 1.0),
+            Math.max(1.6, span / 2 + 0.6),
             seg.wall === "none" ? "fence" : seg.wall,
           );
-          i = j + 1;
+          i = j;
         }
         run.length = 0;
+        if (i === 0 && run.length === 1) run.length = 0;
       };
       for (let i = 0; i <= steps; i++) {
         const along = (i / steps) * seg.length;
@@ -637,9 +733,18 @@ function sealBoundary(
           if (!terrain.sample(x, z).onCourse) { edge = d; break; }
         }
         if (edge < 0) { flush(); continue; }
+        /*
+         * The guard question is "does a wall already stand between the drivable edge and
+         * the outside", so it is asked half a unit past the edge - where a wall's inner
+         * face would be - rather than at the patch spot. Asked out at the patch spot it
+         * missed walls the patch would sit behind, and the sealer built a redundant
+         * second line beside a thousand units of perfectly good fence.
+         */
+        const gx = bx + seg.dz * (edge + 0.5) * side;
+        const gz = bz - seg.dx * (edge + 0.5) * side;
+        if (guarded(gx, gz, 0.6)) { flush(); continue; }
         const px = bx + seg.dz * (edge + 1.4) * side;
         const pz = bz - seg.dx * (edge + 1.4) * side;
-        if (guarded(px, pz, 2.6)) { flush(); continue; }
         run.push({ x: px, z: pz });
       }
       flush();

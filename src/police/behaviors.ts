@@ -102,7 +102,28 @@ export function boxGoal(ctx: PursuitContext, slot: BoxSlot, press: number): Goal
  */
 export function rigGoal(ctx: PursuitContext, post: NavNode | null): Goal {
   if (!post) return nodeGoal(ctx.nav, ctx.player.x, ctx.player.z);
-  return { kind: "park", nodeId: post.id, x: post.x, z: post.z };
+
+  /*
+   * Slide across the road to cover the gap you are aiming for.
+   *
+   * A rig parked dead on the centreline is a fixed puzzle: pick a side, take it, done.
+   * Tracking the player's line across the carriageway turns it into a decision that has
+   * to be made late — commit early and it shuffles over to meet you. It only ever creeps,
+   * because the whole point is that it is holding a position rather than chasing one, and
+   * it is clamped inside the tarmac so it can never wander off the road it is blocking.
+   */
+  const cfg = CONFIG.police.rig;
+  const seg = ctx.terrain.sample(post.x, post.z).segment;
+  const across =
+    (ctx.player.x - post.x) * seg.dz - (ctx.player.z - post.z) * seg.dx;
+  const reach = Math.max(0, seg.halfWidth - cfg.holdInset);
+  const lateral = clamp(across * cfg.holdTracking, -reach, reach);
+  return {
+    kind: "park",
+    nodeId: post.id,
+    x: post.x + seg.dz * lateral,
+    z: post.z - seg.dx * lateral,
+  };
 }
 
 function nodeGoal(nav: NavGraph, x: number, z: number): Goal {

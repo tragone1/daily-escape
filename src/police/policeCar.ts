@@ -87,6 +87,14 @@ export class PoliceCar {
   private ambushReadSpeed = 0;
   /** Mouth of the spur it sprang from, held while it is still steering the strike. */
   private springFrom: { x: number; z: number } | null = null;
+  /**
+   * An ambusher that has taken its shot, hit or miss.
+   *
+   * Only the armoured pair ever set this. They exist to make one strike out of one alley;
+   * a spent one that rejoins the chase is just another heavy in the pack, which is the
+   * thing they were pulled out of. The director stands them down once out of sight.
+   */
+  spent = false;
   /** How far the station has been closed in, 0..1. */
   private boxPress = 0;
 
@@ -179,6 +187,7 @@ export class PoliceCar {
     this.ambushWait = 0;
     this.ambushReadSpeed = 0;
     this.springFrom = null;
+    this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
     this.rigScore = Infinity;
@@ -191,6 +200,25 @@ export class PoliceCar {
     }
     const roleCfg = CONFIG.police[this.role] as { pushResistance?: number };
     this.vehicle.pushResistance = roleCfg.pushResistance ?? 1;
+  }
+
+  /**
+   * Ambush tuning for this class.
+   *
+   * The armoured pair run their own, deliberately overtuned set: they get one shot from
+   * one alley and nothing else, so it has to land. Everything else uses the shared
+   * numbers, which are built to be read and beaten.
+   */
+  private get ambushTuning() {
+    const openRoad = CONFIG.police.escalation.openRoad;
+    return openRoad.roles.includes(this.role)
+      ? openRoad.ambush
+      : CONFIG.police.pacing.ambush;
+  }
+
+  /** True for the two classes that exist only to ambush. */
+  private get isAmbusher(): boolean {
+    return CONFIG.police.escalation.openRoad.roles.includes(this.role);
   }
 
   distanceToPlayer(player: Vehicle): number {
@@ -273,9 +301,38 @@ export class PoliceCar {
       return;
     }
 
+    /*
+     * Spent: the shot is over, hit or miss, and this class does not get a second one.
+     * It rolls to a stop rather than turning into another heavy on your bumper, and the
+     * director stands it down as soon as you are not looking at it.
+     */
+    if (this.spent) {
+      this.input.throttle = 0;
+      this.input.brake = v.speed > 1 ? 1 : 0;
+      this.input.steer = 0;
+      this.input.boost = false;
+      this.view.setCharge(0);
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
+      return;
+    }
+
     // Waiting in an alley: sit still, engine running, until the moment is right.
     if (this.ambushAt) {
       this.ambushWait += dt;
+      // The player has gone by and the shot never came: stand down rather than pull out
+      // behind them and give chase.
+      if (this.isAmbusher) {
+        const mouth = this.ambushAt;
+        const past =
+          (ctx.player.x - mouth.x) * Math.sin(ctx.player.heading) +
+          (ctx.player.z - mouth.z) * Math.cos(ctx.player.heading);
+        if (past > CONFIG.police.escalation.openRoad.ambush.giveUpPast) {
+          this.ambushAt = null;
+          this.spent = true;
+          return;
+        }
+      }
       if (this.readyToSpring(ctx)) {
         this.springFrom = this.ambushAt;
         this.ambushAt = null;
@@ -310,9 +367,14 @@ export class PoliceCar {
      * someone who boosts after it has already committed.
      */
     if (this.springFrom) {
-      const cfg = CONFIG.police.pacing.ambush;
+      const cfg = this.ambushTuning;
       if (dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
+        // One alley, one strike. Whatever happened, this unit is finished.
+        if (this.isAmbusher) {
+          this.spent = true;
+          return;
+        }
       } else {
         /*
          * Aim *through* them, not at them.
@@ -327,8 +389,8 @@ export class PoliceCar {
         const tz = lead.z - v.z;
         const tl = Math.hypot(tx, tz) || 1;
         const aim = {
-          x: lead.x + (tx / tl) * CONFIG.police.pacing.ambush.strikeDepth,
-          z: lead.z + (tz / tl) * CONFIG.police.pacing.ambush.strikeDepth,
+          x: lead.x + (tx / tl) * cfg.strikeDepth,
+          z: lead.z + (tz / tl) * cfg.strikeDepth,
         };
         this.input.throttle = 1;
         this.input.brake = 0;
@@ -428,7 +490,15 @@ export class PoliceCar {
       cornerLimit = this.cornerSpeedLimit();
 
       if (goal.kind === "park") {
-        const post = ctx.nav.nodes[targetNodeId];
+        /*
+         * The goal's own point, not the node it is anchored to. A rig holding a block
+         * tracks across the road to cover the line the player is taking, so its post is a
+         * offset from the junction rather than the junction itself; measuring to the node
+         * would have it think it had arrived while still a lane away from where it meant
+         * to be. Blockers pass the node position through unchanged, so nothing moves for
+         * them.
+         */
+        const post = this.role === "rig" ? goal : ctx.nav.nodes[targetNodeId];
         parkDistance = dist(v.x, v.z, post.x, post.z);
         // Slow down on the approach. Arriving at 40+ meant sailing straight past the
         // post and then having to turn around, which repeatedly wedged units against
@@ -494,7 +564,7 @@ export class PoliceCar {
    * leaving a side road into an interception rather than an obstacle already spent.
    */
   private readyToSpring(ctx: PursuitContext): boolean {
-    const cfg = CONFIG.police.pacing.ambush;
+    const cfg = this.ambushTuning;
     if (this.ambushWait > cfg.maxWait) return true;
 
     const mouth = this.ambushAt as { x: number; z: number };
@@ -605,13 +675,17 @@ export class PoliceCar {
     const cfg = CONFIG.police.rig;
     this.rigTimer -= dt;
     const playerProgress = ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
-    // A block the player has already driven past is not a block. Re-scout immediately
-    // rather than sitting behind them until the timer happens to come round.
-    const passed =
-      this.rigPost !== null &&
-      ctx.terrain.progressAt(this.rigPost.x, this.rigPost.z) < playerProgress + 20;
-    if (this.rigPost && this.rigTimer > 0 && !passed) return;
-    if (passed) this.rigScore = Infinity;
+    /*
+     * Once posted, it holds. Full stop.
+     *
+     * It used to re-scout the moment the player got past, on the reasoning that a block
+     * behind you is not a block. True, but the cure was worse: the new spot is always
+     * *ahead* of the player, so a passed rig would pull out and drive up the road past
+     * them to reach it — a nine-metre transport overtaking you is not a roadblock, and it
+     * was the single least readable thing in the squad. A rig that has been beaten has
+     * been beaten; the director retires it once you are clear.
+     */
+    if (this.rigPost) return;
     this.rigTimer = cfg.repickInterval;
     let best: NavNode | null = null;
     let bestScore = Infinity;
@@ -793,9 +867,19 @@ export class PoliceCar {
       throttle = Math.min(throttle, 0.45);
     }
 
-    // Arrived at a post: sit on it. Coasting down rather than holding the brake avoids
-    // the vehicle model rolling into reverse once it has stopped.
-    if (parkDistance < this.parkRadius) {
+    /*
+     * Arrived at a post: sit on it. Coasting down rather than holding the brake avoids
+     * the vehicle model rolling into reverse once it has stopped.
+     *
+     * A rig settles into a much tighter radius than a blocker, because its post is not a
+     * fixed point — it tracks across the road to cover your line. Parked broadside, the
+     * only direction it can drive is along its own axis, which is across the carriageway,
+     * so leaving it a little room to roll is exactly the shuffle that closes your gap.
+     * Stopping at the full park radius froze it a lane away from where it meant to be.
+     */
+    const stopWithin =
+      this.role === "rig" ? CONFIG.police.rig.holdStopWithin : this.parkRadius;
+    if (parkDistance < stopWithin) {
       throttle = 0;
       brake = speed > 3 ? 1 : 0;
     }

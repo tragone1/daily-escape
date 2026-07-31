@@ -863,6 +863,20 @@ export const CONFIG = {
       maxActive: 1,
       /** Stood down once the player is this far past it. */
       retirePast: 70,
+      /**
+       * How much of your lateral offset it matches while holding, and how far inside the
+       * kerb it stays.
+       *
+       * Partial on purpose. At 1.0 it mirrors you exactly, the gap never opens, and the
+       * block is unbeatable rather than difficult. At 0.55, committing to a side early
+       * lets it shuffle across to meet you and a late move beats it — which is the
+       * decision the roadblock is supposed to be. The inset stops a nine-metre transport
+       * creeping off the tarmac it is there to block.
+       */
+      holdTracking: 0.55,
+      holdInset: 3.5,
+      /** Settles this close to its tracked point, rather than at `parkRadius`. */
+      holdStopWithin: 2.0,
       /** Distance from its chosen spot at which it stops driving and turns broadside. */
       parkRadius: 11,
       /** Start slowing this far out, down to this speed, so it can stop on the mark. */
@@ -1310,20 +1324,63 @@ export const CONFIG = {
         rig: 2.6,
       } as Record<PoliceRole, number>,
       /**
-       * Classes that will not be sent into a narrow stretch of road.
+       * The two classes that exist only to ambush.
        *
-       * A juggernaut is a metre wider than a patrol car and five times the mass, so in a
-       * canyon or a downtown block it stops being something you get around and becomes
-       * something that seals the passage. Its whole design is to arrive at your flank and
-       * put you into the scenery, which needs room to happen in — pointed down a corridor
-       * it just plugs it.
+       * They spawn into a side alley and nowhere else, wait for you, take one shot across
+       * your nose, and are finished — no chase, no second attempt, no trailing you up the
+       * road afterwards.
        *
-       * The window looks behind as well as ahead so one is never woken just short of a
-       * pinch it would immediately follow you into, and an active one that ends up in a
-       * corridor anyway is stood down once it is out of sight.
+       * They were briefly the opposite of this: pursuit units barred from narrow road so
+       * they could not cork a corridor. That solved the corking and left them as slower
+       * heavies. Living in the alleys is what makes them specialists, and never lingering
+       * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
       openRoad: {
         roles: ["juggernaut", "warden"] as PoliceRole[],
+        ambush: {
+          /**
+           * Slack on the unit's own timing estimate, seconds.
+           *
+           * The shared value is -0.28, deliberately late so the hit lands on the flank
+           * rather than nose to nose. Same idea here, less slack, because these steer the
+           * run afterwards and can correct what the timing gets wrong.
+           */
+          leadTime: -0.18,
+          /** Assumed fraction of top speed out of the spur. */
+          launchSpeedFactor: 0.95,
+          /** Reads your pace from further out, so the commitment is better informed. */
+          readRange: 300,
+          /**
+           * Re-aim at the player for this long after launching.
+           *
+           * The single biggest lever on whether the strike connects. The shared 95 lets a
+           * mistimed launch turn into a near miss; at 190 the run is steered essentially
+           * all the way onto the player, which is what "high percentage" costs.
+           */
+          homeDistance: 190,
+          /** Aim this far past the intercept, so the contact is across them, not alongside. */
+          strikeDepth: 13,
+          /** Extra pace while springing. It has to arrive with the weight behind it. */
+          launchSpeedBonus: 1.9,
+          /**
+           * Once the player is this far past, the shot is gone and so is the unit.
+           *
+           * No chase afterwards: a spent ambusher that joins the pursuit is just another
+           * heavy in the pack, which is exactly what these were taken out of.
+           */
+          giveUpPast: 55,
+          /**
+           * Never pull out just because the player is already past.
+           *
+           * The shared ambush does that at 90 units — better to join the chase than sit
+           * in a dead end. These do the opposite: a missed window is the end of the unit,
+           * because a juggernaut arriving behind you is the pursuit car this class was
+           * explicitly taken out of being.
+           */
+          releaseBehindRange: 0,
+          /** Long: it is waiting for one specific moment and nothing else. */
+          maxWait: 40,
+        },
         /**
          * Road half-width, in units, a stretch must hold throughout the window.
          *

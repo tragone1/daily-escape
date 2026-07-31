@@ -23,6 +23,22 @@ export class GameAudio {
   /** True while the loops are meant to stay silent (run over, or tab hidden). */
   private silenced = false;
 
+  /*
+   * The deep-run track.
+   *
+   * Deliberately an `<audio>` element and *not* part of the WebAudio graph. Two reasons:
+   * it streams instead of decoding fourteen megabytes into memory, and it is untouched by
+   * `quietLoops` and by the context suspend, which is what lets it carry on over the
+   * BUSTED card once everything the run generated has been shut off.
+   */
+  private music: HTMLAudioElement | null = null;
+  /** Set once the element exists and is buffering; guards re-arming every frame. */
+  private musicArmed = false;
+  /** Should the track be sounding right now, tab visibility aside. */
+  private musicWanted = false;
+  /** Give up quietly after a failed start rather than retrying sixty times a second. */
+  private musicBlocked = false;
+
   /** Must be called from a user gesture (browsers block audio otherwise). */
   init(): void {
     if (this.ctx || !CONFIG.audio.enabled) return;
@@ -238,6 +254,72 @@ export class GameAudio {
   }
 
   /**
+   * Drive the deep-run track from the section the player has reached.
+   *
+   * Called every frame; cheap and idempotent. `section` is the zero-based index, so the
+   * configured 9 is the one the HUD calls SECTION 10.
+   */
+  updateMusic(section: number): void {
+    const cfg = CONFIG.audio.music;
+    if (!cfg.enabled || this.musicBlocked) return;
+
+    if (!this.musicArmed && section >= cfg.preloadSection) {
+      this.musicArmed = true;
+      try {
+        const el = new Audio();
+        el.src = cfg.src;
+        el.preload = "auto";
+        el.loop = true;
+        el.volume = cfg.volume;
+        // A missing or blocked file is not worth breaking a run over — the artifact
+        // build has no way to serve it at all, and the game is fine without it.
+        el.addEventListener("error", () => {
+          this.musicBlocked = true;
+          this.duck(1);
+        });
+        this.music = el;
+        el.load();
+      } catch {
+        this.musicBlocked = true;
+      }
+    }
+
+    if (!this.music || this.musicWanted || section < cfg.startSection) return;
+    this.musicWanted = true;
+    this.duck(cfg.duckGameTo);
+    void this.music.play().catch(() => {
+      // Autoplay refused. The page has had a click by now in every normal path, so this
+      // is the unusual case; stand down rather than fight it.
+      this.musicWanted = false;
+      this.musicBlocked = true;
+      this.duck(1);
+    });
+  }
+
+  /** Stop the track and restore the generated layer. Called when a new run begins. */
+  stopMusic(): void {
+    this.musicWanted = false;
+    this.duck(1);
+    if (!this.music) return;
+    try {
+      this.music.pause();
+      this.music.currentTime = 0;
+    } catch {
+      /* a stream that never loaded has nothing to rewind */
+    }
+  }
+
+  /** Scale the generated layer so the track can sit over the top of it. */
+  private duck(factor: number): void {
+    if (!this.ctx || !this.master) return;
+    this.master.gain.setTargetAtTime(
+      CONFIG.audio.masterVolume * factor,
+      this.ctx.currentTime,
+      0.25,
+    );
+  }
+
+  /**
    * Drop everything when the tab goes away, and stay quiet until it comes back.
    *
    * A browser will happily keep an oscillator running in a background tab, which is how a
@@ -247,6 +329,16 @@ export class GameAudio {
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) void this.ctx?.suspend();
       else if (!this.silenced) void this.ctx?.resume();
+
+      /*
+       * The track follows the tab too, but on its own terms. It is keyed to `musicWanted`
+       * rather than `silenced`, because after a bust the loops are silenced and the track
+       * is explicitly still meant to be playing — resuming it on the `silenced` flag would
+       * leave a player who tabbed away from the BUSTED card coming back to nothing.
+       */
+      if (!this.music) return;
+      if (document.hidden) this.music.pause();
+      else if (this.musicWanted) void this.music.play().catch(() => {});
     });
   }
 }

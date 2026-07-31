@@ -209,6 +209,12 @@ export class Game {
     this.keys.endFrame();
     this.audio.resumeLoops();
     this.audio.resume();
+    /*
+     * The track runs through the bust and over the BUSTED card, and only stops here —
+     * `restart` is the new-run path for both the result button and the Q key, so this is
+     * the one place that means "the player has moved on".
+     */
+    this.audio.stopMusic();
   }
 
 
@@ -366,6 +372,9 @@ export class Game {
     this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
+    // Deep-run track. Driven from the furthest section reached rather than the current
+    // one, so being shoved back over a boundary cannot switch it off mid-bar.
+    this.audio.updateMusic(this.state.section);
     if (section !== this.lastSection && !this.state.over) {
       this.lastSection = section;
       this.hud.announceSection(`SECTION ${section + 1}`);

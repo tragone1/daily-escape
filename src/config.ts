@@ -1616,6 +1616,42 @@ export const CONFIG = {
   audio: {
     masterVolume: 0.5,
     enabled: true,
+    /**
+     * The track that takes over once the run gets deep.
+     *
+     * The source was ten minutes of 192kbps stereo MP3, fourteen megabytes against a game
+     * that is forty-two kilobytes over the wire — the track was ninety-seven percent of
+     * the download for something most runs never reach. It is now the first five minutes,
+     * mono, AAC at 96kbps: 3.4MB, looped, with a 1.5s fade into the seam so the wrap is
+     * not a click.
+     *
+     * Streamed from a file rather than decoded into a buffer, and living outside the
+     * WebAudio graph, which is what lets it keep playing over the BUSTED card after
+     * `quietLoops` has shut the engine and sirens down.
+     */
+    music: {
+      enabled: true,
+      src: "music/astral-storm.m4a",
+      /** Section that starts it. */
+      startSection: 9,
+      /**
+       * Section at which to begin buffering.
+       *
+       * Not at load: most runs end well before section ten, and making every player pull
+       * fourteen megabytes for a track they will never reach is rude. Starting a few
+       * sections early leaves the stream time to get ahead of the cue.
+       */
+      preloadSection: 5,
+      /** Loud on purpose — it is meant to sit over the top of the engine, not under it. */
+      volume: 0.85,
+      /**
+       * What the generated layer is scaled to while the track plays.
+       *
+       * Ducked rather than silenced: the engine, the sirens and the impacts are all
+       * feedback you steer by, so they have to stay audible underneath.
+       */
+      duckGameTo: 0.4,
+    },
   },
 } as const;
 

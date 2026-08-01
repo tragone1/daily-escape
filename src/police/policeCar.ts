@@ -324,9 +324,11 @@ export class PoliceCar {
       // behind them and give chase.
       if (this.isAmbusher) {
         const mouth = this.ambushAt;
+        // Course progress, not the player's heading frame: on a switchback the mouth
+        // reads as "behind" the player's nose while still genuinely up the road.
         const past =
-          (ctx.player.x - mouth.x) * Math.sin(ctx.player.heading) +
-          (ctx.player.z - mouth.z) * Math.cos(ctx.player.heading);
+          ctx.terrain.progressAt(ctx.player.x, ctx.player.z) -
+          ctx.terrain.progressAt(mouth.x, mouth.z);
         if (past > CONFIG.police.escalation.openRoad.ambush.giveUpPast) {
           this.ambushAt = null;
           this.spent = true;
@@ -334,6 +336,9 @@ export class PoliceCar {
         }
       }
       if (this.readyToSpring(ctx)) {
+        // Re-arm the wait clock: it now times the poised hold at the mouth, so a
+        // player who never comes releases the budget instead of locking it forever.
+        this.ambushWait = 0;
         this.springFrom = this.ambushAt;
         // The way out is through the mouth, not toward the target: the unit is still
         // deep in the alley, and any line it picks now must first pass this point.
@@ -426,13 +431,16 @@ export class PoliceCar {
        * and is done. A miss that crosses in *front* keeps its momentum into the far
        * wall, which is the block the near-miss is supposed to read as.
        */
-      const fwdX = Math.sin(ctx.player.heading);
-      const fwdZ = Math.cos(ctx.player.heading);
+      /*
+       * Course progress, not the player's heading frame. The heading-frame test
+       * declared a freshly sprung truck "behind" whenever the course bent - it went
+       * sprung to spent in one frame without ever moving, which was most of the
+       * class's field record. A truck is only truly beaten when it is down-course
+       * of the player, and that is a progress question.
+       */
       const along =
-        (v.x - ctx.player.x) * fwdX + (v.z - ctx.player.z) * fwdZ;
-      // -14: a boosting player passing the mouth used to end the shot while it was
-      // still winnable; the homing below can recover a strike from a full car length
-      // and a half behind.
+        ctx.terrain.progressAt(v.x, v.z) -
+        ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
       const missed = this.isAmbusher && along < -14;
       if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
@@ -458,8 +466,13 @@ export class PoliceCar {
           const exit = this.springExit;
           const cleared =
             (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
-          const playerDist = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-          if (playerDist <= cfg.strikeGo) {
+          // Course lead, not straight-line range: a player 50 units away across a
+          // switchback wall is NOT in the window, and launching at them is how the
+          // truck ends up planted in the far wall as they round the corner.
+          const goLead =
+            ctx.terrain.progressAt(this.springFrom.x, this.springFrom.z) -
+            ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+          if (goLead <= cfg.strikeGo && goLead > -8) {
             if (cleared) this.springExit = null;
           } else {
             /*
@@ -468,6 +481,13 @@ export class PoliceCar {
              * braked on sight and the whole ambush unravelled from sixty units back.
              * In cover it stays a surprise, and the extra length is launch runway.
              */
+            this.ambushWait += dt;
+            if (this.isAmbusher && this.ambushWait > cfg.maxWait) {
+              this.springFrom = null;
+              this.springExit = null;
+              this.spent = true;
+              return;
+            }
             const hx = this.springFrom.x - exit.x * 5;
             const hz = this.springFrom.z - exit.z * 5;
             if (dist(v.x, v.z, hx, hz) < 4) {
@@ -738,22 +758,23 @@ export class PoliceCar {
     const v = this.vehicle;
     const player = ctx.player;
 
-    const toPlayer = dist(player.x, player.z, mouth.x, mouth.z);
     /*
-     * Inside the trigger band the shot simply goes. The pure ETA gate died against
-     * evasive driving: a read-once speed went stale the moment the player braked, and
-     * the closing test flickered false on every swerve, so the firing window could be
-     * skipped entirely and the unit rotted in its alley. The homing run is long enough
-     * to turn an imperfect launch into contact; a launch that never happens is the one
-     * miss nothing can recover.
+     * Everything here runs on COURSE PROGRESS, not straight-line range. Euclidean
+     * distance is direction-blind and wall-blind: it fired the trigger for a player
+     * who had already passed the mouth (instant spent, truck never moved) and for a
+     * player on an adjacent switchback leg on the far side of a wall - which launched
+     * the strike at a phantom and left the truck parked nose-first in the far wall
+     * exactly as the real player rounded the corner. Both were the whole class of
+     * field misses.
      */
-    if (toPlayer < cfg.springRange) return true;
-    const closing = (mouth.x - player.x) * player.vx + (mouth.z - player.z) * player.vz > 0;
-    if (!closing) return toPlayer < cfg.releaseBehindRange;
+    const lead =
+      ctx.terrain.progressAt(mouth.x, mouth.z) -
+      ctx.terrain.progressAt(player.x, player.z);
+    if (lead < -8) return false;
+    if (lead < cfg.springRange) return true;
 
-    // Live pace, re-read every frame; the trigger band above covers the liars.
     const ourEta = dist(v.x, v.z, mouth.x, mouth.z) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
-    const theirEta = toPlayer / Math.max(8, player.speed);
+    const theirEta = lead / Math.max(8, player.speed);
     return theirEta <= ourEta + cfg.leadTime;
   }
 

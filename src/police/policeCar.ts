@@ -398,6 +398,25 @@ export class PoliceCar {
          */
         const out = this.ambushOut;
         if (this.isAmbusher && out) {
+          /*
+           * Absolute rule, above any hold-point arithmetic: an ARMED truck is never
+           * within a car length of its mouth. Odd spur geometries (short spurs,
+           * inverted definitions) let the creep's target land at or past the lip -
+           * this stops the creep dead before the wall line no matter what the
+           * numbers upstream say. Hidden is a hard invariant, not a tuning value.
+           */
+          const alongOut =
+            (v.x - mouth.x) * out.x + (v.z - mouth.z) * out.z;
+          if (alongOut > -3.5) {
+            this.input.throttle = 0;
+            this.input.brake = v.speed > 0.5 ? 1 : 0;
+            this.input.steer = 0;
+            this.input.boost = false;
+            this.view.setCharge(0);
+            v.drive = 1;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
           const hx = mouth.x - out.x * 6;
           const hz = mouth.z - out.z * 6;
           const toHold = dist(v.x, v.z, hx, hz);

@@ -601,24 +601,48 @@ export class PoliceManager {
     if (candidates.length === 0) return false;
 
     // Randomise which spur so a repeated run does not stage the same ambushes.
+    const nearestNav = (px: number, pz: number): number => {
+      let best = Infinity;
+      for (const node of ctx.nav.nodes) {
+        const d = (node.x - px) * (node.x - px) + (node.z - pz) * (node.z - pz);
+        if (d < best) best = d;
+      }
+      return best;
+    };
     for (let i = 0; i < candidates.length; i++) {
       const spur = candidates[Math.floor(Math.random() * candidates.length)];
+      /*
+       * Pick the mouth end by evidence, not by field order: whichever end sits
+       * nearer the spine's nav line is the road end. A handful of spur records are
+       * inverted, and trusting them seated the truck ON the road - armed, exposed,
+       * a sitting duck by construction.
+       */
+      const invert = nearestNav(spur.bx, spur.bz) < nearestNav(spur.ax, spur.az);
+      const mx = invert ? spur.bx : spur.ax;
+      const mz = invert ? spur.bz : spur.az;
+      const dx = invert ? spur.ax : spur.bx;
+      const dz = invert ? spur.az : spur.bz;
+      // Degenerate spur records exist; a seat that is not genuinely deeper than its
+      // mouth, or a mouth that is not genuinely on the road, is not an ambush site.
+      if (Math.hypot(dx - mx, dz - mz) < 9) continue;
+      if (nearestNav(mx, mz) > 625) continue;
       const t = pacing.ambushDepth;
-      const x = spur.ax + (spur.bx - spur.ax) * t;
-      const z = spur.az + (spur.bz - spur.az) * t;
+      const x = mx + (dx - mx) * t;
+      const z = mz + (dz - mz) * t;
+      if (Math.hypot(x - mx, z - mz) < 5) continue;
       if (this.occupied(x, z)) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
-      // The spur mouth is on the spine, so this should always hold - but a spur that has
-      // been clipped by other geometry is a car parked in a box, not an ambush.
-      if (!ctx.world.canReach(x, z, spur.ax, spur.az)) continue;
+      // A spur that has been clipped by other geometry is a car parked in a box,
+      // not an ambush.
+      if (!ctx.world.canReach(x, z, mx, mz)) continue;
 
       // Facing the mouth, so it comes out forwards rather than reversing into the road —
       // and holding there until the player's own timing says go. `placeAt` resets the
       // unit, so the ambush has to be armed after it.
-      unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
-      unit.ambushAt = { x: spur.ax, z: spur.az };
-      const ol = Math.hypot(spur.ax - x, spur.az - z) || 1;
-      unit.ambushOut = { x: (spur.ax - x) / ol, z: (spur.az - z) / ol };
+      unit.placeAt(x, z, headingOf(mx - x, mz - z), spur.ay);
+      unit.ambushAt = { x: mx, z: mz };
+      const ol = Math.hypot(mx - x, mz - z) || 1;
+      unit.ambushOut = { x: (mx - x) / ol, z: (mz - z) / ol };
       return true;
     }
     return false;

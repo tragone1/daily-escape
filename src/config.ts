@@ -1057,7 +1057,7 @@ export const CONFIG = {
        * still waited most of a minute to be punished. These arrive within seconds, so
        * no part of the run is a freebie, including the first breath of it.
        */
-      openingChasers: [42, 78, 114, 150],
+      openingChasers: [110, 165, 220, 275],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**
@@ -1223,7 +1223,11 @@ export const CONFIG = {
        * quickly - the whole point of stopping being fatal is that it is fatal soon.
        */
       slowPlayerSpeed: 12,
-      slowSpawnScale: 0.55,
+      /**
+       * 0.4: a stopped player is the moment the squad exists for, and the swarm should
+       * arrive while stopping still feels like a mistake rather than a breather.
+       */
+      slowSpawnScale: 0.4,
       /**
        * A unit inside this range *and* in plain sight is never moved, recycled or stood
        * down, whatever else the director wants.
@@ -1280,8 +1284,16 @@ export const CONFIG = {
        * Base and slope are untouched: the curve through section nine is the one that
        * plays well and it is not being altered. Only the ceiling moved.
        */
-      baseActive: 7,
-      activePerSection: 1.15,
+      /**
+       * 10 with a flatter climb (was 7 + 1.15/section): the opening set alone is nine
+       * cars, so a base of 7 meant a stopped player in section one drew zero
+       * reinforcements - the budget was already full of cars driving the wrong way.
+       * 12 leaves three slots open at the lights, which is what turns a stopped
+       * player's trickle into a swarm.
+       * The two curves converge at section 20, so the late game is untouched.
+       */
+      baseActive: 12,
+      activePerSection: 1.0,
       /**
        * Ceiling, for frame time more than fairness.
        *
@@ -1457,7 +1469,7 @@ export const CONFIG = {
      * they hold more than `maxActive`.
      */
     pool: {
-      patrol: 8,
+      patrol: 16,
       rammer: 8,
       interceptor: 8,
       blocker: 5,

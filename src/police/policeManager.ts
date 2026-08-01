@@ -255,27 +255,25 @@ export class PoliceManager {
     }
 
     /*
-     * Fill toward the target. Past `effortFromSection`, keep trying after a refusal.
+     * Fill toward the target. Refusals cost an attempt, never the tick.
      *
-     * Below the gate this is exactly the old loop - two attempts, give up on the first
-     * refusal - because the early sections are tuned and must not move. Above it, refusals
-     * cost an attempt rather than the entire tick's recruitment.
+     * The old early-section loop gave up on the first refusal, which read as tuning but
+     * was actually a leak: near the start line, behind-spawns land off-course and ambush
+     * picks rarely have a spur in range, so most ticks recruited nobody and a stopped
+     * player in section one sat unswarmed for most of a minute. Persistence is now
+     * unconditional; the early sections keep their slower perTick instead.
      */
     this.effortSection = section;
-    const persistent = section >= pacing.effortFromSection;
+    const late = section >= pacing.effortFromSection;
     let active = this.mainFleetCount;
     let woken = 0;
     let attempts = 0;
-    const maxAttempts = persistent ? pacing.wakeAttempts : pacing.wakePerTick;
-    const perTick = persistent ? pacing.wakePerTickLate : pacing.wakePerTick;
-    while (active < target && woken < perTick && attempts < maxAttempts) {
+    const perTick = late ? pacing.wakePerTickLate : pacing.wakePerTick;
+    while (active < target && woken < perTick && attempts < pacing.wakeAttempts) {
       attempts++;
       const unit = this.pickDormant(section, "main");
       if (!unit) break;
-      if (!this.spawnUnit(unit, ctx, playerProgress)) {
-        if (!persistent) break;
-        continue;
-      }
+      if (!this.spawnUnit(unit, ctx, playerProgress)) continue;
       active++;
       woken++;
     }
@@ -729,7 +727,18 @@ export class PoliceManager {
         const ahead = ((x - ctx.player.x) * fx + (z - ctx.player.z) * fz) / Math.max(1, d);
         if (ahead > -0.15) continue;
       }
-      if (!hidden && d < pacing.farSpawnDistance) continue;
+      /*
+       * A stopped player relaxes the visible-arrival floor to the ahead minimum. The
+       * far floor exists to hide arrivals from a driver closing on them at speed; at
+       * the start line it meant every rung on a long straight was in view and refused,
+       * so a player who froze at the lights was never reinforced at all. 145 out,
+       * driving in, reads as traffic - and it is the swarm the freeze is asking for.
+       */
+      const farNeed =
+        ctx.player.speed < pacing.slowPlayerSpeed
+          ? pacing.minAheadSpawnDistance
+          : pacing.farSpawnDistance;
+      if (!hidden && d < farNeed) continue;
       if (!ctx.world.isClear(x, z, 3.5)) continue;
       if (this.occupied(x, z)) continue;
 

@@ -184,7 +184,22 @@ export function patrolGoal(self: Vehicle, ctx: PursuitContext): Goal {
   const d = dist(self.x, self.z, ctx.player.x, ctx.player.z);
   const visible = ctx.world.lineOfSight(self.x, self.z, ctx.player.x, ctx.player.z);
 
-  if (visible && d < shared.directPursuitRange) {
+  /*
+   * Head-on is a different geometry from a tail chase. Closing speeds run ninety units
+   * a second, so a patrol that only commits inside the normal pursuit range meets you
+   * with a quarter second to aim - it blows past without ever being a threat. When the
+   * player is closing toward it, it commits from twice the range and aims at the
+   * intercept, which is what turns oncoming traffic into something you steer around.
+   */
+  const px = ctx.player.x - self.x;
+  const pz = ctx.player.z - self.z;
+  const closing = ctx.player.vx * -px + ctx.player.vz * -pz < -6 * d;
+  const commit = closing ? shared.directPursuitRange * 2 : shared.directPursuitRange;
+  if (visible && d < commit) {
+    if (closing) {
+      const aim = interceptPoint(self, ctx.player, 1.6);
+      return { kind: "direct", x: aim.x, z: aim.z };
+    }
     const lead = leadPoint(ctx.player, d < CONFIG.police.patrol.ramRange ? 0.12 : 0.35);
     return { kind: "direct", x: lead.x, z: lead.z };
   }

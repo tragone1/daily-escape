@@ -36,6 +36,8 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    // Reachable from a phone on the same wifi, for touch-control testing.
+    host: true,
   },
   build: {
     target: "es2020",

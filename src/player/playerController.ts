@@ -1,5 +1,6 @@
 /** Maps keyboard state onto vehicle input. Deliberately thin — the feel lives in Vehicle. */
 
+import { TOUCH } from "../touchControls";
 import type { Input } from "../input";
 import type { VehicleInput } from "../vehicle/vehicle";
 
@@ -26,6 +27,15 @@ export class PlayerController {
     this.input.steer = (right ? 1 : 0) - (left ? 1 : 0);
     // Edge-triggered: holding space does not chain boosts.
     this.input.boost = keys.wasPressed(...BOOST);
+    // Touch overlays keyboard whenever a thumb is down.
+    if (TOUCH.active) {
+      if (TOUCH.throttle > 0 || TOUCH.brake > 0) {
+        this.input.throttle = TOUCH.throttle;
+        this.input.brake = TOUCH.brake;
+      }
+      if (TOUCH.steer !== 0) this.input.steer = TOUCH.steer;
+      if (TOUCH.takeBoost()) this.input.boost = true;
+    }
     return this.input;
   }
 
@@ -35,6 +45,6 @@ export class PlayerController {
 
   /** Edge-triggered: one press, one rocket. */
   firePressed(keys: Input): boolean {
-    return keys.wasPressed(...FIRE);
+    return keys.wasPressed(...FIRE) || TOUCH.takeFire();
   }
 }

@@ -1,3 +1,4 @@
+import { TOUCH } from "./touchControls";
 import { CONFIG } from "./config";
 import { webgl2Problem } from "./compat";
 import { Game } from "./game";
@@ -27,6 +28,7 @@ if (problem) {
     const game = new Game(canvas);
     game.start();
     (window as unknown as { __game: Game }).__game = game;
+    TOUCH.attach();
     (window as unknown as { __cfg: typeof CONFIG }).__cfg = CONFIG;
   } catch (err) {
     report(err instanceof Error ? `${err.message}` : String(err));

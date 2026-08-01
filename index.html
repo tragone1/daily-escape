@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Daily Escape</title>
     <meta
       name="description"
@@ -28,6 +28,8 @@
       }
       * { box-sizing: border-box; }
       html, body {
+        touch-action: none;
+        overscroll-behavior: none;
         margin: 0;
         padding: 0;
         width: 100%;

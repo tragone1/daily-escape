@@ -7,6 +7,7 @@ import { Renderer } from "./gfx/renderer";
 
 import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
+import { DEBUG_JUGG, recordJuggernauts } from "./debugJugg";
 import { CONFIG } from "./config";
 import { Input } from "./input";
 import { clamp } from "./math";
@@ -301,6 +302,7 @@ export class Game {
     const progress = terrain.progressAt(this.player.x, this.player.z);
     this.ctx = this.police.buildContext(this.ctx);
     this.police.update(dt, this.ctx, progress, this.state.section);
+    if (DEBUG_JUGG) recordJuggernauts(this.police.units, this.player, this.elapsed);
 
     // --- Police deployables -------------------------------------------------
     const hazard = this.hazards.update(

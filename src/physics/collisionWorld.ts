@@ -150,10 +150,17 @@ export class CollisionWorld {
     const shareA = mb / total;
     const shareB = ma / total;
 
-    a.x += hit.nx * hit.depth * shareA;
-    a.z += hit.nz * hit.depth * shareA;
-    b.x -= hit.nx * hit.depth * shareB;
-    b.z -= hit.nz * hit.depth * shareB;
+    /*
+     * Against a jammed (anchored, infinite-mass) body the separation is metered:
+     * resolving the full overlap in one frame, while a wall resolves its own side,
+     * is the squeeze that fires cars out of the world. A quarter unit per frame
+     * eases the trapped car to the surface instead.
+     */
+    const jamCap = a.jam || b.jam ? Math.min(1, 0.25 / Math.max(0.25, hit.depth)) : 1;
+    a.x += hit.nx * hit.depth * shareA * jamCap;
+    a.z += hit.nz * hit.depth * shareA * jamCap;
+    b.x -= hit.nx * hit.depth * shareB * jamCap;
+    b.z -= hit.nz * hit.depth * shareB * jamCap;
 
     const rvx = a.vx - b.vx;
     const rvz = a.vz - b.vz;

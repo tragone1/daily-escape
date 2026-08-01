@@ -511,7 +511,14 @@ export class PoliceCar {
       const cfg = this.ambushTuning;
       const pd = dist(v.x, v.z, ctx.player.x, ctx.player.z);
       this.pinTimer -= dt;
-      if (this.pinTimer <= 0 || pd > cfg.pinLostRange) {
+      /*
+       * The first 1.3 seconds of a pin cannot be broken by range: a graze at fifty
+       * units a second is a touch that slides off before the grip forms, and the
+       * player reads it as a miss. Locking the early pin lets the magnet and the
+       * 1.75x drive reel them back in, so every touch becomes a felt grind.
+       */
+      const gripForming = cfg.pinTime - this.pinTimer < 1.3;
+      if (this.pinTimer <= 0 || (!gripForming && pd > cfg.pinLostRange)) {
         this.pinTimer = 0;
         this.springFrom = null;
         this.springExit = null;

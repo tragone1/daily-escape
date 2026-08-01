@@ -27,6 +27,8 @@ const live = new Map<PoliceCar, Incident>();
 const done: Incident[] = [];
 let nextId = 1;
 let panel: HTMLDivElement | null = null;
+/** Last time each big-class unit was reported near the player, for throttling. */
+const seenAt = new Map<PoliceCar, number>();
 
 export const DEBUG_JUGG = typeof location !== "undefined" && location.search.includes("debug");
 
@@ -82,6 +84,25 @@ export function recordJuggernauts(
   if (!DEBUG_JUGG) return;
   installJumpKeys();
   for (const u of units) {
+    /*
+     * Sightings: any big truck near the player gets logged with its true role and
+     * state, because a heavy idling in the open is visually identical to a
+     * juggernaut and has been misattributed to it for weeks.
+     */
+    if (u.active && (u.role === "heavy" || u.role === "elite" || u.role === "juggernaut")) {
+      const sd = Math.hypot(u.vehicle.x - player.x, u.vehicle.z - player.z);
+      if (sd < 55 && elapsed - (seenAt.get(u) ?? -99) > 6) {
+        seenAt.set(u, elapsed);
+        const state = u.ambushAt ? "armed-in-alley" : u.spent ? "spent" : "active";
+        try {
+          fetch("/debug-log", {
+            method: "POST",
+            body: "SEEN " + u.role + " " + state + " d=" + sd.toFixed(0) +
+              " spd=" + Math.hypot(u.vehicle.vx, u.vehicle.vz).toFixed(0),
+          }).catch(() => {});
+        } catch { /* fine */ }
+      }
+    }
     if (u.role !== "juggernaut") continue;
     let inc = live.get(u);
     if (u.active && u.ambushAt && (!inc || inc.outcome !== "")) {
@@ -142,5 +163,5 @@ export function recordJuggernauts(
   for (const [, inc] of live) {
     if (inc.outcome === "") lines.push(fmt({ ...inc, outcome: "..." }));
   }
-  ui().textContent = "JUGG DEBUG build-85 | keys 1-9,0 jump to section (shift +10)\n" + (lines.length ? lines.join("\n") : "(none yet)");
+  ui().textContent = "JUGG DEBUG build-86 | keys 1-9,0 jump to section (shift +10)\n" + (lines.length ? lines.join("\n") : "(none yet)");
 }

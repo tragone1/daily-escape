@@ -829,7 +829,7 @@ export class PoliceCar {
       // Fallen behind or crossed twenty ahead: the run is over - but the machine
       // gets ONE backed-up second attempt if its alley still lies ahead of the prey.
       const missed = this.isAmbusher && (along < -14 || along > 20);
-      if (missed && this.retries < 1 && this.lastMouth) {
+      if (missed && this.retries < 3 && this.lastMouth) {
         const mouthLead =
           ctx.terrain.progressAt(this.lastMouth.x, this.lastMouth.z) -
           ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
@@ -1202,12 +1202,21 @@ export class PoliceCar {
       const topRun = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
       const tAcc = topRun / aRun;
       const dAcc = 0.5 * aRun * tAcc * tAcc;
-      const rw = dist(v.x, v.z, mouth.x, mouth.z) + 7;
+      /*
+       * Lane-aware: the crossing distance is to the PLAYER'S lane, not the road
+       * centre. A near-lane player arrives at a shorter runway, a far-lane player
+       * a longer one - timing to the centre was why only centre-line passes were
+       * being caught.
+       */
+      const outX = this.ambushOut ? this.ambushOut.x : 0;
+      const outZ = this.ambushOut ? this.ambushOut.z : 0;
+      const laneDepth = Math.max(2, Math.min(14, (player.x - mouth.x) * outX + (player.z - mouth.z) * outZ));
+      const rw = dist(v.x, v.z, mouth.x, mouth.z) + laneDepth;
       const ourEtaE =
         0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
       // A shot that is already stale at first sight lands behind the player every
       // time - hold instead; a no-show is invisible, a tail-graze is a complaint.
-      if (theirEtaE < ourEtaE + cfg.leadTime - 0.25) return false;
+      if (theirEtaE < ourEtaE + cfg.leadTime - 0.6) return false;
       return theirEtaE <= ourEtaE + cfg.leadTime;
     }
     const lead =

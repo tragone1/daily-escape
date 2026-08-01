@@ -894,6 +894,16 @@ export class PoliceCar {
     if (d > 120) return null;
     if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
     /*
+     * The player's arrival time must be measured along the ROAD, not the chord. The
+     * road bends on the approach to nearly every spur, so straight-line distance
+     * always under-measures the drive - which made the gate fire early by the same
+     * margin on every launch, exactly as reported. Progress distance is the road.
+     */
+    const roadLead =
+      ctx.terrain.progressAt(mouth.x, mouth.z) -
+      ctx.terrain.progressAt(player.x, player.z);
+    if (roadLead < 2) return null;
+    /*
      * The equation of the broadside. The burst is a cannonball: it exits the mouth
      * at launch speed perpendicular to the road, and no steering can bend that
      * momentum afterwards - so WHEN it fires is everything. Fire when the player's
@@ -908,7 +918,7 @@ export class PoliceCar {
       0.2 +
       (dist(v.x, v.z, mouth.x, mouth.z) + 6) /
         Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
-    const tPlayer = d / Math.max(10, player.speed);
+    const tPlayer = roadLead / Math.max(10, player.speed);
     if (tPlayer > tSelf - 0.12) return null;
     return 1;
   }

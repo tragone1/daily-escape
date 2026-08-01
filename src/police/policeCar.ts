@@ -100,6 +100,8 @@ export class PoliceCar {
   }
   /** One backed-up second attempt per ambush, then it is spent for real. */
   private retries = 0;
+  /** Exit-phase deadline: geometry that never "clears" must not trap the strike. */
+  private exitClock = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
   aggro = 0;
   /**
@@ -236,6 +238,7 @@ export class PoliceCar {
     this.pinTimer = 0;
     this.glueLocal = null;
     this.retries = 0;
+    this.exitClock = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -316,6 +319,12 @@ export class PoliceCar {
     const v = this.vehicle;
     v.plow = false;
     v.jam = false;
+    // The strike owns the truck: a charge committing mid-ambush was a second driver
+    // fighting the wheel at the moment of contact.
+    if (this.isAmbusher && (this.ambushAt || this.springFrom || this.pinTimer > 0)) {
+      this.charging = false;
+      this.chargeTimer = 0;
+    }
 
     // A wreck: no driver, ever again. Let it coast to a stop and stay there.
     if (this.wrecked) {
@@ -452,11 +461,8 @@ export class PoliceCar {
         const oz = this.ambushAt.z - v.z;
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
+        this.exitClock = 1.2;
         if (this.isAmbusher) {
-          // The claw deploys: collider goes blade-wide for the strike only.
-          if (this.ambushTuning.bladeHalfWidth > 0) {
-            v.params = { ...v.params, halfWidth: this.ambushTuning.bladeHalfWidth };
-          }
           if (this.ambushOut) {
             this.lastMouth = {
               x: this.ambushAt.x,
@@ -724,11 +730,56 @@ export class PoliceCar {
       const cfg = this.ambushTuning;
       if (this.springExit) {
         const exit = this.springExit;
+        /*
+         * The exit phase ENDS, whatever the geometry says. A spur whose record makes
+         * the "cleared the mouth" dot product unsatisfiable trapped the strike in
+         * exit-mode forever: it hit the player with no homing, no pin, no weld ever
+         * running - the recurring hollow contact. Deadline, or player-close, or
+         * cleared: any of the three hands over to the homing.
+         */
+        this.exitClock -= dt;
         const cleared =
-          (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
+          (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5 ||
+          this.exitClock <= 0;
         if (cleared) {
           this.springExit = null;
+          /*
+           * The claw unfolds HERE, clear of the alley - deploying at fire wrapped a
+           * 6.8-wide collider in a 7-wide corridor, and the blade scraping both
+           * walls was the mystery brake that bled every launch to a crawl.
+           */
+          if (cfg.bladeHalfWidth > 0) {
+            v.params = { ...v.params, halfWidth: cfg.bladeHalfWidth };
+          }
         } else {
+          /*
+           * Contact DURING the exit still counts: alleys whose geometry never
+           * satisfies the cleared test (seat 88's species) meet the player while
+           * technically "exiting", and without this latch that contact had no pin,
+           * no weld, nothing - the recurring hollow touch. Latch here; the pin
+           * branch preempts from the next frame.
+           */
+          const pdE = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+          if (pdE < 5.8 && !this.glueLocal) {
+            const fxE = Math.sin(v.heading);
+            const fzE = Math.cos(v.heading);
+            const rxE = Math.cos(v.heading);
+            const rzE = -Math.sin(v.heading);
+            const relXE = ctx.player.x - v.x;
+            const relZE = ctx.player.z - v.z;
+            const relAlongE = relXE * fxE + relZE * fzE;
+            const relLatE = relXE * rxE + relZE * rzE;
+            if (relAlongE > v.params.halfLength - 1.6 && Math.abs(relLatE) < 3.6) {
+              this.glueLocal = {
+                along: v.params.halfLength + 1.1,
+                lateral: Math.max(-2.6, Math.min(2.6, relLatE)),
+              };
+              this.pinTimer = cfg.pinTime;
+              if (cfg.bladeHalfWidth > 0) {
+                v.params = { ...v.params, halfWidth: cfg.bladeHalfWidth };
+              }
+            }
+          }
           const aimX = this.springFrom.x + exit.x * 6;
           const aimZ = this.springFrom.z + exit.z * 6;
           this.input.throttle = 1;
@@ -758,7 +809,7 @@ export class PoliceCar {
          * gave the collision separation a frame to shove the player past the latch
          * window, and the joint never formed on half of dead-centre hits.
          */
-        if (pd0 < 7.5 && !this.glueLocal) {
+        if (pd0 < 5.8 && !this.glueLocal) {
           const fxL = Math.sin(v.heading);
           const fzL = Math.cos(v.heading);
           const rxL = Math.cos(v.heading);

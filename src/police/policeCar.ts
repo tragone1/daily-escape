@@ -458,8 +458,25 @@ export class PoliceCar {
           const exit = this.springExit;
           const cleared =
             (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
-          if (cleared) {
+          const playerDist = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+          if (cleared && playerDist <= cfg.strikeGo) {
             this.springExit = null;
+          } else if (
+            playerDist > cfg.strikeGo &&
+            dist(v.x, v.z, this.springFrom.x, this.springFrom.z) < 7
+          ) {
+            /*
+             * Poised at the mouth, target not yet in the window: hold. An optimistic
+             * spring used to send the whole run across an empty road into the far
+             * wall while the player watched it happen from sixty units back. The
+             * missile waits on the rail until the shot is real.
+             */
+            this.input.throttle = 0;
+            this.input.brake = v.speed > 1 ? 1 : 0;
+            this.input.steer = 0;
+            this.input.boost = false;
+            v.update(this.input, dt, ctx.terrain);
+            return;
           } else {
             const aimX = this.springFrom.x + exit.x * 6;
             const aimZ = this.springFrom.z + exit.z * 6;

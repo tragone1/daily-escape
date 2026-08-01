@@ -1201,7 +1201,8 @@ export const CONFIG = {
         pinRange: 5.4,
         pinTime: 4.5,
         pinLostRange: 14,
-        springRange: 46,
+        springRange: 40,
+        strikeGo: 46,
         turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
@@ -1442,13 +1443,27 @@ export const CONFIG = {
            */
           pinRange: 6.5,
           pinTime: 4.5,
-          pinLostRange: 14,
+          pinLostRange: 20,
           /**
            * Inside this range of the mouth the shot simply goes, whatever the timing
            * math says. A weaving, braking player made the ETA gate flicker closed
            * through its whole firing window and the unit died waiting for perfect.
            */
-          springRange: 70,
+          /**
+           * Wide on purpose: springing is now *pre-positioning*, not firing. The unit
+           * noses up to the mouth early and sits poised there; `strikeGo` is the
+           * trigger. Decoupling the two is what makes it a missile on a rail instead
+           * of a truck accelerating from cold as the player arrives.
+           */
+          springRange: 90,
+          /**
+           * The launch proper does not begin until the player is inside this range.
+           * An early spring - live timing fired optimistic, player braked - now means
+           * the unit noses up to the mouth and holds there, poised, instead of
+           * charging across an empty road into the far wall in front of an arriving
+           * player. Heat-seeking missiles wait on the rail.
+           */
+          strikeGo: 55,
           /**
            * Direct yaw assist while homing, rad/s^2 against the aim error. The chassis
            * is deliberately slow to steer everywhere else; the strike gets rails, so

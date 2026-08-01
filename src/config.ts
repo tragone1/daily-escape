@@ -1204,6 +1204,7 @@ export const CONFIG = {
         springRange: 40,
         strikeGo: 46,
         strikeTime: 12,
+        chaseSpeed: 0.2,
         turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
@@ -1458,7 +1459,13 @@ export const CONFIG = {
            */
           springRange: 90,
           /** Seconds of open-road hunting after leaving the alley before it is spent. */
-          strikeTime: 12,
+          strikeTime: 14,
+          /**
+           * Top-speed multiplier bonus for the whole hunt. 0.7 puts it near 73 u/s -
+           * a clear edge over even the section-29 player at 58 - because the contract
+           * is contact EVERY time, and a chase without a speed edge is a coin flip.
+           */
+          chaseSpeed: 0.7,
           /**
            * The launch proper does not begin until the player is inside this range.
            * An early spring - live timing fired optimistic, player braked - now means

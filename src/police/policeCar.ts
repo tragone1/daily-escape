@@ -412,7 +412,9 @@ export class PoliceCar {
         1,
       );
       this.input.boost = false;
-      v.drive = 1.15;
+      // The pin must be able to CATCH as well as hold - 1.15 lost any player who
+      // simply kept their foot down.
+      v.drive = 1.45;
       v.applySpin(
         clamp(
           wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading),
@@ -466,14 +468,48 @@ export class PoliceCar {
     if (this.isAmbusher && this.strikeTimer > 0) {
       const cfg = this.ambushTuning;
       this.strikeTimer -= dt;
-      if (dist(v.x, v.z, ctx.player.x, ctx.player.z) < cfg.pinRange) {
+      const pd = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      if (pd < cfg.pinRange) {
         this.pinTimer = cfg.pinTime;
       }
       if (this.strikeTimer <= 0) {
         this.spent = true;
         return;
       }
-      // No return: fall through to the ordinary drive - heavyGoal broadside + charge.
+      /*
+       * Relentless. The heavy handoff still danced - flank posture, charge windups -
+       * and dances can miss. The contract on this class is contact every single time,
+       * so the hunt is a plain chase-down: aim just through a short lead on the
+       * player, hold a hard speed edge, rails on, and back off to re-point when a
+       * wall interrupts. Nothing here ever declares a miss; only the clock or the
+       * pin ends it.
+       */
+      const lead = interceptPoint(v, ctx.player, 0.6);
+      const tx = lead.x - v.x;
+      const tz = lead.z - v.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      const aimX = lead.x + (tx / tl) * 3;
+      const aimZ = lead.z + (tz / tl) * 3;
+      const err = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
+      if (v.speed < 5 && Math.abs(err) > 0.7) {
+        this.input.throttle = 0;
+        this.input.brake = 1;
+        this.input.steer = err > 0 ? -1 : 1;
+        this.input.boost = false;
+        v.drive = 1;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
+      this.input.throttle = 1;
+      this.input.brake = 0;
+      this.input.steer = clamp(err / CONFIG.police.shared.steerFullLockAngle, -1, 1);
+      this.input.boost = false;
+      v.drive = 1 + cfg.chaseSpeed;
+      // Double rails inside twenty units: the last half car length is where a swerve
+      // used to buy a graze instead of a hit.
+      v.applySpin(clamp(err, -0.8, 0.8) * cfg.turnAssist * (pd < 20 ? 2 : 1) * dt);
+      v.update(this.input, dt, ctx.terrain);
+      return;
     }
 
     if (this.springFrom) {

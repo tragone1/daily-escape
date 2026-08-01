@@ -613,7 +613,7 @@ export class PoliceCar {
            * pocket, the exaggerated real-life crush where the metal digs in and
            * holds, rather than kissing the surface.
            */
-          if (relAlong > v.params.halfLength - 2.0 && Math.abs(relLat) < 4.2) {
+          if (relAlong > v.params.halfLength - 2.0 && Math.abs(relLat) < 4.6) {
             this.glueLocal = {
               along: v.params.halfLength + 1.1,
               lateral: Math.max(-3.0, Math.min(3.0, relLat)),
@@ -740,7 +740,7 @@ export class PoliceCar {
            * branch preempts from the next frame.
            */
           const pdE = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-          if (pdE < 5.8 && !this.glueLocal) {
+          if (pdE < 7.2 && !this.glueLocal) {
             const fxE = Math.sin(v.heading);
             const fzE = Math.cos(v.heading);
             const rxE = Math.cos(v.heading);
@@ -749,7 +749,7 @@ export class PoliceCar {
             const relZE = ctx.player.z - v.z;
             const relAlongE = relXE * fxE + relZE * fzE;
             const relLatE = relXE * rxE + relZE * rzE;
-            if (relAlongE > v.params.halfLength - 2.0 && Math.abs(relLatE) < 4.2) {
+            if (relAlongE > v.params.halfLength - 2.0 && Math.abs(relLatE) < 4.6) {
               this.glueLocal = {
                 along: v.params.halfLength + 1.1,
                 lateral: Math.max(-3.0, Math.min(3.0, relLatE)),
@@ -780,29 +780,50 @@ export class PoliceCar {
           const dzTE = v.z - ctx.player.z;
           let schedE = 2;
           let lateE = 0;
+          let approachingE = false;
+          let lineDistE = 999;
           if (pSpdE > 2) {
             const alongPE = (dxTE * ctx.player.vx + dzTE * ctx.player.vz) / pSpdE;
             const latDE = Math.abs(dxTE * ctx.player.vz - dzTE * ctx.player.vx) / pSpdE;
             const tLevelE = alongPE > 0.5 ? alongPE / pSpdE : 0;
+            approachingE = alongPE > 0.5;
             // Accel-honest time to their line - a flat speed guess told a truck
             // holding at rest it could cross instantly, so it released its hold
             // too late and spooled up car-lengths short.
             const aRunE = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-            const dLatE = Math.max(0, latDE - 3.5);
+            // Our real path runs along the alley axis - for an oblique spur the
+            // crossing point is farther than the perpendicular distance by
+            // 1/sin(angle), and using the short number made every oblique seat
+            // read "early" and mistime under dynamics.
+            lineDistE = latDE;
+            const pdxE = ctx.player.vx / pSpdE;
+            const pdzE = ctx.player.vz / pSpdE;
+            const denE = exit.x * pdzE - exit.z * pdxE;
+            if (Math.abs(denE) > 0.25) {
+              const sE = (-dxTE * pdzE + dzTE * pdxE) / denE;
+              if (sE > 0) lineDistE = Math.min(sE, latDE * 3);
+            }
+            const dLatE = Math.max(0, lineDistE - 3.5);
             const tMineE = (Math.sqrt(v.speed * v.speed + 2 * aRunE * dLatE) - v.speed) / aRunE;
             schedE = tLevelE - tMineE;
             lateE = schedE;
           }
           if (schedE > 0.9 && pdE > 14) {
-            exThrottle = 0;
-            exBrake = 1;
+            // Hold at the LIP: a piston poised 10 from the crossing line lunges
+            // in ~0.6s; one parked 20 back needs 1.4s of spool and scatters.
             this.exitClock = Math.max(this.exitClock, 0.35);
+            if (lineDistE > 12 && v.speed < 16) {
+              exThrottle = 0.6;
+            } else {
+              exThrottle = 0;
+              exBrake = 1;
+            }
           } else if (schedE > 0.35 && pdE > 12) {
             // The middle band: a knock that slows the player reads moderately
             // early - without this taper the truck crosses car-lengths ahead.
             exThrottle = Math.max(0.3, 1 - (schedE - 0.35) * 1.4);
             this.exitClock = Math.max(this.exitClock, 0.2);
-          } else if (lateE < -0.04) {
+          } else if (lateE < -0.04 && v.speed < 46 && (approachingE || pdE < 25)) {
             // Honest lateness picks WHEN to burn; how hard gears off how much the
             // player has outrun the speed the launch was solved for. A punctual
             // pass burns mildly, a boosting one gets the full afterburner.
@@ -839,7 +860,7 @@ export class PoliceCar {
          * gave the collision separation a frame to shove the player past the latch
          * window, and the joint never formed on half of dead-centre hits.
          */
-        if (pd0 < 5.8 && !this.glueLocal) {
+        if (pd0 < 7.2 && !this.glueLocal) {
           const fxL = Math.sin(v.heading);
           const fzL = Math.cos(v.heading);
           const rxL = Math.cos(v.heading);
@@ -1037,6 +1058,8 @@ export class PoliceCar {
          */
         let strikeSched: number | null = null;
         let strikeLate: number | null = null;
+        let strikeApproaching = false;
+        let strikeLineDist = 999;
         if (this.isAmbusher) {
           const pSpdS = Math.hypot(ctx.player.vx, ctx.player.vz);
           const dxT = v.x - ctx.player.x;
@@ -1045,9 +1068,24 @@ export class PoliceCar {
             const alongP = (dxT * ctx.player.vx + dzT * ctx.player.vz) / pSpdS;
             const latD = Math.abs(dxT * ctx.player.vz - dzT * ctx.player.vx) / pSpdS;
             const tLevel = alongP > 0.5 ? alongP / pSpdS : 0;
+            strikeApproaching = alongP > 0.5;
             // Accel-honest time to their line, same kinematics as the launch gate.
             const aRunS = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-            const dLatS = Math.max(0, latD - 3.5);
+            // Same oblique correction as the exit clock, along our actual velocity.
+            let lineDistS = latD;
+            if (v.speed > 8) {
+              const pdxS = ctx.player.vx / pSpdS;
+              const pdzS = ctx.player.vz / pSpdS;
+              const vdxS = v.vx / v.speed;
+              const vdzS = v.vz / v.speed;
+              const denS = vdxS * pdzS - vdzS * pdxS;
+              if (Math.abs(denS) > 0.25) {
+                const sS = (-dxT * pdzS + dzT * pdxS) / denS;
+                if (sS > 0) lineDistS = Math.max(latD, Math.min(sS, latD * 2.5));
+              }
+            }
+            strikeLineDist = lineDistS;
+            const dLatS = Math.max(0, lineDistS - 3.5);
             const tMineS = (Math.sqrt(v.speed * v.speed + 2 * aRunS * dLatS) - v.speed) / aRunS;
             strikeSched = tLevel - tMineS;
             strikeLate = strikeSched;
@@ -1099,9 +1137,13 @@ export class PoliceCar {
         let strikeDrive = 1 + cfg.launchSpeedBonus;
         if (this.isAmbusher && strikeSched !== null && tl > 12) {
           if (strikeSched > 0.9) {
-            strikeThrottle = 0;
-            strikeBrake = 1;
             strikeDrive = 1;
+            if (strikeLineDist > 12 && v.speed < 16) {
+              strikeThrottle = 0.6;
+            } else {
+              strikeThrottle = 0;
+              strikeBrake = 1;
+            }
           } else if (strikeSched > 0.35) {
             strikeThrottle = Math.max(0.35, 1 - (strikeSched - 0.35) * 1.4);
             strikeDrive = 1 + cfg.chaseSpeed * 0.4;
@@ -1109,7 +1151,14 @@ export class PoliceCar {
         }
         // Afterburner: runs on the honest clock and all the way into terminal range -
         // the boost-away misses happened at 7-12 units out, inside the old tl guard.
-        if (this.isAmbusher && strikeLate !== null && strikeLate < -0.04 && tl > 6) {
+        if (
+          this.isAmbusher &&
+          strikeLate !== null &&
+          strikeLate < -0.04 &&
+          tl > 6 &&
+          v.speed < 46 &&
+          (strikeApproaching || tl < 25)
+        ) {
           const pSpdB = Math.hypot(ctx.player.vx, ctx.player.vz);
           const ratioB = Math.min(2.6, Math.max(1, (pSpdB / Math.max(8, this.springPSpd)) ** 2));
           const late = Math.min(1.6, Math.min(1, (-strikeLate - 0.04) * 8) * ratioB);

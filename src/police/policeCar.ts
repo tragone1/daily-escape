@@ -63,6 +63,8 @@ export class PoliceCar {
   private reverseTimer = 0;
   /** Latched turn direction for near-180-degree corrections; 0 = not turning around. */
   private turnSign = 0;
+  /** Latched dodge side for a narrow obstacle dead ahead; 0 = nothing to dodge. */
+  private dodgeSign = 0;
 
   /**
    * Charge state. `chargeTimer` counts down through the wind-up and then the run itself;
@@ -179,6 +181,7 @@ export class PoliceCar {
     this.stuckTotal = 0;
     this.reverseTimer = 0;
     this.turnSign = 0;
+    this.dodgeSign = 0;
     this.chargeTimer = 0;
     this.chargeCooldown = 0;
     this.charging = false;
@@ -356,6 +359,30 @@ export class PoliceCar {
         }
         this.ambushAt = null;
       } else {
+        /*
+         * Pre-stage while armed: creep from the seat depth up to a hold point a car
+         * length inside the mouth. A truck launching from deep in the alley needs
+         * 1.4 seconds to reach the road, and no half-second-honest gate can predict
+         * a player that far out - staged at the mouth its launch is ~0.5s, which is
+         * inside the window the timing math genuinely controls.
+         */
+        const mouth = this.ambushAt;
+        const toMouth = dist(v.x, v.z, mouth.x, mouth.z);
+        if (this.isAmbusher && toMouth > 7) {
+          this.input.throttle = v.speed > 13 ? 0 : 0.7;
+          this.input.brake = 0;
+          this.input.steer = clamp(
+            wrapAngle(headingOf(mouth.x - v.x, mouth.z - v.z) - v.heading) /
+              CONFIG.police.shared.steerFullLockAngle,
+            -1,
+            1,
+          );
+          this.input.boost = false;
+          this.view.setCharge(0);
+          v.drive = 1;
+          v.update(this.input, dt, ctx.terrain);
+          return;
+        }
         this.input.throttle = 0;
         this.input.brake = v.speed > 1 ? 1 : 0;
         this.input.steer = 0;
@@ -495,27 +522,13 @@ export class PoliceCar {
        * contact, which is the contract.
        */
       /*
-       * Beyond pounce range, the truck does not sail across the road - it POSTS UP:
-       * kills its crossing momentum in the player's lane, squares to face them, and
-       * becomes the rolling roadblock the player praised the regular cops for. Any
-       * gate error in either direction now degrades into a block in your path
-       * instead of a truck vanishing ahead. The pounce is the last 18 units, from a
-       * standing set, straight into the magnet's envelope.
+       * No posting up. Braking to a set and pouncing the last stretch from zero
+       * speed lost every race to a player crossing at forty - the pounce needs its
+       * momentum. Pure pursuit runs from the first frame out of the alley: against
+       * an approaching player that reads as the truck coming across INTO you or
+       * standing you up nose-to-nose (the block, sanctioned), never sailing past,
+       * because the aim is the body itself, recomputed every frame.
        */
-      if (pd > 18) {
-        const errB = wrapAngle(
-          headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading,
-        );
-        this.input.throttle = v.speed < 4 ? 0.3 : 0;
-        this.input.brake = v.speed > 10 ? 0.7 : 0;
-        this.input.steer = clamp(errB / CONFIG.police.shared.steerFullLockAngle, -1, 1);
-        this.input.boost = false;
-        v.drive = 1;
-        v.contactBoost = 4;
-        v.applySpin(clamp(errB, -0.8, 0.8) * cfg.turnAssist * dt);
-        v.update(this.input, dt, ctx.terrain);
-        return;
-      }
       const aimX = ctx.player.x + ctx.player.vx * 0.1;
       const aimZ = ctx.player.z + ctx.player.vz * 0.1;
       const err = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
@@ -916,6 +929,16 @@ export class PoliceCar {
       this.spent = true;
       return null;
     }
+    /*
+     * Only a STAGED truck may fire. A shot from mid-creep carries a second-long
+     * horizon, and a player who gets rammed or brakes inside that second turns it
+     * into the face-cross. From the hold point the horizon is under half a second -
+     * the only window the gate genuinely controls. If the player arrives before
+     * staging completes, there is no shot; a no-show is invisible, a face-cross is
+     * a broken promise.
+     */
+    const v0 = this.vehicle;
+    if (dist(v0.x, v0.z, mouth.x, mouth.z) > 9) return null;
     const player = ctx.player;
     const d = dist(player.x, player.z, mouth.x, mouth.z);
     if (d > 120) return null;
@@ -1340,8 +1363,24 @@ export class PoliceCar {
     const right = probe(cfg.avoidAngle);
     const ahead = probe(0);
 
+    /*
+     * A prop block dead ahead is narrower than the fan: the side rays pass either
+     * side of it and report clear, the bias cancels to zero, and the unit drives
+     * into the same block forever - reversing out and driving straight back in.
+     * When the centre is blocked and the sides cannot break the tie, commit to a
+     * side and hold the commitment until the nose is genuinely clear; flip-flopping
+     * per frame is how the block wins.
+     */
+    let bias = (right - left) * cfg.avoidStrength;
+    if (ahead < 0.55 && Math.abs(right - left) < 0.18) {
+      if (this.dodgeSign === 0) this.dodgeSign = right >= left ? 1 : -1;
+      bias += this.dodgeSign * cfg.avoidStrength;
+    } else if (ahead > 0.9) {
+      this.dodgeSign = 0;
+    }
+
     return {
-      steerBias: (right - left) * cfg.avoidStrength,
+      steerBias: bias,
       // Back off the throttle when there is something close directly in front.
       throttleScale: ahead < 0.5 ? 0.35 + ahead : 1,
       aheadBlocked: ahead < 0.45,
@@ -1431,6 +1470,7 @@ export class PoliceCar {
     this.stuckTotal = 0;
     this.reverseTimer = 0;
     this.turnSign = 0;
+    this.dodgeSign = 0;
   }
 
   syncView(dt: number, elapsed: number, groundY = 0): void {

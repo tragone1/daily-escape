@@ -213,6 +213,8 @@ export class Renderer {
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", {
+      // Lets the canvas be read back (screenshots, future share cards); negligible cost.
+      preserveDrawingBuffer: true,
       antialias: true,
       alpha: false,
       powerPreference: "high-performance",

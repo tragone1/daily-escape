@@ -382,14 +382,28 @@ export const SMOOTH_LEGS: LegDef[] = SMOOTHED.micro;
   for (let sIdx = 0; sIdx < SECTION_COUNT; sIdx++) {
     SECTION_STARTS[sIdx] = SMOOTHED.controlProgress[GENERATED.sectionFirstLeg[sIdx]];
   }
-  const controlByKey = new Map<string, number>();
-  for (let i = 0; i < MAIN_LEGS.length; i++) {
-    const l = MAIN_LEGS[i];
-    controlByKey.set(l.x.toFixed(2) + ":" + l.z.toFixed(2), SMOOTHED.controlProgress[i + 1]);
-  }
+  /*
+   * Nearest control, never a string match. The exact-key lookup silently missed any
+   * spur whose mouth coordinates differed from the control by a rounding hair - and
+   * a miss left the spur carrying PRE-SMOOTHING progress, a different scale that
+   * drifts hundreds of units along the course. Those spurs were invisible to the
+   * ambush director's seating window (and mis-timed when they did seat), which is
+   * why juggernauts all but vanished from real runs and fired at phantom leads
+   * when they appeared. Every mouth sits on a control; the nearest one within a
+   * few units IS its control.
+   */
   for (const spur of SPURS) {
-    const hit = controlByKey.get(spur.ax.toFixed(2) + ":" + spur.az.toFixed(2));
-    if (hit !== undefined) spur.progress = hit;
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < MAIN_LEGS.length; i++) {
+      const l = MAIN_LEGS[i];
+      const d = (l.x - spur.ax) * (l.x - spur.ax) + (l.z - spur.az) * (l.z - spur.az);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best >= 0 && bd < 36) spur.progress = SMOOTHED.controlProgress[best + 1];
   }
 }
 

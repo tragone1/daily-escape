@@ -652,7 +652,14 @@ export class PoliceManager {
         }
       }
       if (claimed) continue;
-      const t = pacing.ambushDepth;
+      /*
+       * FIXED seat depth: sixteen units in from the mouth, every alley. The old
+       * proportional depth made the launch runway vary from ~17 to ~65 units by
+       * spur, so no single gate timing could ever be right - the source of the
+       * eternal early/late scatter. One runway, one launch time, one calibration.
+       */
+      const len = Math.hypot(dx - mx, dz - mz);
+      const t = Math.min(0.85, 16 / Math.max(1, len));
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;
       if (Math.hypot(x - mx, z - mz) < 5) continue;

@@ -167,6 +167,7 @@ export class PoliceCar {
       ),
       params.halfLength,
       params.halfWidth,
+      role === "juggernaut",
     );
   }
 
@@ -528,12 +529,6 @@ export class PoliceCar {
         this.spent = true;
         return;
       }
-      // Gravity holds through the pin: escaping the grind means outrunning the well.
-      if (cfg.gravity > 0 && pd < cfg.gravityRange && pd > 0.5) {
-        const gx = (v.x - ctx.player.x) / pd;
-        const gz = (v.z - ctx.player.z) / pd;
-        ctx.player.applyImpulse(gx * cfg.gravity * dt, gz * cfg.gravity * dt);
-      }
       const pinErr = wrapAngle(
         headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading,
       );
@@ -681,12 +676,6 @@ export class PoliceCar {
         const nx = (ctx.player.x - v.x) / pd;
         const nz = (ctx.player.z - v.z) / pd;
         v.applyImpulse(nx * 120 * dt, nz * 120 * dt);
-      }
-      // The gravity well: the player is pulled into the clutches, not just chased.
-      if (cfg.gravity > 0 && pd < cfg.gravityRange && pd > 0.5) {
-        const gx = (v.x - ctx.player.x) / pd;
-        const gz = (v.z - ctx.player.z) / pd;
-        ctx.player.applyImpulse(gx * cfg.gravity * dt, gz * cfg.gravity * dt);
       }
       // Triple rails inside twenty units: the last half car length is where a swerve
       // used to buy a graze instead of a hit.

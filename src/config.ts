@@ -723,8 +723,13 @@ export const CONFIG = {
         steerRateMax: 1.95,
         gripNormal: 9.2,
         mass: 5.0,
-        halfLength: 3.4,
-        halfWidth: 1.72,
+        /*
+         * The claw. The nose carries a snowplow blade wider than a lane, so the
+         * collider is a wall: halfWidth 3.1 means anything the blade visually
+         * reaches is physically caught, and a near-miss is now a catch.
+         */
+        halfLength: 3.8,
+        halfWidth: 3.1,
       }),
       /** Shrugs off almost everything: hits barely slow it and shoves barely move it. */
       impactResistance: 0.35,
@@ -1212,8 +1217,6 @@ export const CONFIG = {
         strikeTime: 12,
         chaseSpeed: 0.2,
         burstWindow: 9,
-        gravity: 0,
-        gravityRange: 0,
         turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
@@ -1486,14 +1489,6 @@ export const CONFIG = {
            * the prediction horizon is well under a second, too short to drift.
            */
           burstWindow: 9,
-          /**
-           * The gravity well, by request "super insane": while the strike or pin is
-           * live and the player is inside `gravityRange`, their car is pulled toward
-           * the truck at `gravity` u/s^2. Ninety is boost-strength-and-a-half of pure
-           * abduction - escape vectors bend back into the clutches.
-           */
-          gravity: 90,
-          gravityRange: 30,
           /**
            * Top-speed multiplier bonus for the whole hunt. 0.7 puts it near 73 u/s -
            * a clear edge over even the section-29 player at 58 - because the contract

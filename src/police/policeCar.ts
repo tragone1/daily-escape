@@ -102,6 +102,7 @@ export class PoliceCar {
   private retries = 0;
   /** Exit-phase deadline: geometry that never "clears" must not trap the strike. */
   private exitClock = 0;
+  private springPSpd = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
   aggro = 0;
   /**
@@ -435,6 +436,9 @@ export class PoliceCar {
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
         this.exitClock = 1.2;
+        // The launch plan was solved for THIS player speed; the burn gears off
+        // how far they deviate from it.
+        this.springPSpd = Math.max(8, Math.hypot(ctx.player.vx, ctx.player.vz));
         if (this.isAmbusher) {
           if (this.ambushOut) {
             this.lastMouth = {
@@ -609,10 +613,10 @@ export class PoliceCar {
            * pocket, the exaggerated real-life crush where the metal digs in and
            * holds, rather than kissing the surface.
            */
-          if (relAlong > v.params.halfLength - 1.6 && Math.abs(relLat) < 3.6) {
+          if (relAlong > v.params.halfLength - 2.0 && Math.abs(relLat) < 4.2) {
             this.glueLocal = {
               along: v.params.halfLength + 1.1,
-              lateral: Math.max(-2.6, Math.min(2.6, relLat)),
+              lateral: Math.max(-3.0, Math.min(3.0, relLat)),
             };
           }
         }
@@ -745,10 +749,10 @@ export class PoliceCar {
             const relZE = ctx.player.z - v.z;
             const relAlongE = relXE * fxE + relZE * fzE;
             const relLatE = relXE * rxE + relZE * rzE;
-            if (relAlongE > v.params.halfLength - 1.6 && Math.abs(relLatE) < 3.6) {
+            if (relAlongE > v.params.halfLength - 2.0 && Math.abs(relLatE) < 4.2) {
               this.glueLocal = {
                 along: v.params.halfLength + 1.1,
-                lateral: Math.max(-2.6, Math.min(2.6, relLatE)),
+                lateral: Math.max(-3.0, Math.min(3.0, relLatE)),
               };
               this.pinTimer = cfg.pinTime;
               if (cfg.bladeHalfWidth > 0) {
@@ -756,10 +760,60 @@ export class PoliceCar {
               }
             }
           }
+          /*
+           * The exit phase OWNS the terminal encounter - the gate fires when the
+           * player is ~0.85s out and the exit takes ~1.3s, so contact lands here,
+           * not in the homing branch. An open-loop exit made the whole strike only
+           * as good as the launch calibration: a player who braked to a stop met a
+           * truck barrelling across their empty lane, one who boosted crossed
+           * behind a truck still nosing out. Same two clocks as the strike:
+           * stalled player -> hold HIDDEN mid-alley with the clock pinned (the
+           * strike resumes when they do; a receding player reads late, which
+           * drives the exit to complete and the homing give-up to run - no
+           * statues); running late -> afterburner straight down the alley axis,
+           * the one direction that cannot scrape a wall.
+           */
+          let exThrottle = 1;
+          let exBrake = 0;
+          const pSpdE = Math.hypot(ctx.player.vx, ctx.player.vz);
+          const dxTE = v.x - ctx.player.x;
+          const dzTE = v.z - ctx.player.z;
+          let schedE = 2;
+          let lateE = 0;
+          if (pSpdE > 2) {
+            const alongPE = (dxTE * ctx.player.vx + dzTE * ctx.player.vz) / pSpdE;
+            const latDE = Math.abs(dxTE * ctx.player.vz - dzTE * ctx.player.vx) / pSpdE;
+            const tLevelE = alongPE > 0.5 ? alongPE / pSpdE : 0;
+            // Accel-honest time to their line - a flat speed guess told a truck
+            // holding at rest it could cross instantly, so it released its hold
+            // too late and spooled up car-lengths short.
+            const aRunE = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
+            const dLatE = Math.max(0, latDE - 3.5);
+            const tMineE = (Math.sqrt(v.speed * v.speed + 2 * aRunE * dLatE) - v.speed) / aRunE;
+            schedE = tLevelE - tMineE;
+            lateE = schedE;
+          }
+          if (schedE > 0.9 && pdE > 14) {
+            exThrottle = 0;
+            exBrake = 1;
+            this.exitClock = Math.max(this.exitClock, 0.35);
+          } else if (schedE > 0.35 && pdE > 12) {
+            // The middle band: a knock that slows the player reads moderately
+            // early - without this taper the truck crosses car-lengths ahead.
+            exThrottle = Math.max(0.3, 1 - (schedE - 0.35) * 1.4);
+            this.exitClock = Math.max(this.exitClock, 0.2);
+          } else if (lateE < -0.04) {
+            // Honest lateness picks WHEN to burn; how hard gears off how much the
+            // player has outrun the speed the launch was solved for. A punctual
+            // pass burns mildly, a boosting one gets the full afterburner.
+            const ratioE = Math.min(2.6, Math.max(1, (pSpdE / this.springPSpd) ** 2));
+            const lateF = Math.min(1.6, Math.min(1, (-lateE - 0.04) * 8) * ratioE);
+            v.applyImpulse(exit.x * 340 * lateF * dt, exit.z * 340 * lateF * dt);
+          }
           const aimX = this.springFrom.x + exit.x * 6;
           const aimZ = this.springFrom.z + exit.z * 6;
-          this.input.throttle = 1;
-          this.input.brake = 0;
+          this.input.throttle = exThrottle;
+          this.input.brake = exBrake;
           this.input.steer = clamp(
             wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading) /
               CONFIG.police.shared.steerFullLockAngle,
@@ -797,7 +851,7 @@ export class PoliceCar {
           if (relAlongL > v.params.halfLength - 1.6 && Math.abs(relLatL) < 3.6) {
             this.glueLocal = {
               along: v.params.halfLength + 1.1,
-              lateral: Math.max(-2.6, Math.min(2.6, relLatL)),
+              lateral: Math.max(-3.0, Math.min(3.0, relLatL)),
             };
             this.pinTimer = cfg.pinTime;
           }
@@ -968,8 +1022,46 @@ export class PoliceCar {
          * jam set, so contact pushes and digs instead of bouncing - the slam
          * impulse never gets the chance to throw the player clear before the weld.
          */
+        /*
+         * Schedule error, re-solved every frame: tLevel is when the player draws
+         * level with us (their along-track gap over their actual speed), tMine our
+         * pessimistic time to cross their line. Positive = we are early, negative =
+         * late. Computed before the aim so a late run can also stretch its lead.
+         */
+        /*
+         * Two clocks: the EASE side stays pessimistic about our speed (+14 credit)
+         * so a punctual launch never reads early and gets throttled - but that same
+         * credit hides real lateness, which is why every boost-away pass read as
+         * "barely late" while missing astern by car-lengths. Late detection gets an
+         * honest clock instead.
+         */
+        let strikeSched: number | null = null;
+        let strikeLate: number | null = null;
+        if (this.isAmbusher) {
+          const pSpdS = Math.hypot(ctx.player.vx, ctx.player.vz);
+          const dxT = v.x - ctx.player.x;
+          const dzT = v.z - ctx.player.z;
+          if (pSpdS > 2) {
+            const alongP = (dxT * ctx.player.vx + dzT * ctx.player.vz) / pSpdS;
+            const latD = Math.abs(dxT * ctx.player.vz - dzT * ctx.player.vx) / pSpdS;
+            const tLevel = alongP > 0.5 ? alongP / pSpdS : 0;
+            // Accel-honest time to their line, same kinematics as the launch gate.
+            const aRunS = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
+            const dLatS = Math.max(0, latD - 3.5);
+            const tMineS = (Math.sqrt(v.speed * v.speed + 2 * aRunS * dLatS) - v.speed) / aRunS;
+            strikeSched = tLevel - tMineS;
+            strikeLate = strikeSched;
+          } else {
+            strikeSched = 2; // player stalled: hold, do not overshoot their line
+          }
+        }
+        // Late runs aim further ahead of the player - a stern chase becomes a cut-off.
+        const leadT =
+          strikeLate !== null && strikeLate < -0.04
+            ? 0.08 + Math.min(0.5, (-strikeLate - 0.04) * 1.6)
+            : 0.08;
         const lead = this.isAmbusher
-          ? { x: ctx.player.x + ctx.player.vx * 0.08, z: ctx.player.z + ctx.player.vz * 0.08 }
+          ? { x: ctx.player.x + ctx.player.vx * leadT, z: ctx.player.z + ctx.player.vz * leadT }
           : interceptPoint(v, ctx.player, 1.4);
         const tx = lead.x - v.x;
         const tz = lead.z - v.z;
@@ -990,8 +1082,41 @@ export class PoliceCar {
           x: lead.x + (tx / tl) * depth,
           z: lead.z + (tz / tl) * depth,
         };
-        this.input.throttle = 1;
-        this.input.brake = 0;
+        /*
+         * CLOSED-LOOP INTERCEPT: the launch gate solved the rendezvous once, from the
+         * seat; nothing after launch re-checked it, so a player who braked, boosted or
+         * got knocked mid-approach met a truck still flying the stale solution. The
+         * regulator has symmetric authority over the schedule error:
+         *   very early -> hard brake (a 0.35-throttle floor cannot stop 35 speed;
+         *                 the stop-and-go overshoots proved it),
+         *   early      -> ease off and let them arrive,
+         *   on time    -> inert, full launch drive,
+         *   late       -> afterburner thrust toward the (already stretched) aim -
+         *                 every boost-away miss was a stern pass of 4-9 units.
+         */
+        let strikeThrottle = 1;
+        let strikeBrake = 0;
+        let strikeDrive = 1 + cfg.launchSpeedBonus;
+        if (this.isAmbusher && strikeSched !== null && tl > 12) {
+          if (strikeSched > 0.9) {
+            strikeThrottle = 0;
+            strikeBrake = 1;
+            strikeDrive = 1;
+          } else if (strikeSched > 0.35) {
+            strikeThrottle = Math.max(0.35, 1 - (strikeSched - 0.35) * 1.4);
+            strikeDrive = 1 + cfg.chaseSpeed * 0.4;
+          }
+        }
+        // Afterburner: runs on the honest clock and all the way into terminal range -
+        // the boost-away misses happened at 7-12 units out, inside the old tl guard.
+        if (this.isAmbusher && strikeLate !== null && strikeLate < -0.04 && tl > 6) {
+          const pSpdB = Math.hypot(ctx.player.vx, ctx.player.vz);
+          const ratioB = Math.min(2.6, Math.max(1, (pSpdB / Math.max(8, this.springPSpd)) ** 2));
+          const late = Math.min(1.6, Math.min(1, (-strikeLate - 0.04) * 8) * ratioB);
+          v.applyImpulse((tx / tl) * 340 * late * dt, (tz / tl) * 340 * late * dt);
+        }
+        this.input.throttle = strikeThrottle;
+        this.input.brake = strikeBrake;
         this.input.steer = clamp(
           wrapAngle(headingOf(aim.x - v.x, aim.z - v.z) - v.heading) /
             CONFIG.police.shared.steerFullLockAngle,
@@ -999,7 +1124,7 @@ export class PoliceCar {
           1,
         );
         this.input.boost = false;
-        v.drive = 1 + cfg.launchSpeedBonus;
+        v.drive = strikeDrive;
         // The strike gets rails: direct yaw toward the aim, so late swerves are tracked.
         v.applySpin(
           clamp(wrapAngle(headingOf(aim.x - v.x, aim.z - v.z) - v.heading), -0.8, 0.8) *

@@ -563,9 +563,10 @@ export class PoliceManager {
     const first = this.pickSpawnMode();
     const order: SpawnMode[] = [first, ...SPAWN_MODES.filter((m) => m !== first)];
 
+    // Spurs are the juggernaut's and nobody else's - see spawnWeights.
     for (const mode of order) {
-      if (mode === "ambush" && this.spawnInSpur(unit, ctx, playerProgress)) return true;
-      if (mode !== "ambush" && this.spawnOnRoute(unit, ctx, playerProgress, mode)) return true;
+      if (mode === "ambush") continue;
+      if (this.spawnOnRoute(unit, ctx, playerProgress, mode)) return true;
     }
     return false;
   }

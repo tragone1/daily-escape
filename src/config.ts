@@ -1117,7 +1117,14 @@ export const CONFIG = {
        * More weight plus a deeper ladder means a near-constant stream arriving from up
        * the road, every one of them spawned beyond sight-distance and driving in.
        */
-      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 3.0 },
+      /**
+       * Ambush weight is ZERO and the spawn loop skips spurs for main-fleet units
+       * entirely: heavies and elites seated in alleys ran the old launch timing and
+       * are visually identical to a juggernaut mid-burst - every "juggernaut crossed
+       * in front of me" report survived the juggernaut fixes because most of those
+       * trucks were never juggernauts. Alleys belong to the specialist, full stop.
+       */
+      spawnWeights: { ambush: 0, side: 3.0, behind: 4.0, ahead: 4.5 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.

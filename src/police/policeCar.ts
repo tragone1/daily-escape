@@ -609,7 +609,7 @@ export class PoliceCar {
            * pocket, the exaggerated real-life crush where the metal digs in and
            * holds, rather than kissing the surface.
            */
-          if (relAlong > v.params.halfLength - 0.8 && Math.abs(relLat) < 3.0) {
+          if (relAlong > v.params.halfLength - 1.6 && Math.abs(relLat) < 3.6) {
             this.glueLocal = {
               along: v.params.halfLength + 1.1,
               lateral: Math.max(-2.6, Math.min(2.6, relLat)),
@@ -1110,7 +1110,24 @@ export class PoliceCar {
     if (lead < -8) return false;
     if (lead < cfg.springRange) return true;
 
-    const ourEta = dist(v.x, v.z, mouth.x, mouth.z) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
+    /*
+     * The ambusher launches from a DEEP seat at rest: its time to the road is
+     * acceleration-dominated, and the cruise-speed estimate under-reads it by a
+     * third of a second - which, against a straight, predictable player, was a
+     * clean miss behind them every time. Physics, not cruise math.
+     */
+    let ourEta: number;
+    const runway = dist(v.x, v.z, mouth.x, mouth.z) + 7;
+    if (this.isAmbusher) {
+      const a = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
+      const top = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+      const tAccel = top / a;
+      const dAccel = 0.5 * a * tAccel * tAccel;
+      ourEta =
+        0.15 + (runway <= dAccel ? Math.sqrt((2 * runway) / a) : tAccel + (runway - dAccel) / top);
+    } else {
+      ourEta = (runway - 7) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
+    }
     const theirEta = lead / Math.max(8, player.speed);
     return theirEta <= ourEta + cfg.leadTime;
   }

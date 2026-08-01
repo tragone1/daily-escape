@@ -84,6 +84,8 @@ export class PoliceCar {
   private ambushReadSpeed = 0;
   /** Mouth of the spur it sprang from, held while it is still steering the strike. */
   private springFrom: { x: number; z: number } | null = null;
+  /** Outward unit vector through the mouth, set at spring time; null once clear of it. */
+  private springExit: { x: number; z: number } | null = null;
   /**
    * An ambusher that has taken its shot, hit or miss.
    *
@@ -184,6 +186,7 @@ export class PoliceCar {
     this.ambushWait = 0;
     this.ambushReadSpeed = 0;
     this.springFrom = null;
+    this.springExit = null;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -332,6 +335,12 @@ export class PoliceCar {
       }
       if (this.readyToSpring(ctx)) {
         this.springFrom = this.ambushAt;
+        // The way out is through the mouth, not toward the target: the unit is still
+        // deep in the alley, and any line it picks now must first pass this point.
+        const ox = this.ambushAt.x - v.x;
+        const oz = this.ambushAt.z - v.z;
+        const ol = Math.hypot(ox, oz) || 1;
+        this.springExit = { x: ox / ol, z: oz / ol };
         this.ambushAt = null;
       } else {
         this.input.throttle = 0;
@@ -383,12 +392,47 @@ export class PoliceCar {
       const missed = this.isAmbusher && along < -8;
       if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
+        this.springExit = null;
         // One alley, one strike. Whatever happened, this unit is finished.
         if (this.isAmbusher) {
           this.spent = true;
           return;
         }
       } else {
+        /*
+         * Phase one of the launch: get OUT of the alley.
+         *
+         * Steering straight for the intercept from the waiting spot aimed the run into
+         * the alley's mouth corner whenever the target sat at an angle - and this branch
+         * bypasses the obstacle feelers, so the unit ground the wall at full launch
+         * power and never arrived at all. Until it has crossed the mouth plane it aims
+         * a car length past the mouth along the spur's own axis; only then does the
+         * intercept homing below take over. The spur is straight, so phase one cannot
+         * miss, and the homing has the entire road width to swing the run square.
+         */
+        if (this.springExit) {
+          const exit = this.springExit;
+          const cleared =
+            (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
+          if (cleared) {
+            this.springExit = null;
+          } else {
+            const aimX = this.springFrom.x + exit.x * 6;
+            const aimZ = this.springFrom.z + exit.z * 6;
+            this.input.throttle = 1;
+            this.input.brake = 0;
+            this.input.steer = clamp(
+              wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading) /
+                CONFIG.police.shared.steerFullLockAngle,
+              -1,
+              1,
+            );
+            this.input.boost = false;
+            v.drive = 1 + cfg.launchSpeedBonus;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
+        }
         /*
          * Aim *through* them, not at them.
          *

@@ -390,6 +390,15 @@ export class Game {
     }
     // A second static pass: a ram can shove a car into a wall within the same frame.
     this.collision.resolveStatic(this.player);
+    /*
+     * The weld re-seat is the LAST write to the player's position: the player's
+     * own drive walks them into the blade, and at the wall the static pass just
+     * above shoves them back into the truck - both read as the cars clipping
+     * through each other. Re-seating here, wall-aware, ends the argument.
+     */
+    for (const unit of active) {
+      if (unit.welded) unit.reseatWeld(this.player, dt, this.collision);
+    }
     for (const unit of active) this.collision.resolveStatic(unit.vehicle);
 
     if (strongest) {

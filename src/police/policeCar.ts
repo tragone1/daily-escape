@@ -626,16 +626,9 @@ export class PoliceCar {
         if (!this.glueLocal) {
           /* Body contact: no weld; the pin ends unless the mouth finds them. */
         }
-        const gl = this.glueLocal;
-        if (gl) {
-          const tx2 = v.x + fx2 * gl.along + rx2 * gl.lateral;
-          const tz2 = v.z + fz2 * gl.along + rz2 * gl.lateral;
-          const pull = 1 - Math.exp(-12 * dt);
-          ctx.player.x += (tx2 - ctx.player.x) * pull;
-          ctx.player.z += (tz2 - ctx.player.z) * pull;
-          ctx.player.vx = v.vx;
-          ctx.player.vz = v.vz;
-        }
+        // Latched: the joint itself is applied in applyGlue AFTER v.update - a
+        // joint applied before the truck moves lags one frame of drive behind
+        // it, and at pin speed that lag was ~3 units of visible interpenetration.
       } else if (this.glueLocal && pd > 13) {
         this.glueLocal = null;
       }
@@ -659,6 +652,7 @@ export class PoliceCar {
         this.input.boost = false;
         v.drive = 1;
         v.update(this.input, dt, ctx.terrain);
+        this.applyGlue(v, ctx, dt);
         return;
       }
       this.input.throttle = 1;
@@ -678,6 +672,7 @@ export class PoliceCar {
         ) * cfg.turnAssist * dt,
       );
       v.update(this.input, dt, ctx.terrain);
+      this.applyGlue(v, ctx, dt);
       return;
     }
 
@@ -1357,6 +1352,74 @@ export class PoliceCar {
    * with brakes or boost moves them far off a half-second prediction - and line of
    * sight gates the whole thing so no switchback can fake it.
    */
+
+  /*
+   * The weld joint, applied AFTER the truck's own update so the player sits on
+   * the truck's FINAL position each frame. The seat depth is their box projected
+   * onto our forward axis - correct at any relative angle, live even if they
+   * rotate while pinned - minus a 0.35 crush bite. Fixed offsets and pre-update
+   * application both read as the cars clipping through each other.
+   */
+  private applyGlue(_v: Vehicle, ctx: PursuitContext, dt: number): void {
+    this.reseatWeld(ctx.player, dt);
+  }
+
+  /*
+   * Public because the game loop calls it at the COLLISION phase, after the
+   * player's own update has run - the player's drive walks them off the seat
+   * every frame (the escape inputs literally steer into the blade), and with
+   * the pair's separation solver muted only a re-seat at end of frame keeps
+   * the boxes from visibly interpenetrating.
+   */
+  reseatWeld(
+    player: Vehicle,
+    dt: number,
+    walls?: { raycastDistance(x: number, z: number, dx: number, dz: number, maxDist: number): number },
+  ): void {
+    const v = this.vehicle;
+    const gl = this.glueLocal;
+    if (!gl || this.pinTimer <= 0) return;
+    const fx = Math.sin(v.heading);
+    const fz = Math.cos(v.heading);
+    const rx = Math.cos(v.heading);
+    const rz = -Math.sin(v.heading);
+    const pfx = Math.sin(player.heading);
+    const pfz = Math.cos(player.heading);
+    const prx = Math.cos(player.heading);
+    const prz = -Math.sin(player.heading);
+    const projE =
+      player.params.halfLength * Math.abs(pfx * fx + pfz * fz) +
+      player.params.halfWidth * Math.abs(prx * fx + prz * fz);
+    let seatAlong = Math.max(gl.along, v.params.halfLength + projE - 0.35);
+    if (walls) {
+      // At the wall the seat must fit BETWEEN blade and wall - seating the
+      // player inside the wall just gets them shoved back into the truck by
+      // the static solver. If the pocket is tighter than the player, the
+      // overshoot goes into the blade (bounded crush), never the wall.
+      const probe = seatAlong + projE + 1;
+      const gap = walls.raycastDistance(v.x, v.z, fx, fz, probe);
+      if (gap < probe) {
+        seatAlong = Math.max(v.params.halfLength - 1.2, Math.min(seatAlong, gap - projE - 0.05));
+      }
+    }
+    const tx = v.x + fx * seatAlong + rx * gl.lateral;
+    const tz = v.z + fz * seatAlong + rz * gl.lateral;
+    /*
+     * The along-axis seat is RIGID - a fork, not a spring. The truck advances
+     * ~half a unit per frame during the carry, and any fractional pull lags
+     * behind that forever (equilibrium ~advance/pull: the visible clipping).
+     * Lateral stays smoothed so the latch reads as a grab, not a teleport.
+     */
+    const exG = tx - player.x;
+    const ezG = tz - player.z;
+    const eAlong = exG * fx + ezG * fz;
+    const eLat = exG * rx + ezG * rz;
+    const pullLat = (1 - Math.exp(-22 * dt)) * eLat;
+    player.x += fx * eAlong + rx * pullLat;
+    player.z += fz * eAlong + rz * pullLat;
+    player.vx = v.vx;
+    player.vz = v.vz;
+  }
 
   private readyToSpring(ctx: PursuitContext): boolean {
     const cfg = this.ambushTuning;

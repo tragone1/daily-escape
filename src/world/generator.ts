@@ -226,25 +226,71 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
     }
 
     for (let i = 0; i < LEGS_PER_SECTION; i++) {
-      const length = 70 + rnd() * 70;
-
+      let length = 70 + rnd() * 70;
 
       // The very first leg runs dead straight. The player is placed facing +Z, and a
       // course that turns immediately means starting the run pointed off the road for no
       // reason the player can see.
       const opening = s === 0 && i === 0;
-      if (!opening) {
-        // Turn, biased back toward +Z whenever the course drifts sideways.
-        const drift = x / LATERAL_LIMIT;
-        const turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
-        heading += turn;
-        // Keep every leg pointed broadly forward so the course always advances.
-        heading = Math.max(-1.15, Math.min(1.15, heading));
+
+      /*
+       * The leg's character.
+       *
+       * A course that always wanders at the same gentle rate reads as one long ease -
+       * pleasant and forgettable. Each leg now rolls a move: mostly the old cruising
+       * wander, but sometimes a hard corner pushed in as three tight control points the
+       * spline has no room to soften, sometimes a dead-flat straight, sometimes a pitch
+       * steep enough to feel like a drop rather than a slope. All from the same daily
+       * PRNG, so which day has the vicious corner is part of what the day is.
+       */
+      const move = opening || i === rampLeg ? "cruise" : rnd();
+      const hardCorner = typeof move === "number" && move < 0.1 && s > 0;
+      const flatStraight = typeof move === "number" && move >= 0.1 && move < 0.24;
+      const steep = typeof move === "number" && move >= 0.24 && move < 0.36;
+
+      if (hardCorner) {
+        // Approach stub, then the turn itself, then an exit stub. Short stubs pin the
+        // spline tight to the apex, so the corner stays a corner instead of an arc.
+        const stub = 16 + rnd() * 8;
+        x += Math.sin(heading) * stub;
+        z += Math.cos(heading) * stub;
+        y = Math.max(0, y + grade * stub);
+        legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
+        // Turn across the current drift, so the corner also recentres the course.
+        const sign = x / LATERAL_LIMIT + heading * 0.4 > 0 ? -1 : 1;
+        heading += sign * (1.1 + rnd() * 0.45);
+        heading = Math.max(-1.35, Math.min(1.35, heading));
+        const stub2 = 16 + rnd() * 8;
+        x += Math.sin(heading) * stub2;
+        z += Math.cos(heading) * stub2;
+        legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
+        grade *= 0.4;
+        length = 55 + rnd() * 45;
+      } else if (!opening) {
+        if (flatStraight) {
+          // Dead flat and dead straight, and longer than a normal leg - a breather that
+          // reads as one on purpose.
+          grade = 0;
+          length = 110 + rnd() * 60;
+        } else {
+          // Turn, biased back toward +Z whenever the course drifts sideways.
+          const drift = x / LATERAL_LIMIT;
+          const turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
+          heading += turn;
+          // Keep every leg pointed broadly forward so the course always advances.
+          heading = Math.max(-1.15, Math.min(1.15, heading));
+        }
       }
 
       // Elevation: ease the gradient toward a new target rather than jumping to it.
-      if (opening) {
-        grade = 0;
+      if (opening || flatStraight) {
+        grade = opening ? 0 : grade;
+      } else if (steep) {
+        // No easing: the slope arrives all at once, up to three times the cruising
+        // pitch, and the spline rounds only the crest and the foot.
+        const sign = y < 6 ? 1 : rnd() < 0.5 ? 1 : -1;
+        grade = sign * (0.14 + rnd() * 0.1);
+        length = 60 + rnd() * 40;
       } else if (rnd() < theme.hills) {
         const target = (rnd() - 0.5) * 0.5;
         grade += (target - grade) * 0.55;

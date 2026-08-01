@@ -333,7 +333,6 @@ export function buildWorld(r: Renderer): BuiltWorld {
     buildProps(r, seg, colliders, segments);
   }
 
-  buildJunctionCaps(r, segments, colliders, wallShades, terrain);
   sealBoundary(r, segments, colliders, wallShades, terrain);
 
   // No gate: endless mode has no finish to build.
@@ -786,75 +785,6 @@ function buildWalls(
 
 
 
-/**
- * Seal the wedge on the outside of every corner.
- *
- * Two consecutive legs each fence their own flank, and where they meet at an angle the
- * two wall lines stop short of each other on the outside of the turn. The gap is
- * proportional to how far out the wall sits, so it was a rounding error while walls hugged
- * the tarmac and a driveable hole the moment they moved to the far edge of the run-off —
- * measured, 14% of junction probes escaped through one.
- *
- * Each gap is bridged with short chunks, trimmed individually against other roads so that
- * spur mouths and junctions stay open. A single long chunk would either seal an alley or
- * leave the whole corner open.
- */
-function buildJunctionCaps(
-  r: Renderer,
-  segments: CourseSegment[],
-  colliders: StaticCollider[],
-  wallShades: Record<string, Rgb[]>,
-  terrain?: Terrain,
-): void {
-  const spine = segments.filter((s) => !s.branch && !s.overlay);
-
-  for (let i = 0; i < spine.length - 1; i++) {
-    const a = spine[i];
-    const b = spine[i + 1];
-    if (a.wall === "none" || b.wall === "none") continue;
-
-    const style = WALL_STYLE[a.wall as Exclude<WallStyle, "none">];
-    const shades = wallShades[a.wall];
-    const offA = a.halfWidth + a.shoulder + style.thickness / 2;
-    const offB = b.halfWidth + b.shoulder + WALL_STYLE[b.wall as Exclude<WallStyle, "none">].thickness / 2;
-
-    for (let side = -1; side <= 1; side += 2) {
-      // Wall endpoints either side of the joint, on this flank.
-      const ax = a.bx + a.dz * offA * side;
-      const az = a.bz - a.dx * offA * side;
-      const bx = b.ax + b.dz * offB * side;
-      const bz = b.az - b.dx * offB * side;
-
-      const dx = bx - ax;
-      const dz = bz - az;
-      const span = Math.hypot(dx, dz);
-      if (span < 1.5) continue;
-
-      const heading = Math.atan2(dx, dz);
-      const chunks = Math.max(1, Math.round(span / 8));
-      const chunkLen = span / chunks;
-
-      for (let c = 0; c < chunks; c++) {
-        const t = (c + 0.5) / chunks;
-        const cx = ax + dx * t;
-        const cz = az + dz * t;
-        // Leave openings where a road actually passes through, so spur mouths survive.
-        if (onOtherRoad(segments, a, cx, cz, JUNCTION_CLEARANCE, terrain)) continue;
-
-        const rnd = hash2(cx, cz);
-        const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
-        const mesh = r.createMesh(
-          { kind: "box", width: style.thickness, height, depth: chunkLen * 1.15 },
-          { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
-        );
-        const groundY = a.by;
-        mesh.position.set(cx, groundY + height / 2, cz);
-        mesh.rotation.y = heading;
-        addCollider(colliders, cx, cz, chunkLen / 2, style.thickness / 2, heading, groundY + height);
-      }
-    }
-  }
-}
 
 /**
  * The last line of containment: walk the boundary of the drivable union and patch every
@@ -1007,9 +937,14 @@ function sealBoundary(
     const dzh = Math.cos(heading);
     const yA = terrain.heightAt(px - dxh * hl, pz - dzh * hl);
     const yB = terrain.heightAt(px + dxh * hl, pz + dzh * hl);
-    if (Math.abs(yA - yB) > 2.2) return;
+    if (Math.abs(yA - yB) > 1.6) return;
     placed.add(pk);
-    const groundY = terrain.heightAt(px, pz);
+    /*
+     * Sit on the slope, pitched with it, like every wall chunk. Level pieces on rolling
+     * ground buried one end and stuck the other out as a jagged spike - the leftover
+     * "patchwork" look the ribbon ground was supposed to have ended.
+     */
+    const groundY = (yA + yB) / 2;
     const rnd = hash2(px, pz);
     const height = style.minHeight + rnd * (style.maxHeight - style.minHeight) * 0.5;
     const mesh = r.createMesh(
@@ -1018,6 +953,7 @@ function sealBoundary(
     );
     mesh.position.set(px, groundY + height / 2, pz);
     mesh.rotation.y = heading;
+    mesh.rotation.x = -Math.atan((yB - yA) / (2 * hl));
     addCollider(colliders, px, pz, hl, 0.9, heading, groundY + height);
   };
 

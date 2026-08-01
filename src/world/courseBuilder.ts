@@ -906,6 +906,7 @@ function sealBoundary(
     heading: number,
     halfLen: number,
     theme: string,
+    meshJitter = 0,
   ) => {
     const pk = Math.round(x / 2.5) + ":" + Math.round(z / 2.5);
     if (placed.has(pk)) return;
@@ -957,7 +958,13 @@ function sealBoundary(
       { kind: "box", width: 1.8, height, depth: hl * 2 },
       { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
     );
-    mesh.position.set(px, groundY + height / 2, pz);
+    /*
+     * The anti-shimmer stagger lives on the MESH alone. When the collider carried it
+     * too, neighbouring pieces formed quarter-unit lips along the barrier, and a car
+     * riding the wall snagged on every joint - the collision surface must be one
+     * continuous line even when the faces are deliberately not.
+     */
+    mesh.position.set(px + ox * meshJitter, groundY + height / 2, pz + oz * meshJitter);
     mesh.rotation.y = heading;
     mesh.rotation.x = -Math.atan((yB - yA) / (2 * hl));
     addCollider(colliders, px, pz, hl, 0.9, heading, groundY + height);
@@ -1024,13 +1031,14 @@ function sealBoundary(
           // long faces are never coplanar - coplanar patch faces were the shimmer.
           const jitter = (flip++ % 2 === 0 ? 1 : -1) * 0.14;
           piece(
-            (ax + bx) / 2 + seg.dz * side * jitter,
-            (az + bz) / 2 - seg.dx * side * jitter,
+            (ax + bx) / 2,
+            (az + bz) / 2,
             seg.dz * side,
             -seg.dx * side,
             heading,
             Math.max(1.6, span / 2 + 0.6),
             seg.wall === "none" ? "fence" : seg.wall,
+            jitter,
           );
           i = j;
         }

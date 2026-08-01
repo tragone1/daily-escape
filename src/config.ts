@@ -1295,6 +1295,12 @@ export const CONFIG = {
       baseActive: 12,
       activePerSection: 1.0,
       /**
+       * Section one only. The curve's 12 there meant four wake-fill cars trailing in
+       * behind the three opening chasers, which read as a pack; 10 halves that fill.
+       * Section two onward uses the curve untouched.
+       */
+      openingActive: 10,
+      /**
        * Ceiling, for frame time more than fairness.
        *
        * Was 20 and reached at section 13, which is precisely where the run stopped

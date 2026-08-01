@@ -166,7 +166,7 @@ export class PoliceManager {
      */
     const target = Math.min(
       esc.maxActive,
-      Math.round(esc.baseActive + section * esc.activePerSection),
+      section === 0 ? esc.openingActive : Math.round(esc.baseActive + section * esc.activePerSection),
     );
     const ambushTarget = Math.min(
       esc.openRoad.maxActive,

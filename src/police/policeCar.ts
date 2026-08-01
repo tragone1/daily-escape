@@ -439,7 +439,7 @@ export class PoliceCar {
       this.input.boost = false;
       // The pin must be able to CATCH as well as hold - 1.15 lost any player who
       // simply kept their foot down.
-      v.drive = 1.45;
+      v.drive = 1.6;
       v.contactBoost = 4;
       v.applySpin(
         clamp(
@@ -503,14 +503,18 @@ export class PoliceCar {
         return;
       }
       /*
-       * One shot, strictly. A burst that ends up down-course of the player has
-       * missed, and a missed juggernaut that keeps driving is a chaser - the exact
-       * thing this class must never be. It dies where the miss happened.
+       * One shot, strictly - but never amputate a landing blow. A crossing truck's
+       * course progress dips "behind" the moment the player passes its mouth, even
+       * while it is two car lengths away and turning INTO them - the old check
+       * declared those strikes dead mid-lunge, which was every remaining near-miss.
+       * Distance is the tiebreak: within twenty units the lunge finishes, full stop;
+       * beyond that, down-course means missed and the run dies where it stands.
        */
       if (
+        pd > 20 &&
         ctx.terrain.progressAt(v.x, v.z) -
           ctx.terrain.progressAt(ctx.player.x, ctx.player.z) <
-        -7
+          -7
       ) {
         this.spent = true;
         return;
@@ -556,10 +560,10 @@ export class PoliceCar {
        * itself bends toward the target, boost-strength, for at most a third of a
        * second. It reads as eight tonnes committing, and it does not miss.
        */
-      if (pd < 14) {
+      if (pd < 18) {
         const nx = (ctx.player.x - v.x) / pd;
         const nz = (ctx.player.z - v.z) / pd;
-        v.applyImpulse(nx * 44 * dt, nz * 44 * dt);
+        v.applyImpulse(nx * 70 * dt, nz * 70 * dt);
       }
       // Triple rails inside twenty units: the last half car length is where a swerve
       // used to buy a graze instead of a hit.
@@ -982,7 +986,14 @@ export class PoliceCar {
     const dAccel = 0.5 * a * tAccel * tAccel;
     const tSelf =
       0.12 + (runway <= dAccel ? Math.sqrt((2 * runway) / a) : tAccel + (runway - dAccel) / top);
-    const tPlayer = roadLead / Math.max(10, player.speed);
+    /*
+     * Believe the chassis, not the boost. A boost that ends mid-window sheds
+     * fifteen units a second and re-creates the early fire; clamping the believed
+     * speed to the unboosted maximum makes boosted approaches read pessimistically
+     * long, so their error lands tail-side - the sanctioned side.
+     */
+    const eff = Math.min(player.speed, player.params.maxSpeed);
+    const tPlayer = roadLead / Math.max(10, eff);
     if (tPlayer > tSelf - 0.12) return null;
     return 1;
   }

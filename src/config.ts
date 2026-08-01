@@ -743,7 +743,7 @@ export const CONFIG = {
        * you sideways into whatever is there rather than down the road. That is the hit
        * this class is supposed to land, so it is the only one that gets amplified.
        */
-      broadsideBoost: 3.6,
+      broadsideBoost: 4.2,
       /**
        * The broadside run: hold the flank until actually abeam, then drive *through*.
        *
@@ -1446,9 +1446,9 @@ export const CONFIG = {
            * the player past `pinLostRange` ends it early. This is what makes the slam
            * a sentence rather than a speed bump.
            */
-          pinRange: 7.2,
-          pinTime: 4.5,
-          pinLostRange: 20,
+          pinRange: 8.5,
+          pinTime: 7,
+          pinLostRange: 26,
           /**
            * Inside this range of the mouth the shot simply goes, whatever the timing
            * math says. A weaving, braking player made the ETA gate flicker closed
@@ -1466,7 +1466,7 @@ export const CONFIG = {
            * seconds or the geometry has moved on, and a long tail-chase grinding
            * walls behind the player is the one look this class must never have.
            */
-          strikeTime: 7,
+          strikeTime: 9,
           /**
            * The burst fires when the player's PREDICTED position - at the moment the
            * truck's own nose will reach the road, solved from its actual depth in the
@@ -1479,7 +1479,7 @@ export const CONFIG = {
            * a clear edge over even the section-29 player at 58 - because the contract
            * is contact EVERY time, and a chase without a speed edge is a coin flip.
            */
-          chaseSpeed: 0.85,
+          chaseSpeed: 1.0,
           /**
            * The launch proper does not begin until the player is inside this range.
            * An early spring - live timing fired optimistic, player braked - now means
@@ -1493,7 +1493,7 @@ export const CONFIG = {
            * is deliberately slow to steer everywhere else; the strike gets rails, so
            * swerving, braking and boosting all converge on the same contact.
            */
-          turnAssist: 12,
+          turnAssist: 16,
           /**
            * Once the player is this far past, the shot is gone and so is the unit.
            *

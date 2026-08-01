@@ -569,33 +569,25 @@ export class PoliceCar {
       if (pd < 9) {
         const fx = Math.sin(v.heading);
         const fz = Math.cos(v.heading);
-        const wallAhead = ctx.world.raycastDistance(v.x, v.z, fx, fz, 7);
-        if (wallAhead < 7) {
+        // Wing reach, not nose reach: the claw tips are real and stop at the wall.
+        const wallAhead = ctx.world.raycastDistance(v.x, v.z, fx, fz, 8.4);
+        if (wallAhead < 8.4) {
           v.jam = true;
           v.plow = true;
           v.contactBoost = 1;
           v.vx = 0;
           v.vz = 0;
           /*
-           * The weld HOLDS through the jam - this branch returns early, and losing
-           * the joint at the exact moment the blade anchors to the wall was every
-           * half-second weld break: the player bounced off the wall and drifted
-           * free while the truck sat bolted. Anchored truck, welded player, zero
-           * velocity: the trap, complete.
+           * THE PIN IS DELIVERED - so the weld dies HERE, by design. The magnet
+           * and glue exist to carry the player to the wall; once the blade anchors,
+           * it becomes an honest physical box: the truck is an immovable barrier
+           * (jam mass, zero bounce) but the player is free to fight - and BOOST is
+           * the guaranteed key: boosting against the box pops the anchor within a
+           * third of a second. Escape is a decision with a cost, not a grind.
            */
-          if (this.glueLocal) {
-            const fxJ = Math.sin(v.heading);
-            const fzJ = Math.cos(v.heading);
-            const rxJ = Math.cos(v.heading);
-            const rzJ = -Math.sin(v.heading);
-            const gl = this.glueLocal;
-            const txJ = v.x + fxJ * gl.along + rxJ * gl.lateral;
-            const tzJ = v.z + fzJ * gl.along + rzJ * gl.lateral;
-            const pullJ = 1 - Math.exp(-12 * dt);
-            ctx.player.x += (txJ - ctx.player.x) * pullJ;
-            ctx.player.z += (tzJ - ctx.player.z) * pullJ;
-            ctx.player.vx = 0;
-            ctx.player.vz = 0;
+          this.glueLocal = null;
+          if (ctx.player.boosting) {
+            this.pinTimer = Math.min(this.pinTimer, 0.3);
           }
           /*
            * The claw's grip. A flat collider lets the prey slide along the blade and
@@ -604,17 +596,6 @@ export class PoliceCar {
            * Not an impulse, not a bounce: machinery closing. Release comes only when
            * the pin clock runs out.
            */
-          const rx = Math.cos(v.heading);
-          const rz = -Math.sin(v.heading);
-          const relX = ctx.player.x - v.x;
-          const relZ = ctx.player.z - v.z;
-          const along = relX * fx + relZ * fz;
-          const lateral = relX * rx + relZ * rz;
-          if (along > 1.5 && along < wallAhead + 2.5 && Math.abs(lateral) < 3.8) {
-            const grip = Math.exp(-5 * dt);
-            ctx.player.vx *= grip;
-            ctx.player.vz *= grip;
-          }
           this.input.throttle = 0.35;
           this.input.brake = 0;
           this.input.steer = 0;
@@ -726,6 +707,28 @@ export class PoliceCar {
      * glue pin. It exits the alley on rails and then the shared homing below owns
      * the run; nothing here predicts, everything adjusts.
      */
+    if (
+      this.isAmbusher &&
+      v.params.halfWidth > CONFIG.police.juggernaut.vehicle.halfWidth + 0.01
+    ) {
+      // Blade deployed: wings are solid against walls too. If the nose ray finds a
+      // wall inside the claw's reach, the truck is held back at the surface.
+      const fxW = Math.sin(v.heading);
+      const fzW = Math.cos(v.heading);
+      const reach = v.params.halfLength + 2.7;
+      const wallD = ctx.world.raycastDistance(v.x, v.z, fxW, fzW, reach);
+      if (wallD < reach) {
+        const push = reach - wallD;
+        v.x -= fxW * push;
+        v.z -= fzW * push;
+        const vn = v.vx * fxW + v.vz * fzW;
+        if (vn > 0) {
+          v.vx -= fxW * vn;
+          v.vz -= fzW * vn;
+        }
+      }
+    }
+
     if (this.isAmbusher && this.springFrom) {
       const cfg = this.ambushTuning;
       if (this.springExit) {

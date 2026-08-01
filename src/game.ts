@@ -391,8 +391,10 @@ export class Game {
         this.player.z += hit.nz * hit.depth;
         const vn = this.player.vx * hit.nx + this.player.vz * hit.nz;
         if (vn < 0) {
-          this.player.vx -= hit.nx * vn;
-          this.player.vz -= hit.nz * vn;
+          // Solid steel: cancel the approach and add a real kick, so a glancing
+          // wing clip reads as hitting an object, not passing through a curtain.
+          this.player.vx -= hit.nx * vn * 1.6;
+          this.player.vz -= hit.nz * vn * 1.6;
         }
       }
     }

@@ -1412,7 +1412,7 @@ export const CONFIG = {
          * addition to the squad rather than a substitution for part of it.
          */
         maxActive: 3,
-        secondAt: 14,
+        secondAt: 12,
         thirdAt: 26,
         ambush: {
           /**

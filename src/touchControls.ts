@@ -5,10 +5,11 @@
  * up for gas, further up past the detent for BOOST, pull down for brake/reverse. The
  * RIGHT half is a horizontal stick for steering - and a sharp upward FLICK on it
  * fires a rocket, so neither thumb ever leaves its stick. A small tap pad in the top
- * right also fires, as the discoverable backup.
+ * area also fires, as the discoverable backup.
  *
- * Sticks are floating: each touch\'s starting point becomes that stick\'s centre, so
- * there is no fixed target to hunt for mid-chase.
+ * Sticks are floating (they centre where the thumb lands) and VISIBLE: a translucent
+ * ring with a knob that tracks the thumb, direction arrows lighting as they engage,
+ * green glow while the boost detent is crossed.
  */
 
 interface StickState {
@@ -19,10 +20,10 @@ interface StickState {
   dy: number;
 }
 
-const GAS_RANGE = 70;      // px of travel for full throttle / full brake
-const BOOST_BAND = 118;    // push beyond this = boost (edge-triggered)
-const STEER_RANGE = 64;    // px of travel for full lock
-const FLICK_UP = 55;       // upward travel on the steer stick that fires (edge)
+const GAS_RANGE = 70;
+const BOOST_BAND = 118;
+const STEER_RANGE = 64;
+const FLICK_UP = 55;
 
 class TouchControls {
   active = false;
@@ -35,45 +36,100 @@ class TouchControls {
   private flickLatched = false;
   private left: StickState | null = null;
   private right: StickState | null = null;
+  private leftUi: HTMLDivElement | null = null;
+  private rightUi: HTMLDivElement | null = null;
 
   attach(): void {
-    // Listeners are attached unconditionally - they simply never fire without a
-    // touchscreen - but the on-screen pads only appear where touch exists.
     const opts = { passive: false } as AddEventListenerOptions;
     window.addEventListener("touchstart", (e) => this.onStart(e), opts);
     window.addEventListener("touchmove", (e) => this.onMove(e), opts);
     window.addEventListener("touchend", (e) => this.onEnd(e), opts);
     window.addEventListener("touchcancel", (e) => this.onEnd(e), opts);
-    if ("ontouchstart" in window || navigator.maxTouchPoints > 0) this.buildUi();
+    if ("ontouchstart" in window || navigator.maxTouchPoints > 0 || location.search.includes("touchui")) {
+      document.body.classList.add("touch-mode");
+      this.buildUi();
+    }
+  }
+
+  private mkStick(arrows: string[]): HTMLDivElement {
+    const el = document.createElement("div");
+    el.className = "stick";
+    el.style.display = "none";
+    el.innerHTML =
+      `<div class="knob"></div>` +
+      arrows
+        .map(
+          (a) =>
+            `<div class="arrow" data-dir="` + a + `" style="` +
+            (a === "up" ? "top:6px;left:50%;transform:translateX(-50%)" :
+             a === "down" ? "bottom:6px;left:50%;transform:translateX(-50%)" :
+             a === "left" ? "left:8px;top:50%;transform:translateY(-50%)" :
+             "right:8px;top:50%;transform:translateY(-50%)") +
+            `">` +
+            (a === "up" ? "&#9650;" : a === "down" ? "&#9660;" : a === "left" ? "&#9664;" : "&#9654;") +
+            "</div>",
+        )
+        .join("");
+    document.body.appendChild(el);
+    return el;
   }
 
   private buildUi(): void {
-    const ui = document.createElement("div");
-    ui.style.cssText =
-      "position:fixed;inset:0;pointer-events:none;z-index:40;font:12px monospace;color:rgba(255,255,255,0.65)";
+    this.leftUi = this.mkStick(["up", "down"]);
+    this.rightUi = this.mkStick(["left", "right"]);
     const pad = document.createElement("div");
     pad.textContent = "ROCKET";
     pad.style.cssText =
-      "position:absolute;top:12px;right:12px;padding:14px 18px;border:1px solid rgba(255,255,255,0.35);" +
-      "border-radius:10px;background:rgba(10,12,18,0.5);pointer-events:auto;user-select:none;-webkit-user-select:none";
+      "position:fixed;top:40%;right:10px;padding:10px 12px;border:1px solid rgba(255,255,255,0.3);" +
+      "border-radius:9px;background:rgba(10,12,18,0.45);z-index:44;font:11px monospace;" +
+      "color:rgba(255,255,255,0.7);user-select:none;-webkit-user-select:none";
     pad.addEventListener("touchstart", (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.fireEdge = true;
     }, { passive: false });
-    ui.appendChild(pad);
-    const hint = document.createElement("div");
-    hint.textContent = "left: gas / reverse (push high = BOOST)   right: steer (flick up = rocket)";
-    hint.style.cssText =
-      "position:absolute;bottom:6px;left:50%;transform:translateX(-50%);white-space:nowrap;opacity:0.7";
-    ui.appendChild(hint);
-    document.body.appendChild(ui);
-    setTimeout(() => { if (hint.parentElement) hint.style.opacity = "0"; }, 9000);
+    document.body.appendChild(pad);
+  }
+
+  private showStick(ui: HTMLDivElement | null, st: StickState | null): void {
+    if (!ui) return;
+    if (!st) {
+      ui.style.display = "none";
+      return;
+    }
+    ui.style.display = "block";
+    ui.style.left = st.originX - 54 + "px";
+    ui.style.top = st.originY - 54 + "px";
+    const knob = ui.querySelector(".knob") as HTMLDivElement | null;
+    if (knob) {
+      const kx = Math.max(-46, Math.min(46, st.dx));
+      const ky = Math.max(-46, Math.min(46, st.dy));
+      knob.style.transform = "translate(calc(-50% + " + kx + "px), calc(-50% + " + ky + "px))";
+    }
+  }
+
+  private paint(): void {
+    this.showStick(this.leftUi, this.left);
+    this.showStick(this.rightUi, this.right);
+    if (this.leftUi) {
+      this.leftUi.classList.toggle("hot", this.throttle > 0.05 || this.brake > 0.05);
+      this.leftUi.classList.toggle("boosting", this.boostLatched);
+      const up = this.leftUi.querySelector(`[data-dir="up"]`);
+      const down = this.leftUi.querySelector(`[data-dir="down"]`);
+      if (up) up.classList.toggle("lit", this.throttle > 0.05);
+      if (down) down.classList.toggle("lit", this.brake > 0.05);
+    }
+    if (this.rightUi) {
+      this.rightUi.classList.toggle("hot", Math.abs(this.steer) > 0.05);
+      const l = this.rightUi.querySelector(`[data-dir="left"]`);
+      const rr = this.rightUi.querySelector(`[data-dir="right"]`);
+      if (l) l.classList.toggle("lit", this.steer < -0.05);
+      if (rr) rr.classList.toggle("lit", this.steer > 0.05);
+    }
   }
 
   private onStart(e: TouchEvent): void {
     const target = e.target as HTMLElement | null;
-    // Let taps on real UI (buttons, inputs, the rocket pad) behave normally.
     if (target && (target.closest("button") || target.closest("input") || target.closest("a"))) return;
     e.preventDefault();
     this.active = true;
@@ -85,6 +141,7 @@ class TouchControls {
         this.right = stick;
       }
     }
+    this.recompute();
   }
 
   private onMove(e: TouchEvent): void {
@@ -110,7 +167,7 @@ class TouchControls {
 
   private recompute(): void {
     if (this.left) {
-      const up = -this.left.dy; // screen up = negative dy
+      const up = -this.left.dy;
       if (up >= 0) {
         this.throttle = Math.min(1, up / GAS_RANGE);
         this.brake = 0;
@@ -140,9 +197,9 @@ class TouchControls {
       this.steer = 0;
       this.flickLatched = false;
     }
+    this.paint();
   }
 
-  /** Edge-consuming reads, one shot per gesture. */
   takeBoost(): boolean { const b = this.boostEdge; this.boostEdge = false; return b; }
   takeFire(): boolean { const f = this.fireEdge; this.fireEdge = false; return f; }
 }

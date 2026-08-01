@@ -1439,7 +1439,13 @@ export const CONFIG = {
            * rather than nose to nose. Same idea here, less slack, because these steer the
            * run afterwards and can correct what the timing gets wrong.
            */
-          leadTime: -0.18,
+          /**
+           * POSITIVE now: the tamed launch (1.3x) spools up slower than the ETA
+           * estimate assumes, which made every miss fall to the rear - the player
+           * called it: uncalibrated. +0.22 fires that much earlier, centring the
+           * error; the homing absorbs both tails.
+           */
+          leadTime: -0.06,
           /** Assumed fraction of top speed out of the spur. */
           launchSpeedFactor: 0.95,
           /** Reads your pace from further out, so the commitment is better informed. */

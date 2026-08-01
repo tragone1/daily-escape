@@ -644,7 +644,8 @@ export class PoliceCar {
       const along =
         ctx.terrain.progressAt(v.x, v.z) -
         ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
-      const missed = this.isAmbusher && along < -14;
+      // One shot both ways: fallen behind OR crossed twenty ahead, the run is over.
+      const missed = this.isAmbusher && (along < -14 || along > 20);
       if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
         this.springExit = null;
@@ -764,6 +765,11 @@ export class PoliceCar {
         const tx = lead.x - v.x;
         const tz = lead.z - v.z;
         const tl = Math.hypot(tx, tz) || 1;
+        // Never-miss magnet, ambusher only, requested at full strength: inside
+        // twenty units momentum itself bends onto the target.
+        if (this.isAmbusher && tl < 20) {
+          v.applyImpulse((tx / tl) * 120 * dt, (tz / tl) * 120 * dt);
+        }
         /*
          * Terminal guidance: the through-point shrinks as the range closes. At full
          * depth a player who brakes or swerves late walks the aim point off their far

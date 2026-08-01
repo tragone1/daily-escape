@@ -655,6 +655,66 @@
          and it loses to the capture vignette when both apply. */
       #vignette.offcourse { box-shadow: inset 0 0 200px rgba(255, 150, 20, 0.4); }
       #vignette.offcourse.danger { box-shadow: inset 0 0 220px rgba(255, 40, 40, 0.45); }
+      /*
+       * Touch-mode HUD: tiny, out of the way, thumbs own the bottom of the screen.
+       * Set by touchControls when a touchscreen exists.
+       */
+      body.touch-mode #bottomRight { display: none; }
+      body.touch-mode #topLeft {
+        transform: scale(0.62);
+        transform-origin: top left;
+        opacity: 0.85;
+      }
+      body.touch-mode #topRight {
+        transform: scale(0.62);
+        transform-origin: top right;
+        opacity: 0.9;
+      }
+      body.touch-mode #bottomLeft {
+        left: auto;
+        right: 8px;
+        top: 96px;
+        bottom: auto;
+        transform: scale(0.62);
+        transform-origin: top right;
+        opacity: 0.9;
+      }
+      body.touch-mode #restartBtn {
+        transform: translateX(-50%) scale(0.8);
+        opacity: 0.8;
+      }
+      body.touch-mode #progressWrap { opacity: 0.7; }
+
+      /* Translucent thumb sticks. */
+      .stick {
+        position: fixed;
+        width: 108px;
+        height: 108px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        background: rgba(16, 20, 30, 0.28);
+        pointer-events: none;
+        z-index: 45;
+        transition: border-color 0.08s, background 0.08s;
+      }
+      .stick .knob {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.28);
+        transform: translate(-50%, -50%);
+      }
+      .stick.hot { border-color: rgba(255, 210, 63, 0.75); background: rgba(255, 210, 63, 0.1); }
+      .stick.boosting { border-color: rgba(77, 255, 158, 0.9); background: rgba(77, 255, 158, 0.16); }
+      .stick .arrow {
+        position: absolute;
+        font: 700 13px monospace;
+        color: rgba(255, 255, 255, 0.35);
+      }
+      .stick .arrow.lit { color: rgba(255, 210, 63, 0.95); }
     </style>
   </head>
   <body>

@@ -111,6 +111,8 @@ export class Vehicle {
   recoveryTimer = 0;
   /** Flat top-speed addition from late-run pace scaling (player only). */
   paceBonus = 0;
+  /** Acceleration multiplier from the late-run switch (player only). */
+  paceAccel = 1;
   /** Striking juggernaut: police in its path take full, undamped impulses. */
   plow = false;
   /**
@@ -331,6 +333,7 @@ export class Vehicle {
           this.drive *
           headroom *
           recovering *
+          this.paceAccel *
           dt;
       }
 

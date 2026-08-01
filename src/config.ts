@@ -264,10 +264,15 @@ export const CONFIG = {
      * the tempo of the whole late game rather than handing out an advantage: at
      * 58 every wall and head-on arrives sooner than your reflexes expect.
      */
+    /**
+     * The hard switch, per the player's design: at the tenth section the car simply
+     * becomes twice as fast with half again the acceleration, flat from there. Not a
+     * ramp - a moment. The late game is meant to be a different sport.
+     */
     lateSpeed: {
       fromSection: 9,
-      perSection: 0.6,
-      max: 12,
+      speedMultiplier: 2.0,
+      accelMultiplier: 1.5,
     },
     boost: {
       /** Extra acceleration while boosting, u/s^2. */
@@ -1355,7 +1360,12 @@ export const CONFIG = {
        * 21 the mix and the speed bonus carry it. Watch frame time if this rises again:
        * the car-pair collision pass grows with the square of the head count.
        */
-      maxActive: 30,
+      /**
+       * 23, reached by section twelve (was 30 at eighteen): past that the road got too
+       * clogged to drive, per playtest. Depth now escalates through pace and class mix
+       * - speedPerSection climbs to +16 - rather than raw headcount.
+       */
+      maxActive: 23,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1550,8 +1560,8 @@ export const CONFIG = {
       } as Record<PoliceRole, number>,
 
       /** Extra top speed added to every unit per section, u/s, and its cap. */
-      speedPerSection: 0.3,
-      maxSpeedBonus: 12,
+      speedPerSection: 0.35,
+      maxSpeedBonus: 16,
     },
 
     /**

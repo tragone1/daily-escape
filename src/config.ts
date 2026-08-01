@@ -265,14 +265,13 @@ export const CONFIG = {
      * 58 every wall and head-on arrives sooner than your reflexes expect.
      */
     /**
-     * The hard switch, per the player's design: at the tenth section the car simply
-     * becomes twice as fast with half again the acceleration, flat from there. Not a
-     * ramp - a moment. The late game is meant to be a different sport.
+     * Late-run pace ramp. The hard doubling at section ten was tried and rolled back
+     * by playtest - a gentle climb, capped, felt right.
      */
     lateSpeed: {
       fromSection: 9,
-      speedMultiplier: 2.0,
-      accelMultiplier: 1.5,
+      perSection: 0.6,
+      max: 12,
     },
     boost: {
       /** Extra acceleration while boosting, u/s^2. */

@@ -724,12 +724,13 @@ export const CONFIG = {
         gripNormal: 9.2,
         mass: 5.0,
         /*
-         * The claw. The nose carries a snowplow blade wider than a lane, so the
-         * collider is a wall: halfWidth 3.1 means anything the blade visually
-         * reaches is physically caught, and a near-miss is now a catch.
+         * Narrow at rest so it fits its alley and launches clean - the wide claw
+         * collider is applied ONLY from the moment it fires (see bladeHalfWidth):
+         * at 3.1 it scraped the alley walls on exit and arrived late behind the
+         * player every single time.
          */
         halfLength: 3.8,
-        halfWidth: 3.1,
+        halfWidth: 1.9,
       }),
       /** Shrugs off almost everything: hits barely slow it and shoves barely move it. */
       impactResistance: 0.35,
@@ -1215,6 +1216,7 @@ export const CONFIG = {
         springRange: 40,
         strikeGo: 46,
         strikeTime: 12,
+        bladeHalfWidth: 0,
         chaseSpeed: 0.2,
         burstWindow: 9,
         turnAssist: 2,
@@ -1463,7 +1465,7 @@ export const CONFIG = {
            */
           pinRange: 9.5,
           pinTime: 7,
-          pinLostRange: 26,
+          pinLostRange: 12,
           /**
            * Inside this range of the mouth the shot simply goes, whatever the timing
            * math says. A weaving, braking player made the ETA gate flicker closed
@@ -1481,7 +1483,10 @@ export const CONFIG = {
            * seconds or the geometry has moved on, and a long tail-chase grinding
            * walls behind the player is the one look this class must never have.
            */
-          strikeTime: 9,
+          /** Short: a piston fires once. If it fails, it fails - no second act. */
+          strikeTime: 5,
+          /** Collider half-width of the claw, applied at fire and removed at spent. */
+          bladeHalfWidth: 3.4,
           /**
            * The burst fires when the player's PREDICTED position - at the moment the
            * truck's own nose will reach the road, solved from its actual depth in the

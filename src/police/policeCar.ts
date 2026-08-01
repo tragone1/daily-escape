@@ -342,6 +342,9 @@ export class PoliceCar {
      * duck. A decelerating truck reads as a failed charge; a statue reads as a bug.
      */
     if (this.isAmbusher && this.spent) {
+      if (v.params.halfWidth > CONFIG.police.juggernaut.vehicle.halfWidth + 0.01) {
+        v.params = { ...v.params, halfWidth: CONFIG.police.juggernaut.vehicle.halfWidth };
+      }
       /*
        * A missed shot does not leave a truck parked in the middle of the road - it
        * slinks back into the alley it came from and disappears there. Only when the
@@ -411,6 +414,10 @@ export class PoliceCar {
         this.springExit = { x: ox / ol, z: oz / ol };
         if (this.isAmbusher) {
           this.strikeTimer = this.ambushTuning.strikeTime;
+          // The claw deploys: collider goes blade-wide for the strike only.
+          if (this.ambushTuning.bladeHalfWidth > 0) {
+            v.params = { ...v.params, halfWidth: this.ambushTuning.bladeHalfWidth };
+          }
           if (this.ambushOut) {
             this.lastMouth = {
               x: this.ambushAt.x,
@@ -665,11 +672,16 @@ export class PoliceCar {
        * Distance is the tiebreak: within twenty units the lunge finishes, full stop;
        * beyond that, down-course means missed and the run dies where it stands.
        */
+      /*
+       * One shot, unconditional. The 20-unit "finish the lunge" exemption kept a
+       * behind-miss alive at close range, which in play was a truck chasing and
+       * bouncing the player around after its moment had passed. The piston fires,
+       * and whatever happened next to the player, behind means done.
+       */
       if (
-        pd > 20 &&
         ctx.terrain.progressAt(v.x, v.z) -
           ctx.terrain.progressAt(ctx.player.x, ctx.player.z) <
-          -7
+        -7
       ) {
         this.spent = true;
         return;

@@ -334,6 +334,12 @@ export class Game {
     // arrive together, so the total loss across the frame is clamped below.
     const speedBefore = this.player.speed;
     for (const unit of active) {
+      /*
+       * A rocket-killed hulk is drive-through for the player - the rocket's whole job
+       * is opening a lane, and a solid wreck in a bottleneck rebuilt the roadblock it
+       * was spent on. Police still collide with it: their pile-up is your open lane.
+       */
+      if (unit.destroyed) continue;
       const hit = this.collision.resolveCars(this.player, unit.vehicle);
       if (hit && (!strongest || hit.speed > strongest.speed)) strongest = hit;
     }

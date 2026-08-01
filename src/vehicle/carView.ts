@@ -244,9 +244,11 @@ export class CarView {
     this.shadow.rotation.z = -this.groundRoll;
 
     if (this.wrecked) {
-      this.body.rotation.z = 0.13;
-      this.body.rotation.x = 0.04;
-      this.body.position.y = -0.16;
+      // Sunk to the sills: the player can drive through a hulk, so it has to read as
+      // flattened debris rather than a parked car.
+      this.body.rotation.z = 0.18;
+      this.body.rotation.x = 0.05;
+      this.body.position.y = -0.5;
       return;
     }
 

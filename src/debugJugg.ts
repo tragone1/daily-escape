@@ -30,6 +30,25 @@ let panel: HTMLDivElement | null = null;
 
 export const DEBUG_JUGG = typeof location !== "undefined" && location.search.includes("debug");
 
+/*
+ * Section jump, debug only: Digit1-9 jump to sections 1-9, Digit0 to 10; hold Shift
+ * for 11-20. Installed lazily on the first recorder tick so the game object exists.
+ */
+let jumpKeysInstalled = false;
+function installJumpKeys(): void {
+  if (jumpKeysInstalled) return;
+  jumpKeysInstalled = true;
+  window.addEventListener("keydown", (e) => {
+    const m = /^Digit(\d)$/.exec(e.code);
+    if (!m) return;
+    const digit = Number(m[1]);
+    let section = digit === 0 ? 10 : digit;
+    if (e.shiftKey) section += 10;
+    const game = (window as unknown as { __game?: { jumpToSection(s: number): void } }).__game;
+    if (game) game.jumpToSection(section - 1);
+  });
+}
+
 function ui(): HTMLDivElement {
   if (!panel) {
     panel = document.createElement("div");
@@ -61,6 +80,7 @@ export function recordJuggernauts(
   elapsed: number,
 ): void {
   if (!DEBUG_JUGG) return;
+  installJumpKeys();
   for (const u of units) {
     if (u.role !== "juggernaut") continue;
     let inc = live.get(u);
@@ -110,11 +130,17 @@ export function recordJuggernauts(
       } catch {
         /* full is fine */
       }
+      // Ship it to the dev server's collector so the session leaves a record on disk.
+      try {
+        fetch("/debug-log", { method: "POST", body: fmt(inc) }).catch(() => {});
+      } catch {
+        /* offline is fine */
+      }
     }
   }
   const lines = done.slice(-7).map(fmt);
   for (const [, inc] of live) {
     if (inc.outcome === "") lines.push(fmt({ ...inc, outcome: "..." }));
   }
-  ui().textContent = "JUGG DEBUG build-79 (piston)\n" + (lines.length ? lines.join("\n") : "(none yet)");
+  ui().textContent = "JUGG DEBUG build-85 | keys 1-9,0 jump to section (shift +10)\n" + (lines.length ? lines.join("\n") : "(none yet)");
 }

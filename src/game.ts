@@ -172,6 +172,29 @@ export class Game {
    * handler, but routing it through here too means the card cannot get stuck on screen
    * while the game underneath is perfectly alive — one fewer thing that has to work.
    */
+  /**
+   * Debug-only teleport to the start of a section. Active police are stood down and
+   * the director repopulates around the new position within a couple of seconds.
+   */
+  jumpToSection(sectionIdx: number): void {
+    const idx = Math.max(0, Math.min(SECTION_STARTS.length - 1, sectionIdx));
+    const start = SECTION_STARTS[idx];
+    const node = this.world.nav.nodeAtProgress(start + 25);
+    const next = this.world.nav.nodeAtProgress(start + 65);
+    this.player.x = node.x;
+    this.player.z = node.z;
+    this.player.y = node.y;
+    this.player.heading = Math.atan2(next.x - node.x, next.z - node.z);
+    this.player.vx = 0;
+    this.player.vz = 0;
+    this.player.vy = 0;
+    for (const u of this.police.units) {
+      if (u.active) u.deactivate();
+    }
+    this.lastOnCourse = { x: node.x, z: node.z, y: node.y, heading: this.player.heading };
+    this.offCourseTimer = 0;
+  }
+
   begin(): void {
     this.started = true;
     this.audio.resumeLoops();

@@ -1,6 +1,38 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import fs from "node:fs";
+import path from "node:path";
+
+/*
+ * Debug incident collector. The ?debug overlay in the game POSTs every finished
+ * juggernaut incident here (same origin, so it works from any browser), and it lands
+ * in debug-incidents.log next to the project - which means a play session on this
+ * machine leaves a record that can be read afterwards without the player doing
+ * anything but playing.
+ */
+function debugLogCollector(): Plugin {
+  return {
+    name: "debug-log-collector",
+    configureServer(server) {
+      server.middlewares.use("/debug-log", (req, res) => {
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          try {
+            const line = new Date().toISOString() + " " + body.replace(/\n/g, " ") + "\n";
+            fs.appendFileSync(path.join(process.cwd(), "debug-incidents.log"), line);
+          } catch {
+            /* logging must never break the game */
+          }
+          res.statusCode = 200;
+          res.end("ok");
+        });
+      });
+    },
+  };
+}
 
 export default defineConfig({
+  plugins: [debugLogCollector()],
   server: {
     port: 5173,
     open: true,

@@ -111,6 +111,8 @@ export class Vehicle {
   recoveryTimer = 0;
   /** Flat top-speed addition from late-run pace scaling (player only). */
   paceBonus = 0;
+  /** Striking juggernaut: police in its path take full, undamped impulses. */
+  plow = false;
   /**
    * Shove multiplier for a T-bone, used instead of `contactBoost` when this vehicle hits
    * a player square in the side. Separate because the two hits do opposite things: a

@@ -277,6 +277,7 @@ export class PoliceCar {
   update(dt: number, ctx: PursuitContext): void {
     const shared = CONFIG.police.shared;
     const v = this.vehicle;
+    v.plow = false;
 
     // A wreck: no driver, ever again. Let it coast to a stop and stay there.
     if (this.wrecked) {
@@ -546,7 +547,8 @@ export class PoliceCar {
       // The pin must be able to CATCH as well as hold - 1.15 lost any player who
       // simply kept their foot down.
       v.drive = 1.75;
-      v.contactBoost = 4;
+      v.contactBoost = 7;
+      v.plow = true;
       v.applySpin(
         clamp(
           wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading),
@@ -658,7 +660,8 @@ export class PoliceCar {
       v.drive = 1 + cfg.chaseSpeed;
       // The plow: police in the lane are shoved aside, not obstacles. Nothing between
       // this and the player is allowed to matter.
-      v.contactBoost = 4;
+      v.contactBoost = 7;
+      v.plow = true;
       /*
        * Terminal magnet. The last half car length is pure yaw physics, and yaw
        * physics loses to a well-timed flick every twelfth run - the one escape left.

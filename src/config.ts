@@ -743,7 +743,7 @@ export const CONFIG = {
        * you sideways into whatever is there rather than down the road. That is the hit
        * this class is supposed to land, so it is the only one that gets amplified.
        */
-      broadsideBoost: 4.2,
+      broadsideBoost: 5.5,
       /**
        * The broadside run: hold the flank until actually abeam, then drive *through*.
        *

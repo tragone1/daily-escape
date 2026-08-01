@@ -92,6 +92,10 @@ export class PoliceCar {
   private springExit: { x: number; z: number } | null = null;
   /** Seconds left of holding a struck player against the wall. */
   private pinTimer = 0;
+  /** The weld: player's offset in the truck frame, latched at first contact. */
+  private glueLocal: { along: number; lateral: number } | null = null;
+  /** One backed-up second attempt per ambush, then it is spent for real. */
+  private retries = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
   aggro = 0;
   /**
@@ -169,6 +173,33 @@ export class PoliceCar {
     );
   }
 
+  /**
+   * The plow wings as PHYSICAL bodies. Two angled OBBs matching the visual claw,
+   * built each query from the live pose. Real means real: the game's collision
+   * pass resolves the player against these, so the wide mouth genuinely contains.
+   */
+  wingObbs(): { x: number; z: number; halfLength: number; halfWidth: number; heading: number }[] {
+    if (this.role !== "juggernaut" || !this.active || this.wrecked) return [];
+    const v = this.vehicle;
+    const fx = Math.sin(v.heading);
+    const fz = Math.cos(v.heading);
+    const rx = Math.cos(v.heading);
+    const rz = -Math.sin(v.heading);
+    const out = [];
+    for (const side of [-1, 1]) {
+      const lx = side * 2.9;
+      const lz = v.params.halfLength + 1.1;
+      out.push({
+        x: v.x + fx * lz + rx * lx,
+        z: v.z + fz * lz + rz * lx,
+        halfLength: 1.5,
+        halfWidth: 0.45,
+        heading: v.heading + side * 0.5,
+      });
+    }
+    return out;
+  }
+
   /** Rigs sit on a wider post than the light blockers do. */
   private get parkRadius(): number {
     if (this.role === "rig") return CONFIG.police.rig.parkRadius;
@@ -199,6 +230,8 @@ export class PoliceCar {
     this.springFrom = null;
     this.springExit = null;
     this.pinTimer = 0;
+    this.glueLocal = null;
+    this.retries = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -438,8 +471,31 @@ export class PoliceCar {
          * a player that far out - staged at the mouth its launch is ~0.5s, which is
          * inside the window the timing math genuinely controls.
          */
-        // No creeping, ever: it waits at its seat deep in the alley exactly like
-        // the fleet ambushers the player praises, and steers its whole strike out.
+        // A re-armed truck that is out on the road backs up into its alley first;
+        // a seated one waits motionless, exactly like the fleet.
+        const out2 = this.ambushOut;
+        if (this.isAmbusher && out2) {
+          const hx2 = this.ambushAt.x - out2.x * 12;
+          const hz2 = this.ambushAt.z - out2.z * 12;
+          const toHold2 = dist(v.x, v.z, hx2, hz2);
+          const outside =
+            (v.x - this.ambushAt.x) * out2.x + (v.z - this.ambushAt.z) * out2.z > -2;
+          if (outside && toHold2 > 3) {
+            this.input.throttle = 0;
+            this.input.brake = 1; // reverse toward the alley
+            this.input.steer = clamp(
+              -wrapAngle(headingOf(hx2 - v.x, hz2 - v.z) - v.heading - Math.PI) /
+                CONFIG.police.shared.steerFullLockAngle,
+              -1,
+              1,
+            );
+            this.input.boost = false;
+            this.view.setCharge(0);
+            v.drive = 1;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
+        }
         this.input.throttle = 0;
         this.input.brake = v.speed > 1 ? 1 : 0;
         this.input.steer = 0;
@@ -528,16 +584,36 @@ export class PoliceCar {
        * 1.75x drive reel them back in, so every touch becomes a felt grind.
        */
       /*
-       * GLUE. Within the claw the player does not bounce: the truck takes infinite
-       * effective mass with zero restitution (jam), and the player's velocity is
-       * fused toward the truck's own - stuck to the blade while it drives them to
-       * the wall, where the full anchor takes over. A glue trap, as specified.
+       * THE WELD. On first contact the player's position in the truck frame is
+       * latched, and from then on they are POSITION-JOINED: dragged toward that
+       * exact offset every frame with their velocity set to the truck's. Not a
+       * force to fight - a fork stuck in the car. Bouncing is geometrically
+       * impossible; release comes only when the pin clock does.
        */
       if (pd < 8) {
         v.jam = true;
-        const fuse = 1 - Math.exp(-8 * dt);
-        ctx.player.vx += (v.vx - ctx.player.vx) * fuse;
-        ctx.player.vz += (v.vz - ctx.player.vz) * fuse;
+        const fx2 = Math.sin(v.heading);
+        const fz2 = Math.cos(v.heading);
+        const rx2 = Math.cos(v.heading);
+        const rz2 = -Math.sin(v.heading);
+        if (!this.glueLocal) {
+          const relX = ctx.player.x - v.x;
+          const relZ = ctx.player.z - v.z;
+          this.glueLocal = {
+            along: Math.min(7.5, relX * fx2 + relZ * fz2),
+            lateral: Math.max(-3.2, Math.min(3.2, relX * rx2 + relZ * rz2)),
+          };
+        }
+        const gl = this.glueLocal;
+        const tx2 = v.x + fx2 * gl.along + rx2 * gl.lateral;
+        const tz2 = v.z + fz2 * gl.along + rz2 * gl.lateral;
+        const pull = 1 - Math.exp(-12 * dt);
+        ctx.player.x += (tx2 - ctx.player.x) * pull;
+        ctx.player.z += (tz2 - ctx.player.z) * pull;
+        ctx.player.vx = v.vx;
+        ctx.player.vz = v.vz;
+      } else if (this.glueLocal && pd > 11) {
+        this.glueLocal = null;
       }
       const gripForming = cfg.pinTime - this.pinTimer < 1.3;
       if (this.pinTimer <= 0 || (!gripForming && pd > cfg.pinLostRange)) {
@@ -644,8 +720,25 @@ export class PoliceCar {
       const along =
         ctx.terrain.progressAt(v.x, v.z) -
         ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
-      // One shot both ways: fallen behind OR crossed twenty ahead, the run is over.
+      // Fallen behind or crossed twenty ahead: the run is over - but the machine
+      // gets ONE backed-up second attempt if its alley still lies ahead of the prey.
       const missed = this.isAmbusher && (along < -14 || along > 20);
+      if (missed && this.retries < 1 && this.lastMouth) {
+        const mouthLead =
+          ctx.terrain.progressAt(this.lastMouth.x, this.lastMouth.z) -
+          ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+        if (mouthLead > -6) {
+          this.retries++;
+          this.springFrom = null;
+          this.springExit = null;
+          this.pinTimer = 0;
+          this.glueLocal = null;
+          this.ambushAt = { x: this.lastMouth.x, z: this.lastMouth.z };
+          this.ambushOut = { x: this.lastMouth.ox, z: this.lastMouth.oz };
+          this.ambushWait = 0;
+          return;
+        }
+      }
       if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
         this.springExit = null;

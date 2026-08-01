@@ -33,7 +33,45 @@ class TouchControls {
     this.buildUi();
     // The game area must never scroll or zoom; the pads handle their own touches.
     const opts = { passive: false } as AddEventListenerOptions;
-    window.addEventListener("touchmove", (e) => e.preventDefault(), opts);
+    window.addEventListener("touchmove", (e) => this.onSlide(e), opts);
+  }
+
+  /** Touches that slid over a pad since entry, so slide-boost fires exactly once. */
+  private slideIn = new Map<number, string>();
+
+  /*
+   * Slide-to-boost: holding the gas and dragging onto BOOST fires it without ever
+   * lifting - the gas pad keeps its touch (leaving an element does not end a touch),
+   * so throttle stays pinned while the boost lights. Works for ROCKET too.
+   */
+  private onSlide(e: TouchEvent): void {
+    e.preventDefault();
+    for (const t of Array.from(e.changedTouches)) {
+      let over: string | null = null;
+      for (const name of ["boost", "fire"]) {
+        const p = this.pads.get(name);
+        if (!p) continue;
+        const r = p.el.getBoundingClientRect();
+        if (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom) {
+          over = name;
+          break;
+        }
+      }
+      const prev = this.slideIn.get(t.identifier) ?? null;
+      if (over && over !== prev) {
+        if (over === "boost") this.boostEdge = true;
+        if (over === "fire") this.fireEdge = true;
+        const pad = this.pads.get(over);
+        if (pad) {
+          pad.el.classList.add("pressed");
+          setTimeout(() => {
+            if (pad.ids.size === 0) pad.el.classList.remove("pressed");
+          }, 180);
+        }
+      }
+      if (over) this.slideIn.set(t.identifier, over);
+      else this.slideIn.delete(t.identifier);
+    }
   }
 
   private pad(

@@ -294,6 +294,8 @@ export class Game {
     }
 
     // --- Rocket ------------------------------------------------------------
+    // Debug mode is a test rig: never run dry.
+    if (DEBUG_JUGG && this.rockets.ammo < 9) this.rockets.ammo = 9;
     if (this.controller.firePressed(this.keys) && this.rockets.fire(this.player)) {
       this.camera.addShake(0.35);
       this.audio.rocketLaunch();

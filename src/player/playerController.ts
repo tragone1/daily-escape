@@ -8,7 +8,9 @@ const BACK = ["KeyS", "ArrowDown"];
 const LEFT = ["KeyA", "ArrowLeft"];
 const RIGHT = ["KeyD", "ArrowRight"];
 const BOOST = ["Space"];
-const FIRE = ["KeyF", "ShiftLeft", "ShiftRight"];
+// F only. Shift as an alternate fire key surprised everyone who held it to
+// steer harder or used the debug section jumps.
+const FIRE = ["KeyF"];
 
 export class PlayerController {
   private input: VehicleInput = { throttle: 0, brake: 0, steer: 0, boost: false };

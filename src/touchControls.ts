@@ -34,6 +34,20 @@ class TouchControls {
     // The game area must never scroll or zoom; the pads handle their own touches.
     const opts = { passive: false } as AddEventListenerOptions;
     window.addEventListener("touchmove", (e) => this.onSlide(e), opts);
+    // Releases are global: a touch that slid from gas to brake must release the pad
+    // it currently holds, not the one it started on.
+    const endAll = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        for (const [, pad] of this.pads) {
+          pad.ids.delete(t.identifier);
+          if (pad.ids.size === 0) pad.el.classList.remove("pressed");
+        }
+        this.slideIn.delete(t.identifier);
+      }
+      this.recompute();
+    };
+    window.addEventListener("touchend", endAll, opts);
+    window.addEventListener("touchcancel", endAll, opts);
   }
 
   /** Touches that slid over a pad since entry, so slide-boost fires exactly once. */
@@ -47,6 +61,27 @@ class TouchControls {
   private onSlide(e: TouchEvent): void {
     e.preventDefault();
     for (const t of Array.from(e.changedTouches)) {
+      /*
+       * Sliding between hold pads transfers the touch: gas to brake and left to
+       * right work like rolling a thumb between keys, no lift needed.
+       */
+      let holder: Pad | null = null;
+      for (const [, pad] of this.pads) if (pad.ids.has(t.identifier)) holder = pad;
+      if (holder) {
+        for (const name of ["up", "down", "left", "right"]) {
+          const pad = this.pads.get(name);
+          if (!pad || pad === holder) continue;
+          const r = pad.el.getBoundingClientRect();
+          if (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom) {
+            holder.ids.delete(t.identifier);
+            if (holder.ids.size === 0) holder.el.classList.remove("pressed");
+            pad.ids.add(t.identifier);
+            pad.el.classList.add("pressed");
+            this.recompute();
+            break;
+          }
+        }
+      }
       let over: string | null = null;
       for (const name of ["boost", "fire"]) {
         const p = this.pads.get(name);
@@ -99,21 +134,14 @@ class TouchControls {
       },
       opts,
     );
-    const release = (e: TouchEvent) => {
-      for (const t of Array.from(e.changedTouches)) entry.ids.delete(t.identifier);
-      if (entry.ids.size === 0) el.classList.remove("pressed");
-      this.recompute();
-    };
-    el.addEventListener("touchend", release, opts);
-    el.addEventListener("touchcancel", release, opts);
     document.body.appendChild(el);
     this.pads.set(name, entry);
   }
 
   private buildUi(): void {
     // Left cluster: drive.
-    this.pad("up", "&#9650;", "left:calc(24px + env(safe-area-inset-left));bottom:112px;width:92px;height:92px");
-    this.pad("down", "&#9660;", "left:calc(36px + env(safe-area-inset-left));bottom:20px;width:74px;height:74px");
+    this.pad("up", "&#9650;", "left:calc(24px + env(safe-area-inset-left));bottom:118px;width:84px;height:84px");
+    this.pad("down", "&#9660;", "left:calc(24px + env(safe-area-inset-left));bottom:24px;width:84px;height:84px");
     this.pad(
       "boost",
       "BOOST",

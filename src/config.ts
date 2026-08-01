@@ -257,6 +257,18 @@ export const CONFIG = {
       accelBoost: 1.7,
       minSeverity: 0.25,
     },
+    /**
+     * Late-run pace. From `fromSection` (0-indexed; 9 = the tenth section) the
+     * player's top speed climbs per section, capped. The police keep their own
+     * climb to +12, so they stay relatively faster - this raises the tempo of the
+     * whole late game rather than handing out an advantage: at 50+ every wall and
+     * head-on arrives sooner than your reflexes expect.
+     */
+    lateSpeed: {
+      fromSection: 9,
+      perSection: 0.35,
+      max: 7,
+    },
     boost: {
       /** Extra acceleration while boosting, u/s^2. */
       accel: 34,

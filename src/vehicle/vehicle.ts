@@ -109,6 +109,8 @@ export class Vehicle {
   contactBoost = 1;
   /** Seconds of post-impact recovery left; throttle pulls harder while it runs. */
   recoveryTimer = 0;
+  /** Flat top-speed addition from late-run pace scaling (player only). */
+  paceBonus = 0;
   /**
    * Shove multiplier for a T-bone, used instead of `contactBoost` when this vehicle hits
    * a player square in the side. Separate because the two hits do opposite things: a
@@ -279,7 +281,7 @@ export class Vehicle {
         ? this.tireSpeed + (1 - this.tireSpeed) * CONFIG.player.boost.damageBypass
         : this.tireSpeed;
 
-    let maxSpeed = p.maxSpeed * surf.maxSpeed;
+    let maxSpeed = (p.maxSpeed + this.paceBonus) * surf.maxSpeed;
     if (this.boostTime > 0 && this.boostParams) maxSpeed += this.boostParams.maxSpeedBonus;
     maxSpeed *= tyre * this.drive;
 

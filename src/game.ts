@@ -392,6 +392,11 @@ export class Game {
     this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
+    const pace = CONFIG.player.lateSpeed;
+    this.player.paceBonus = Math.min(
+      pace.max,
+      Math.max(0, (section - pace.fromSection) * pace.perSection),
+    );
     // Deep-run track. Driven from the furthest section reached rather than the current
     // one, so being shoved back over a boundary cannot switch it off mid-bar.
     this.audio.updateMusic(this.state.section);

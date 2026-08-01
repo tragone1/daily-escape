@@ -7,7 +7,6 @@ import { Renderer } from "./gfx/renderer";
 
 import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
-import { obbVsOBB } from "./physics/collision";
 import { DEBUG_JUGG, recordJuggernauts } from "./debugJugg";
 import { CONFIG } from "./config";
 import { Input } from "./input";
@@ -376,27 +375,6 @@ export class Game {
       if (unit.welded) continue;
       const hit = this.collision.resolveCars(this.player, unit.vehicle);
       if (hit && (!strongest || hit.speed > strongest.speed)) strongest = hit;
-    }
-    /*
-     * The plow wings are real. Each active juggernaut contributes two angled wing
-     * bodies; the player resolves against them with zero restitution - contained,
-     * not bounced. This is what makes the wide mouth a mouth.
-     */
-    for (const unit of active) {
-      if (unit.role !== "juggernaut" || unit.welded) continue;
-      for (const wing of unit.wingObbs()) {
-        const hit = obbVsOBB(this.player.obb, wing);
-        if (!hit) continue;
-        this.player.x += hit.nx * hit.depth;
-        this.player.z += hit.nz * hit.depth;
-        const vn = this.player.vx * hit.nx + this.player.vz * hit.nz;
-        if (vn < 0) {
-          // Solid steel: cancel the approach and add a real kick, so a glancing
-          // wing clip reads as hitting an object, not passing through a curtain.
-          this.player.vx -= hit.nx * vn * 1.6;
-          this.player.vz -= hit.nz * vn * 1.6;
-        }
-      }
     }
     const floor = speedBefore * (1 - CONFIG.collision.maxCarSpeedLossPerFrame);
     const speedAfter = this.player.speed;

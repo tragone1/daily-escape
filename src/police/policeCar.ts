@@ -179,33 +179,6 @@ export class PoliceCar {
     );
   }
 
-  /**
-   * The plow wings as PHYSICAL bodies. Two angled OBBs matching the visual claw,
-   * built each query from the live pose. Real means real: the game's collision
-   * pass resolves the player against these, so the wide mouth genuinely contains.
-   */
-  wingObbs(): { x: number; z: number; halfLength: number; halfWidth: number; heading: number }[] {
-    if (this.role !== "juggernaut" || !this.active || this.wrecked) return [];
-    const v = this.vehicle;
-    const fx = Math.sin(v.heading);
-    const fz = Math.cos(v.heading);
-    const rx = Math.cos(v.heading);
-    const rz = -Math.sin(v.heading);
-    const out = [];
-    for (const side of [-1, 1]) {
-      const lx = side * 2.9;
-      const lz = v.params.halfLength + 1.1;
-      out.push({
-        x: v.x + fx * lz + rx * lx,
-        z: v.z + fz * lz + rz * lx,
-        halfLength: 1.5,
-        halfWidth: 0.45,
-        heading: v.heading + side * 0.5,
-      });
-    }
-    return out;
-  }
-
   /** Rigs sit on a wider post than the light blockers do. */
   private get parkRadius(): number {
     if (this.role === "rig") return CONFIG.police.rig.parkRadius;
@@ -570,8 +543,8 @@ export class PoliceCar {
         const fx = Math.sin(v.heading);
         const fz = Math.cos(v.heading);
         // Wing reach, not nose reach: the claw tips are real and stop at the wall.
-        const wallAhead = ctx.world.raycastDistance(v.x, v.z, fx, fz, 8.4);
-        if (wallAhead < 8.4) {
+        const wallAhead = ctx.world.raycastDistance(v.x, v.z, fx, fz, 7.2);
+        if (wallAhead < 7.2) {
           v.jam = true;
           v.plow = true;
           v.contactBoost = 1;
@@ -715,7 +688,7 @@ export class PoliceCar {
       // wall inside the claw's reach, the truck is held back at the surface.
       const fxW = Math.sin(v.heading);
       const fzW = Math.cos(v.heading);
-      const reach = v.params.halfLength + 2.7;
+      const reach = v.params.halfLength + 1.2;
       const wallD = ctx.world.raycastDistance(v.x, v.z, fxW, fzW, reach);
       if (wallD < reach) {
         const push = reach - wallD;
@@ -1232,6 +1205,9 @@ export class PoliceCar {
       const rw = dist(v.x, v.z, mouth.x, mouth.z) + 7;
       const ourEtaE =
         0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
+      // A shot that is already stale at first sight lands behind the player every
+      // time - hold instead; a no-show is invisible, a tail-graze is a complaint.
+      if (theirEtaE < ourEtaE + cfg.leadTime - 0.25) return false;
       return theirEtaE <= ourEtaE + cfg.leadTime;
     }
     const lead =

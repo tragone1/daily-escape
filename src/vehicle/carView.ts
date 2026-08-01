@@ -74,35 +74,26 @@ export class CarView {
 
     if (plow) {
       /*
-       * The snowplow claw: a wide steel blade across the nose with two swept wings
-       * whose tips reach forward - a shallow V opening toward whatever it hunts, so
-       * a landed strike reads as being CAUGHT, not bumped. Purely visual here; the
-       * widened collider is what makes the catch physical.
+       * The plow, second design: ONE flat steel blade across the whole nose,
+       * matching the strike collider's width exactly - what you see is what hits.
+       * The angled wings looked like a claw and behaved like a glitch; a clean
+       * wall of steel is honest to the one-box physics.
        */
       const steel: Rgb = [0.2, 0.22, 0.26];
       const blade = panel(
-        r.createMesh({ kind: "box", width: wid * 1.55, height: 1.7, depth: 0.7 }, { color: [...steel], emissive: 0.2 }),
+        r.createMesh({ kind: "box", width: 6.6, height: 2.0, depth: 0.9 }, { color: [...steel], emissive: 0.22 }),
         steel,
       );
       blade.parent = this.body;
-      blade.position.set(0, 0.85, halfLength + 0.15);
-      blade.rotation.x = -0.28;
-      for (const side of [-1, 1]) {
-        const wing = panel(
-          r.createMesh({ kind: "box", width: 0.55, height: 1.6, depth: 2.3 }, { color: [...steel], emissive: 0.2 }),
-          steel,
-        );
-        wing.parent = this.body;
-        wing.position.set(side * (wid * 0.78), 0.8, halfLength + 1.0);
-        wing.rotation.y = side * 0.5;
-        const tip = panel(
-          r.createMesh({ kind: "box", width: 0.5, height: 1.1, depth: 0.9 }, { color: [0.85, 0.4, 0.1], emissive: 0.5 }),
-          [0.85, 0.4, 0.1] as Rgb,
-        );
-        tip.parent = this.body;
-        tip.position.set(side * (wid * 0.98), 0.75, halfLength + 1.9);
-        tip.rotation.y = side * 0.5;
-      }
+      blade.position.set(0, 0.95, halfLength + 0.5);
+      blade.rotation.x = -0.2;
+      const stripe = panel(
+        r.createMesh({ kind: "box", width: 6.7, height: 0.3, depth: 0.92 }, { color: [0.85, 0.4, 0.1], emissive: 0.5 }),
+        [0.85, 0.4, 0.1] as Rgb,
+      );
+      stripe.parent = this.body;
+      stripe.position.set(0, 1.75, halfLength + 0.52);
+      stripe.rotation.x = -0.2;
     }
     const chassis = r.createMesh(
       { kind: "box", width: wid, height: 0.85, depth: len },

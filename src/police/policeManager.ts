@@ -659,7 +659,7 @@ export class PoliceManager {
        * until the launch was already late.
        */
       if (CONFIG.police.escalation.openRoad.roles.includes(unit.role)) {
-        const sightNode = ctx.nav.nodeAtProgress(Math.max(0, spur.progress - 30));
+        const sightNode = ctx.nav.nodeAtProgress(Math.max(0, spur.progress - 48));
         if (!ctx.world.lineOfSight(mx, mz, sightNode.x, sightNode.z)) continue;
       }
       /*

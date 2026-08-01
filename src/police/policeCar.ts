@@ -338,7 +338,8 @@ export class PoliceCar {
           return;
         }
       }
-      const go = this.isAmbusher ? this.readyToPounce(ctx) : this.readyToSpring(ctx);
+      const burst = this.isAmbusher ? this.readyToBurst(ctx) : null;
+      const go = this.isAmbusher ? burst !== null : this.readyToSpring(ctx);
       if (go) {
         // Re-arm the wait clock: it now times the poised hold at the mouth, so a
         // player who never comes releases the budget instead of locking it forever.
@@ -351,10 +352,9 @@ export class PoliceCar {
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
         if (this.isAmbusher) {
-          this.strikeTimer = this.ambushTuning.strikeTime;
-          // Out of the alley with the charge already wound: the telegraphed run is
-          // the hit this class exists for, and it should be available immediately.
-          this.chargeCooldown = 0;
+          // One burst: the solved crossing time plus a beat of grace. If it has not
+          // touched the player by then, the shot is over - no second approach, ever.
+          this.strikeTimer = Math.min(this.ambushTuning.strikeTime, (burst ?? 1) + 1.4);
         }
         this.ambushAt = null;
       } else {
@@ -845,17 +845,31 @@ export class PoliceCar {
    * leaving a side road into an interception rather than an obstacle already spent.
    */
   /**
-   * The armoured ambusher's trigger: the player is genuinely close and the mouth can
-   * SEE them. Line of sight is what makes this immune to every switchback lie the
-   * course can tell - a wall between you and the alley means no pounce, full stop.
+   * The burst trigger. One shot, solved at point-blank range: compute how long this
+   * truck's nose needs to reach the road from where it actually sits, predict where
+   * the player will be at that exact moment, and fire only when that predicted point
+   * is on the mouth. The horizon is well under a second - nothing the player does
+   * with brakes or boost moves them far off a half-second prediction - and line of
+   * sight gates the whole thing so no switchback can fake it.
    */
-  private readyToPounce(ctx: PursuitContext): boolean {
+  private readyToBurst(ctx: PursuitContext): number | null {
     const cfg = this.ambushTuning;
-    if (this.ambushWait > cfg.maxWait) return true;
     const mouth = this.ambushAt as { x: number; z: number };
-    const d = dist(ctx.player.x, ctx.player.z, mouth.x, mouth.z);
-    if (d > cfg.strikeGo + 12) return false;
-    return ctx.world.lineOfSight(mouth.x, mouth.z, ctx.player.x, ctx.player.z);
+    if (this.ambushWait > cfg.maxWait) return 1.4;
+    const player = ctx.player;
+    const d = dist(player.x, player.z, mouth.x, mouth.z);
+    if (d > 110) return null;
+    if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
+    const v = this.vehicle;
+    // Spin-up plus travel at the launch pace, from actual depth to just past the mouth.
+    const tSelf =
+      0.25 +
+      (dist(v.x, v.z, mouth.x, mouth.z) + 8) /
+        Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+    const px = player.x + player.vx * tSelf;
+    const pz = player.z + player.vz * tSelf;
+    if (dist(px, pz, mouth.x, mouth.z) > cfg.burstWindow) return null;
+    return tSelf;
   }
 
   private readyToSpring(ctx: PursuitContext): boolean {

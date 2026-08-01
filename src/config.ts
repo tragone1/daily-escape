@@ -1205,6 +1205,7 @@ export const CONFIG = {
         strikeGo: 46,
         strikeTime: 12,
         chaseSpeed: 0.2,
+        burstWindow: 9,
         turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
@@ -1458,8 +1459,15 @@ export const CONFIG = {
            * of a truck accelerating from cold as the player arrives.
            */
           springRange: 90,
-          /** Seconds of open-road hunting after leaving the alley before it is spent. */
+          /** Hard cap on the burst, seconds; the real window is solved per launch. */
           strikeTime: 14,
+          /**
+           * The burst fires when the player's PREDICTED position - at the moment the
+           * truck's own nose will reach the road, solved from its actual depth in the
+           * alley - falls within this many units of the mouth. Point-blank timing:
+           * the prediction horizon is well under a second, too short to drift.
+           */
+          burstWindow: 9,
           /**
            * Top-speed multiplier bonus for the whole hunt. 0.7 puts it near 73 u/s -
            * a clear edge over even the section-29 player at 58 - because the contract

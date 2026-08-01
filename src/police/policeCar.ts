@@ -326,6 +326,24 @@ export class PoliceCar {
       return;
     }
 
+    /*
+     * A spent ambusher brakes to a natural stop and stays put until the director
+     * retires it. Without this it FROZE mid-road: the strike branch re-declared it
+     * spent every frame and returned before ever driving the vehicle - a statue
+     * parked in the open, which the player met and reasonably called a sitting
+     * duck. A decelerating truck reads as a failed charge; a statue reads as a bug.
+     */
+    if (this.isAmbusher && this.spent) {
+      this.input.throttle = 0;
+      this.input.brake = v.speed > 0.5 ? 1 : 0;
+      this.input.steer = 0;
+      this.input.boost = false;
+      this.view.setCharge(0);
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
+      return;
+    }
+
     // Waiting in an alley: sit still, engine running, until the moment is right.
     if (this.ambushAt) {
       this.ambushWait += dt;
@@ -983,25 +1001,14 @@ export class PoliceCar {
      * ever reported; a late shot that clips the tail is still a hit, and a shot
      * that passes behind is an honest miss that reads as a dodge, not a farce.
      */
-    const v = this.vehicle;
     /*
-     * Real launch kinematics: the truck accelerates from a standstill, it does not
-     * cruise - over an eleven-unit runway the accel phase IS the run. The old cruise
-     * formula overestimated its time by ~0.2s, which fired the gate that much early,
-     * which was the residual 'slightly in front, every time'. And the bias is 0.3
-     * and asymmetric on purpose: the player slows into bends where spurs live, so
-     * live speed always over-promises their arrival - and a late burst is recovered
-     * by pure pursuit onto the tail, while an early one is unrecoverable forever.
-     * 0.12: with honest kinematics the bias only needs to cover the human lift-off
-     * into the bend, not a formula error. 0.3 arrived after the player had passed.
+     * MEASURED, not modelled: batteries clocked staged launches at ~0.42s from hold
+     * to the road. Every physics formula tried here overestimated by a quarter
+     * second, and a quarter second early is twenty units of 'it shot out well in
+     * front of me like it's nothing'. The truck is a piston: it does not need to
+     * move until the player is nearly at the lip, so the trigger is the lip.
      */
-    const runway = dist(v.x, v.z, mouth.x, mouth.z) + 6;
-    const a = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-    const top = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
-    const tAccel = top / a;
-    const dAccel = 0.5 * a * tAccel * tAccel;
-    const tSelf =
-      0.12 + (runway <= dAccel ? Math.sqrt((2 * runway) / a) : tAccel + (runway - dAccel) / top);
+    const tSelf = 0.42;
     /*
      * Believe the chassis, not the boost. A boost that ends mid-window sheds
      * fifteen units a second and re-creates the early fire; clamping the believed

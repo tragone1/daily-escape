@@ -784,6 +784,16 @@ export class PoliceManager {
       placed++;
     }
 
+    // The immediate threat: cars already coming back down the road at you.
+    for (const offset of pacing.openingChasers) {
+      const unit = patrols[placed];
+      if (!unit) break;
+      const node = nav.nodeAtProgress(offset);
+      const prev = nav.nodeAtProgress(Math.max(0, offset - 40));
+      unit.placeAt(node.x, node.z, headingOf(prev.x - node.x, prev.z - node.z), node.y);
+      placed++;
+    }
+
     for (const offset of wave) {
       const unit = patrols[placed];
       if (!unit) break;

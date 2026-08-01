@@ -1050,6 +1050,14 @@ export const CONFIG = {
        * and any spur near the start gets one waiting in it.
        */
       openingWave: [190, 285, 380],
+      /**
+       * Units that open the run already hunting, placed this far up the road facing
+       * back down it. Without them, second zero had two ambushers waiting, three
+       * traffic cars driving away, and nothing engaging - a player who simply stood
+       * still waited most of a minute to be punished. These arrive within seconds, so
+       * no part of the run is a freebie, including the first breath of it.
+       */
+      openingChasers: [42, 78, 114, 150],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**

@@ -1444,7 +1444,7 @@ export const CONFIG = {
            * the player past `pinLostRange` ends it early. This is what makes the slam
            * a sentence rather than a speed bump.
            */
-          pinRange: 6.5,
+          pinRange: 7.2,
           pinTime: 4.5,
           pinLostRange: 20,
           /**
@@ -1459,8 +1459,12 @@ export const CONFIG = {
            * of a truck accelerating from cold as the player arrives.
            */
           springRange: 90,
-          /** Hard cap on the burst, seconds; the real window is solved per launch. */
-          strikeTime: 14,
+          /**
+           * Hard cap on the burst, seconds. Short: the touch happens in the first two
+           * seconds or the geometry has moved on, and a long tail-chase grinding
+           * walls behind the player is the one look this class must never have.
+           */
+          strikeTime: 7,
           /**
            * The burst fires when the player's PREDICTED position - at the moment the
            * truck's own nose will reach the road, solved from its actual depth in the
@@ -1473,7 +1477,7 @@ export const CONFIG = {
            * a clear edge over even the section-29 player at 58 - because the contract
            * is contact EVERY time, and a chase without a speed edge is a coin flip.
            */
-          chaseSpeed: 0.7,
+          chaseSpeed: 0.85,
           /**
            * The launch proper does not begin until the player is inside this range.
            * An early spring - live timing fired optimistic, player braked - now means

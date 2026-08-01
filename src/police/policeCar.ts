@@ -352,9 +352,7 @@ export class PoliceCar {
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
         if (this.isAmbusher) {
-          // One burst: the solved crossing time plus a beat of grace. If it has not
-          // touched the player by then, the shot is over - no second approach, ever.
-          this.strikeTimer = Math.min(this.ambushTuning.strikeTime, (burst ?? 1) + 1.4);
+          this.strikeTimer = this.ambushTuning.strikeTime;
         }
         this.ambushAt = null;
       } else {
@@ -484,12 +482,14 @@ export class PoliceCar {
        * wall interrupts. Nothing here ever declares a miss; only the clock or the
        * pin ends it.
        */
-      const lead = interceptPoint(v, ctx.player, 0.6);
-      const tx = lead.x - v.x;
-      const tz = lead.z - v.z;
-      const tl = Math.hypot(tx, tz) || 1;
-      const aimX = lead.x + (tx / tl) * 3;
-      const aimZ = lead.z + (tz / tl) * 3;
+      /*
+       * PURE pursuit: aim at the player, not a forecast. An intercept lead overshoots
+       * the moment the target brakes; aiming at the body itself converges from any
+       * geometry - the worst case is sliding onto the rear quarter, which is still
+       * contact, which is the contract.
+       */
+      const aimX = ctx.player.x + ctx.player.vx * 0.1;
+      const aimZ = ctx.player.z + ctx.player.vz * 0.1;
       const err = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
       if (v.speed < 5 && Math.abs(err) > 0.7) {
         this.input.throttle = 0;
@@ -507,7 +507,7 @@ export class PoliceCar {
       v.drive = 1 + cfg.chaseSpeed;
       // Double rails inside twenty units: the last half car length is where a swerve
       // used to buy a graze instead of a hit.
-      v.applySpin(clamp(err, -0.8, 0.8) * cfg.turnAssist * (pd < 20 ? 2 : 1) * dt);
+      v.applySpin(clamp(err, -0.8, 0.8) * cfg.turnAssist * (pd < 20 ? 3 : 1) * dt);
       v.update(this.input, dt, ctx.terrain);
       return;
     }
@@ -852,24 +852,29 @@ export class PoliceCar {
    * with brakes or boost moves them far off a half-second prediction - and line of
    * sight gates the whole thing so no switchback can fake it.
    */
+  /*
+   * No timing solve at all. Every predictive gate ever tried here fired early or late
+   * the moment the player's speed changed - and this player's speed changes because
+   * they are being rammed, walled and boosted. Fire on presence: close and seen.
+   * The pure-pursuit burst does the rest, because it aims at the player themselves
+   * and cannot be wrong about where they will be.
+   */
   private readyToBurst(ctx: PursuitContext): number | null {
     const cfg = this.ambushTuning;
     const mouth = this.ambushAt as { x: number; z: number };
-    if (this.ambushWait > cfg.maxWait) return 1.4;
+    if (this.ambushWait > cfg.maxWait) return 1;
     const player = ctx.player;
     const d = dist(player.x, player.z, mouth.x, mouth.z);
-    if (d > 110) return null;
+    if (d > 85) return null;
+    /*
+     * Fire on TIME to the mouth, not distance - live speed, re-read every frame, so
+     * a boosting player trips the gate from further out and a crawling one up close.
+     * 0.85s is the truck's own nose-to-lane time; the floor keeps a stopped player
+     * from parking outside an alley that never fires.
+     */
+    if (d > player.speed * 0.85 + 14) return null;
     if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
-    const v = this.vehicle;
-    // Spin-up plus travel at the launch pace, from actual depth to just past the mouth.
-    const tSelf =
-      0.25 +
-      (dist(v.x, v.z, mouth.x, mouth.z) + 8) /
-        Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
-    const px = player.x + player.vx * tSelf;
-    const pz = player.z + player.vz * tSelf;
-    if (dist(px, pz, mouth.x, mouth.z) > cfg.burstWindow) return null;
-    return tSelf;
+    return 1;
   }
 
   private readyToSpring(ctx: PursuitContext): boolean {

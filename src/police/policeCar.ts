@@ -83,6 +83,8 @@ export class PoliceCar {
   ambushAt: { x: number; z: number } | null = null;
   /** Outward unit vector of the spur (seat toward mouth), set when seated. */
   ambushOut: { x: number; z: number } | null = null;
+  /** Mouth and outward axis of the last alley, kept after firing for the slink-back. */
+  private lastMouth: { x: number; z: number; ox: number; oz: number } | null = null;
   private ambushWait = 0;
   /** Mouth of the spur it sprang from, held while it is still steering the strike. */
   private springFrom: { x: number; z: number } | null = null;
@@ -191,6 +193,7 @@ export class PoliceCar {
     this.boxPress = 0;
     this.ambushAt = null;
     this.ambushOut = null;
+    this.lastMouth = null;
     this.ambushWait = 0;
     this.springFrom = null;
     this.springExit = null;
@@ -334,6 +337,32 @@ export class PoliceCar {
      * duck. A decelerating truck reads as a failed charge; a statue reads as a bug.
      */
     if (this.isAmbusher && this.spent) {
+      /*
+       * A missed shot does not leave a truck parked in the middle of the road - it
+       * slinks back into the alley it came from and disappears there. Only when the
+       * alley is genuinely out of reach does it settle where it stands.
+       */
+      const m = this.lastMouth;
+      if (m) {
+        const hx = m.x - m.ox * 12;
+        const hz = m.z - m.oz * 12;
+        const toHide = dist(v.x, v.z, hx, hz);
+        if (toHide > 3 && dist(v.x, v.z, m.x, m.z) < 55) {
+          this.input.throttle = v.speed > 11 ? 0 : 0.55;
+          this.input.brake = 0;
+          this.input.steer = clamp(
+            wrapAngle(headingOf(hx - v.x, hz - v.z) - v.heading) /
+              CONFIG.police.shared.steerFullLockAngle,
+            -1,
+            1,
+          );
+          this.input.boost = false;
+          this.view.setCharge(0);
+          v.drive = 1;
+          v.update(this.input, dt, ctx.terrain);
+          return;
+        }
+      }
       this.input.throttle = 0;
       this.input.brake = v.speed > 0.5 ? 1 : 0;
       this.input.steer = 0;
@@ -377,6 +406,14 @@ export class PoliceCar {
         this.springExit = { x: ox / ol, z: oz / ol };
         if (this.isAmbusher) {
           this.strikeTimer = this.ambushTuning.strikeTime;
+          if (this.ambushOut) {
+            this.lastMouth = {
+              x: this.ambushAt.x,
+              z: this.ambushAt.z,
+              ox: this.ambushOut.x,
+              oz: this.ambushOut.z,
+            };
+          }
         }
         this.ambushAt = null;
       } else {
@@ -417,8 +454,8 @@ export class PoliceCar {
             v.update(this.input, dt, ctx.terrain);
             return;
           }
-          const hx = mouth.x - out.x * 6;
-          const hz = mouth.z - out.z * 6;
+          const hx = mouth.x - out.x * 12;
+          const hz = mouth.z - out.z * 12;
           const toHold = dist(v.x, v.z, hx, hz);
           if (toHold > 2.5) {
             this.input.throttle = v.speed > 9 ? 0 : 0.6;
@@ -1004,7 +1041,7 @@ export class PoliceCar {
      * a broken promise.
      */
     const v0 = this.vehicle;
-    if (dist(v0.x, v0.z, mouth.x, mouth.z) > 9) return null;
+    if (dist(v0.x, v0.z, mouth.x, mouth.z) > 15) return null;
     const player = ctx.player;
     const d = dist(player.x, player.z, mouth.x, mouth.z);
     if (d > 120) return null;

@@ -361,6 +361,20 @@ export class Game {
 
     if (strongest) {
       const severity = clamp(strongest.speed / this.player.params.maxSpeed, 0, 1);
+      const rec = CONFIG.player.recovery;
+      if (severity > rec.minSeverity) {
+        // Cap how far backwards a ram can leave you sliding, and open the
+        // stronger-throttle recovery window - the aftermath, not the hit, is softened.
+        const fx = Math.sin(this.player.heading);
+        const fz = Math.cos(this.player.heading);
+        const vf = this.player.vx * fx + this.player.vz * fz;
+        if (vf < -rec.maxBackslide) {
+          const excess = vf + rec.maxBackslide;
+          this.player.vx -= excess * fx;
+          this.player.vz -= excess * fz;
+        }
+        this.player.recoveryTimer = Math.max(this.player.recoveryTimer, rec.boostTime);
+      }
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
       // Barely a flicker. Contact is now near-constant by design, and at the old weight
       // the screen sat under a permanent white veil for the whole back half of a run.

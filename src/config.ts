@@ -244,6 +244,19 @@ export const CONFIG = {
 
   player: {
     vehicle: PLAYER_VEHICLE,
+    /**
+     * Head-on aftermath. The hit itself stays hard - that is the nimble-or-pay
+     * pressure - but the tail is shortened: a ram cannot leave the player sliding
+     * backwards faster than `maxBackslide`, and for `boostTime` seconds after a hard
+     * hit the throttle pulls `accelBoost` times harder. The mistake still costs;
+     * it stops costing five seconds of helplessness.
+     */
+    recovery: {
+      maxBackslide: 8,
+      boostTime: 1.3,
+      accelBoost: 1.7,
+      minSeverity: 0.25,
+    },
     boost: {
       /** Extra acceleration while boosting, u/s^2. */
       accel: 34,

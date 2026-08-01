@@ -107,6 +107,8 @@ export class Vehicle {
   impactResistance = 1;
   pushResistance = 1;
   contactBoost = 1;
+  /** Seconds of post-impact recovery left; throttle pulls harder while it runs. */
+  recoveryTimer = 0;
   /**
    * Shove multiplier for a T-bone, used instead of `contactBoost` when this vehicle hits
    * a player square in the side. Separate because the two hits do opposite things: a
@@ -185,6 +187,7 @@ export class Vehicle {
     this.boostTime = 0;
     this.boostCooldown = 0;
     this.boostFired = false;
+    this.recoveryTimer = 0;
     this.slip = 0;
     this.leanRoll = 0;
     this.leanPitch = 0;
@@ -213,6 +216,7 @@ export class Vehicle {
     this.boostFired = false;
     this.justLanded = false;
     this.justLaunched = false;
+    this.recoveryTimer = Math.max(0, this.recoveryTimer - dt);
 
     const ground = terrain.sample(this.x, this.z);
     const raw = t.surfaces[ground.surface];
@@ -316,11 +320,13 @@ export class Vehicle {
       if (input.throttle > 0) {
         // Full power up to ~half the speed range, then taper into the top end.
         const headroom = clamp((1 - vf / maxSpeed) * 1.9, 0, 1);
+        const recovering = this.recoveryTimer > 0 ? CONFIG.player.recovery.accelBoost : 1;
         vf +=
           (p.accel * surf.accel * input.throttle + boostAccel) *
           tyre *
           this.drive *
           headroom *
+          recovering *
           dt;
       }
 

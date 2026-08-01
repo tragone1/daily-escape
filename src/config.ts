@@ -1446,7 +1446,7 @@ export const CONFIG = {
            * the player past `pinLostRange` ends it early. This is what makes the slam
            * a sentence rather than a speed bump.
            */
-          pinRange: 8.5,
+          pinRange: 9.5,
           pinTime: 7,
           pinLostRange: 26,
           /**
@@ -1493,7 +1493,7 @@ export const CONFIG = {
            * is deliberately slow to steer everywhere else; the strike gets rails, so
            * swerving, braking and boosting all converge on the same contact.
            */
-          turnAssist: 16,
+          turnAssist: 20,
           /**
            * Once the player is this far past, the shot is gone and so is the unit.
            *

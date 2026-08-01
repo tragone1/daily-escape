@@ -481,18 +481,27 @@ export class PoliceCar {
         this.spent = true;
         return;
       }
+      const pinErr = wrapAngle(
+        headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading,
+      );
+      // Nose on a wall mid-pin loses the race no matter the speed edge: back off and
+      // swing, same as the strike run does.
+      if (v.speed < 5 && Math.abs(pinErr) > 0.7) {
+        this.input.throttle = 0;
+        this.input.brake = 1;
+        this.input.steer = pinErr > 0 ? -1 : 1;
+        this.input.boost = false;
+        v.drive = 1;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
       this.input.throttle = 1;
       this.input.brake = 0;
-      this.input.steer = clamp(
-        wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading) /
-          CONFIG.police.shared.steerFullLockAngle,
-        -1,
-        1,
-      );
+      this.input.steer = clamp(pinErr / CONFIG.police.shared.steerFullLockAngle, -1, 1);
       this.input.boost = false;
       // The pin must be able to CATCH as well as hold - 1.15 lost any player who
       // simply kept their foot down.
-      v.drive = 1.6;
+      v.drive = 1.75;
       v.contactBoost = 4;
       v.applySpin(
         clamp(
@@ -613,10 +622,10 @@ export class PoliceCar {
        * itself bends toward the target, boost-strength, for at most a third of a
        * second. It reads as eight tonnes committing, and it does not miss.
        */
-      if (pd < 18) {
+      if (pd < 24) {
         const nx = (ctx.player.x - v.x) / pd;
         const nz = (ctx.player.z - v.z) / pd;
-        v.applyImpulse(nx * 70 * dt, nz * 70 * dt);
+        v.applyImpulse(nx * 120 * dt, nz * 120 * dt);
       }
       // Triple rails inside twenty units: the last half car length is where a swerve
       // used to buy a graze instead of a hit.

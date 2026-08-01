@@ -1361,11 +1361,12 @@ export const CONFIG = {
        * the car-pair collision pass grows with the square of the head count.
        */
       /**
-       * 23, reached by section twelve (was 30 at eighteen): past that the road got too
-       * clogged to drive, per playtest. Depth now escalates through pace and class mix
-       * - speedPerSection climbs to +16 - rather than raw headcount.
+       * 20, reached by section ten (was 30 at eighteen): past that the road got too
+       * clogged to drive, per playtest. Depth now escalates through pace, class mix
+       * and aggro - speed to +16, charges quicker and more frequent, boxes reformed
+       * faster - rather than raw headcount.
        */
-      maxActive: 23,
+      maxActive: 20,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1549,10 +1550,10 @@ export const CONFIG = {
        * Before this, nothing whatsoever changed after section 13.
        */
       retire: {
-        patrol: 13,
-        rammer: 19,
-        blocker: 22,
-        interceptor: 26,
+        patrol: 10,
+        rammer: 15,
+        blocker: 18,
+        interceptor: 22,
         heavy: 999,
         elite: 999,
         juggernaut: 999,
@@ -1562,6 +1563,13 @@ export const CONFIG = {
       /** Extra top speed added to every unit per section, u/s, and its cap. */
       speedPerSection: 0.35,
       maxSpeedBonus: 16,
+      /**
+       * The smarts curve. From the tenth section each section adds this much aggro,
+       * capped: charges wind up faster and repeat sooner, and the box around the
+       * player is reformed more often. The cap keeps deep-run charge spam readable.
+       */
+      aggroPerSection: 0.05,
+      aggroMax: 0.5,
     },
 
     /**

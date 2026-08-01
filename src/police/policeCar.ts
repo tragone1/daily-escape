@@ -94,6 +94,8 @@ export class PoliceCar {
   private pinTimer = 0;
   /** Seconds of open-road hunting left after an ambusher leaves its alley. */
   private strikeTimer = 0;
+  /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
+  aggro = 0;
   /**
    * An ambusher that has taken its shot, hit or miss.
    *
@@ -1146,7 +1148,7 @@ export class PoliceCar {
       }
       if (this.chargeTimer <= 0) {
         this.charging = false;
-        this.chargeCooldown = cfg.cooldown;
+        this.chargeCooldown = cfg.cooldown * (1 - this.aggro);
         v.contactBoost = this.baseContactBoost;
       }
       // Telegraph brightens through the wind-up, then sits at full through the run.
@@ -1167,7 +1169,7 @@ export class PoliceCar {
     if (err > cfg.maxHeadingError) return;
     if (!ctx.world.lineOfSight(v.x, v.z, player.x, player.z)) return;
 
-    this.chargeTimer = cfg.telegraphTime + cfg.chargeTime;
+    this.chargeTimer = cfg.telegraphTime * (1 - this.aggro * 0.5) + cfg.chargeTime;
     this.charging = false;
   }
 

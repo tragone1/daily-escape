@@ -39,6 +39,7 @@ export class PoliceManager {
   /** Distance along the spine the squad currently plans against. */
   private goalProgress = POLICE_LOOKAHEAD;
   private speedBonus = -1;
+  private aggro = 0;
   private boxTimer = 0;
   /** Section the director last ran for; gates how hard placement tries. */
   private effortSection = 0;
@@ -135,7 +136,8 @@ export class PoliceManager {
 
     this.boxTimer -= dt;
     if (this.boxTimer <= 0) {
-      this.boxTimer = CONFIG.police.shared.box.interval;
+      // Aggro reforms the box faster: the trap keeps up with a faster player.
+      this.boxTimer = CONFIG.police.shared.box.interval * (1 - this.aggro * 0.6);
       this.assignBox(ctx);
     }
 
@@ -514,11 +516,14 @@ export class PoliceManager {
   private applySectionSpeed(section: number): void {
     const esc = CONFIG.police.escalation;
     const bonus = Math.min(esc.maxSpeedBonus, section * esc.speedPerSection);
-    if (bonus === this.speedBonus) return;
+    const aggro = Math.min(esc.aggroMax, Math.max(0, (section - 9) * esc.aggroPerSection));
+    if (bonus === this.speedBonus && aggro === this.aggro) return;
     this.speedBonus = bonus;
+    this.aggro = aggro;
     for (const unit of this.units) {
       const base = CONFIG.police[unit.role].vehicle.maxSpeed;
       unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + bonus };
+      unit.aggro = aggro;
     }
   }
 

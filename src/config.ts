@@ -1057,7 +1057,7 @@ export const CONFIG = {
        * still waited most of a minute to be punished. These arrive within seconds, so
        * no part of the run is a freebie, including the first breath of it.
        */
-      openingChasers: [110, 165, 220, 275],
+      openingChasers: [110, 180, 250],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**

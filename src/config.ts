@@ -1622,13 +1622,13 @@ export const CONFIG = {
      * or the speed threshold up much further and the run stops being winnable at all.
      */
     /*
-     * Set so the *fastest* possible arrest takes 1.8s: at a full seal the crowd
-     * multiplier is 0.95, and 1.71 / 0.95 is 1.8. That is the floor rather than the
-     * average - with `fullPinSectors` at 6 the ramp now has three rungs rather than two,
-     * so a four-wedge pin takes 2.50s, five takes 2.09s, and only a complete seal at six
-     * or more closes in 1.8s.
+     * Set so the *fastest* possible arrest takes 2.6s: at a full seal the crowd
+     * multiplier is 0.95, and 2.47 / 0.95 is 2.6. That is the floor rather than the
+     * average - a four-wedge pin takes ~3.6s, five ~3.0s, and only a complete seal
+     * closes in 2.6. Was 1.8 flat-out; playtesting read that as "two seconds and I
+     * lost" arriving before the meter could even be noticed, let alone fought.
      */
-    captureDuration: 1.71,
+    captureDuration: 2.47,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -1735,9 +1735,10 @@ export const CONFIG = {
     /**
      * How fast the meter drains when you break free, as a multiple of the fill rate.
      * Above 1 so escaping is always possible; not so far above that a moment of daylight
-     * wipes out four seconds of being buried.
+     * wipes out four seconds of being buried. 1.6: fighting out of a half-built box
+     * should visibly rewind the meter, or the fight never feels worth having.
      */
-    captureRecovery: 1.25,
+    captureRecovery: 1.6,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

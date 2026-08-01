@@ -676,9 +676,15 @@ function placePropStation(
 
   const roll = hash2(px * 1.31, pz * 0.73);
   if (roll > 0.62) return; // leave gaps so the route never fully closes
+  /*
+   * Gates - a block on each edge - only where the road is genuinely wide. In the
+   * narrowest sections the pair squeezed the lane from both sides at once and read as
+   * a chokehold, and the tightened daily widths made it common. One block against a
+   * kerb is a decision; two facing blocks in a corridor is a wall with a slot.
+   */
   const mode =
     roll < 0.09 && seg.halfWidth - size / 2 >= 5.5 ? "centre"
-    : roll < 0.17 && seg.halfWidth >= 3.4 + size + 0.5 ? "gate"
+    : roll < 0.17 && seg.halfWidth >= 8.6 && seg.halfWidth >= 3.4 + size + 0.5 ? "gate"
     : "edge";
 
   if (mode === "centre") {

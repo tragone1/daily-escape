@@ -413,6 +413,7 @@ export class PoliceCar {
       // The pin must be able to CATCH as well as hold - 1.15 lost any player who
       // simply kept their foot down.
       v.drive = 1.45;
+      v.contactBoost = 4;
       v.applySpin(
         clamp(
           wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading),
@@ -505,7 +506,22 @@ export class PoliceCar {
       this.input.steer = clamp(err / CONFIG.police.shared.steerFullLockAngle, -1, 1);
       this.input.boost = false;
       v.drive = 1 + cfg.chaseSpeed;
-      // Double rails inside twenty units: the last half car length is where a swerve
+      // The plow: police in the lane are shoved aside, not obstacles. Nothing between
+      // this and the player is allowed to matter.
+      v.contactBoost = 4;
+      /*
+       * Terminal magnet. The last half car length is pure yaw physics, and yaw
+       * physics loses to a well-timed flick every twelfth run - the one escape left.
+       * Inside fourteen units the strike stops being a steering problem: momentum
+       * itself bends toward the target, boost-strength, for at most a third of a
+       * second. It reads as eight tonnes committing, and it does not miss.
+       */
+      if (pd < 14) {
+        const nx = (ctx.player.x - v.x) / pd;
+        const nz = (ctx.player.z - v.z) / pd;
+        v.applyImpulse(nx * 44 * dt, nz * 44 * dt);
+      }
+      // Triple rails inside twenty units: the last half car length is where a swerve
       // used to buy a graze instead of a hit.
       v.applySpin(clamp(err, -0.8, 0.8) * cfg.turnAssist * (pd < 20 ? 3 : 1) * dt);
       v.update(this.input, dt, ctx.terrain);
@@ -862,7 +878,17 @@ export class PoliceCar {
   private readyToBurst(ctx: PursuitContext): number | null {
     const cfg = this.ambushTuning;
     const mouth = this.ambushAt as { x: number; z: number };
-    if (this.ambushWait > cfg.maxWait) return 1;
+    /*
+     * A stale ambush stands down IN the alley, hidden, and the director re-seats a
+     * fresh one nearer the player. The old maxWait behaviour was to burst anyway -
+     * at nobody - which in real play was most bursts, and every single one of them
+     * was 'a juggernaut charging around well ahead of me'. The class never moves
+     * except at a target it can see.
+     */
+    if (this.ambushWait > cfg.maxWait) {
+      this.spent = true;
+      return null;
+    }
     const player = ctx.player;
     const d = dist(player.x, player.z, mouth.x, mouth.z);
     if (d > 85) return null;
@@ -872,7 +898,7 @@ export class PoliceCar {
      * 0.85s is the truck's own nose-to-lane time; the floor keeps a stopped player
      * from parking outside an alley that never fires.
      */
-    if (d > player.speed * 0.85 + 14) return null;
+    if (d > player.speed * 1.0 + 16) return null;
     if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
     return 1;
   }

@@ -624,8 +624,29 @@ export class PoliceManager {
       const dz = invert ? spur.az : spur.bz;
       // Degenerate spur records exist; a seat that is not genuinely deeper than its
       // mouth, or a mouth that is not genuinely on the road, is not an ambush site.
-      if (Math.hypot(dx - mx, dz - mz) < 9) continue;
+      // Eighteen: a truck holding twelve deep needs an alley that can swallow it
+      // whole, or "hidden" is a word rather than a fact.
+      if (Math.hypot(dx - mx, dz - mz) < 18) continue;
       if (nearestNav(mx, mz) > 625) continue;
+      /*
+       * One truck per alley. The occupancy check tests the SEAT point, and the first
+       * truck creeps forward off its seat - so a second was seated right behind it,
+       * single file, shoving its colleague out through the mouth. An armed claim on
+       * the mouth is the real occupancy.
+       */
+      let claimed = false;
+      for (const other of this.units) {
+        if (
+          other !== unit &&
+          other.active &&
+          other.ambushAt &&
+          Math.hypot(other.ambushAt.x - mx, other.ambushAt.z - mz) < 14
+        ) {
+          claimed = true;
+          break;
+        }
+      }
+      if (claimed) continue;
       const t = pacing.ambushDepth;
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;

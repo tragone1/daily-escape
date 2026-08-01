@@ -1292,8 +1292,15 @@ export const CONFIG = {
        * player's trickle into a swarm.
        * The two curves converge at section 20, so the late game is untouched.
        */
-      baseActive: 12,
-      activePerSection: 1.0,
+      /**
+       * 9 + 1.2/section (was 12 + 1.0): same ceiling, later arrival. The flat-12 base
+       * made the early sections carry near-mid-game headcounts; this starts three
+       * lighter, converges around section ten, and hits the cap at the same place.
+       * The stopped-player swarm does not live here - it lives in wake persistence,
+       * pool depth and the relaxed slow-player spawn floor, which are untouched.
+       */
+      baseActive: 9,
+      activePerSection: 1.2,
       /**
        * Section one only. The curve's 12 there meant four wake-fill cars trailing in
        * behind the three opening chasers, which read as a pack; 10 halves that fill.

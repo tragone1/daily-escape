@@ -1898,8 +1898,9 @@ export const CONFIG = {
      * WebAudio graph, which is what lets it keep playing over the BUSTED card after
      * `quietLoops` has shut the engine and sirens down.
      */
+    // Removed by playtest: sections ten-plus sound like every other section now.
     music: {
-      enabled: true,
+      enabled: false,
       src: "music/astral-storm.m4a",
       /** Section that starts it. */
       startSection: 9,

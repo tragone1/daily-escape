@@ -617,6 +617,8 @@ export class PoliceManager {
       // unit, so the ambush has to be armed after it.
       unit.placeAt(x, z, headingOf(spur.ax - x, spur.az - z), spur.ay);
       unit.ambushAt = { x: spur.ax, z: spur.az };
+      const ol = Math.hypot(spur.ax - x, spur.az - z) || 1;
+      unit.ambushOut = { x: (spur.ax - x) / ol, z: (spur.az - z) / ol };
       return true;
     }
     return false;

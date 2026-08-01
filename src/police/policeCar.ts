@@ -81,6 +81,8 @@ export class PoliceCar {
   boxSlot: BoxSlot | null = null;
   /** While set, the unit is holding in a spur waiting to launch. The mouth it faces. */
   ambushAt: { x: number; z: number } | null = null;
+  /** Outward unit vector of the spur (seat toward mouth), set when seated. */
+  ambushOut: { x: number; z: number } | null = null;
   private ambushWait = 0;
   /** Mouth of the spur it sprang from, held while it is still steering the strike. */
   private springFrom: { x: number; z: number } | null = null;
@@ -188,6 +190,7 @@ export class PoliceCar {
     this.boxSlot = null;
     this.boxPress = 0;
     this.ambushAt = null;
+    this.ambushOut = null;
     this.ambushWait = 0;
     this.springFrom = null;
     this.springExit = null;
@@ -367,21 +370,34 @@ export class PoliceCar {
          * inside the window the timing math genuinely controls.
          */
         const mouth = this.ambushAt;
-        const toMouth = dist(v.x, v.z, mouth.x, mouth.z);
-        if (this.isAmbusher && toMouth > 7) {
-          this.input.throttle = v.speed > 13 ? 0 : 0.7;
-          this.input.brake = 0;
-          this.input.steer = clamp(
-            wrapAngle(headingOf(mouth.x - v.x, mouth.z - v.z) - v.heading) /
-              CONFIG.police.shared.steerFullLockAngle,
-            -1,
-            1,
-          );
-          this.input.boost = false;
-          this.view.setCharge(0);
-          v.drive = 1;
-          v.update(this.input, dt, ctx.terrain);
-          return;
+        /*
+         * The hold point is INSIDE the alley, a truck length short of the mouth -
+         * never the mouth itself. Creeping "to the mouth" let momentum carry the
+         * truck through it, and it ended up parked in the open road: a sitting duck
+         * the player could drive around, which is the opposite of an ambush. It
+         * stays hidden behind the wall line and fires through the mouth like a
+         * piston when the gate says now.
+         */
+        const out = this.ambushOut;
+        if (this.isAmbusher && out) {
+          const hx = mouth.x - out.x * 6;
+          const hz = mouth.z - out.z * 6;
+          const toHold = dist(v.x, v.z, hx, hz);
+          if (toHold > 2.5) {
+            this.input.throttle = v.speed > 9 ? 0 : 0.6;
+            this.input.brake = v.speed > 11 ? 0.5 : 0;
+            this.input.steer = clamp(
+              wrapAngle(headingOf(hx - v.x, hz - v.z) - v.heading) /
+                CONFIG.police.shared.steerFullLockAngle,
+              -1,
+              1,
+            );
+            this.input.boost = false;
+            this.view.setCharge(0);
+            v.drive = 1;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
         }
         this.input.throttle = 0;
         this.input.brake = v.speed > 1 ? 1 : 0;

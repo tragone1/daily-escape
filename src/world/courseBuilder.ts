@@ -1009,7 +1009,13 @@ function sealBoundary(
          */
         const qx = bx + seg.dz * (seg.halfWidth + seg.shoulder + 0.6) * side;
         const qz = bz - seg.dx * (seg.halfWidth + seg.shoulder + 0.6) * side;
-        if (guarded(qx, qz, 1.4)) { flush(); continue; }
+        /*
+         * Reach 0.5, not more. The fast path once used 1.4, which also skipped stations
+         * sitting in the V-gap between two wall chunks - and on the outside of a hard
+         * corner those gaps run three units wide, exactly where the squad shoves you.
+         * At 0.5 a genuine wall face still guards its station, but a crack does not.
+         */
+        if (guarded(qx, qz, 0.5)) { flush(); continue; }
         let edge = -1;
         for (let d = seg.halfWidth; d < seg.halfWidth + seg.shoulder + 42; d += 1.4) {
           const x = bx + seg.dz * d * side;

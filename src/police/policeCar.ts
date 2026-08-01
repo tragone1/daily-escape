@@ -599,19 +599,36 @@ export class PoliceCar {
         if (!this.glueLocal) {
           const relX = ctx.player.x - v.x;
           const relZ = ctx.player.z - v.z;
-          this.glueLocal = {
-            along: Math.min(7.5, relX * fx2 + relZ * fz2),
-            lateral: Math.max(-3.2, Math.min(3.2, relX * rx2 + relZ * rz2)),
-          };
+          const relAlong = relX * fx2 + relZ * fz2;
+          const relLat = relX * rx2 + relZ * rz2;
+          /*
+           * The weld only exists IN THE MOUTH - contact with the body or the back
+           * of the truck is ordinary physics, because being magnetised to the
+           * outside of a plow is nonsense and the player said so. A mouth catch
+           * latches with a BITE: the player is drawn a little INTO the blade
+           * pocket, the exaggerated real-life crush where the metal digs in and
+           * holds, rather than kissing the surface.
+           */
+          if (relAlong > v.params.halfLength - 0.8 && Math.abs(relLat) < 3.0) {
+            this.glueLocal = {
+              along: v.params.halfLength + 1.1,
+              lateral: Math.max(-2.6, Math.min(2.6, relLat)),
+            };
+          }
+        }
+        if (!this.glueLocal) {
+          /* Body contact: no weld; the pin ends unless the mouth finds them. */
         }
         const gl = this.glueLocal;
-        const tx2 = v.x + fx2 * gl.along + rx2 * gl.lateral;
-        const tz2 = v.z + fz2 * gl.along + rz2 * gl.lateral;
-        const pull = 1 - Math.exp(-12 * dt);
-        ctx.player.x += (tx2 - ctx.player.x) * pull;
-        ctx.player.z += (tz2 - ctx.player.z) * pull;
-        ctx.player.vx = v.vx;
-        ctx.player.vz = v.vz;
+        if (gl) {
+          const tx2 = v.x + fx2 * gl.along + rx2 * gl.lateral;
+          const tz2 = v.z + fz2 * gl.along + rz2 * gl.lateral;
+          const pull = 1 - Math.exp(-12 * dt);
+          ctx.player.x += (tx2 - ctx.player.x) * pull;
+          ctx.player.z += (tz2 - ctx.player.z) * pull;
+          ctx.player.vx = v.vx;
+          ctx.player.vz = v.vz;
+        }
       } else if (this.glueLocal && pd > 11) {
         this.glueLocal = null;
       }
@@ -854,14 +871,23 @@ export class PoliceCar {
          * few metres beyond turns the same approach into a T-bone that carries the player
          * sideways, which is the whole reason the spurs exist.
          */
-        const lead = interceptPoint(v, ctx.player, 1.4);
+        /*
+         * The ambusher is a MISSILE with one target: it aims at the player's body,
+         * re-aimed every frame - if they change direction, it changes direction.
+         * (The fleet keeps its intercept forecast below; a forecast is exactly what
+         * a swerving player breaks.) And from launch it runs machinery physics:
+         * jam set, so contact pushes and digs instead of bouncing - the slam
+         * impulse never gets the chance to throw the player clear before the weld.
+         */
+        const lead = this.isAmbusher
+          ? { x: ctx.player.x + ctx.player.vx * 0.08, z: ctx.player.z + ctx.player.vz * 0.08 }
+          : interceptPoint(v, ctx.player, 1.4);
         const tx = lead.x - v.x;
         const tz = lead.z - v.z;
         const tl = Math.hypot(tx, tz) || 1;
-        // Never-miss magnet, ambusher only, requested at full strength: inside
-        // twenty units momentum itself bends onto the target.
-        if (this.isAmbusher && tl < 20) {
-          v.applyImpulse((tx / tl) * 120 * dt, (tz / tl) * 120 * dt);
+        if (this.isAmbusher) {
+          v.jam = true;
+          if (tl < 20) v.applyImpulse((tx / tl) * 120 * dt, (tz / tl) * 120 * dt);
         }
         /*
          * Terminal guidance: the through-point shrinks as the range closes. At full
@@ -870,7 +896,7 @@ export class PoliceCar {
          * converges the aim onto the player themselves, so speeding up, slowing down
          * and turning all lead to the same place - contact.
          */
-        const depth = cfg.strikeDepth * clamp(tl / 45, 0.35, 1);
+        const depth = this.isAmbusher ? 1.5 : cfg.strikeDepth * clamp(tl / 45, 0.35, 1);
         const aim = {
           x: lead.x + (tx / tl) * depth,
           z: lead.z + (tz / tl) * depth,

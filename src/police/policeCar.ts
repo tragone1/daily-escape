@@ -1096,14 +1096,28 @@ export class PoliceCar {
     const player = ctx.player;
 
     /*
-     * Everything here runs on COURSE PROGRESS, not straight-line range. Euclidean
-     * distance is direction-blind and wall-blind: it fired the trigger for a player
-     * who had already passed the mouth (instant spent, truck never moved) and for a
-     * player on an adjacent switchback leg on the far side of a wall - which launched
-     * the strike at a phantom and left the truck parked nose-first in the far wall
-     * exactly as the real player rounded the corner. Both were the whole class of
-     * field misses.
+     * The ambusher gate is EUCLID + LINE OF SIGHT, nothing else. Progress space
+     * lies exactly at the junction (the player's position snaps onto the spur's own
+     * branch segment and the lead collapses), which silently blocked the gate in
+     * its firing window; and the chord cannot lie at these ranges once the mouth
+     * can SEE the player - no switchback fits inside sixty units with sight. The
+     * fleet keeps the progress path below.
      */
+    if (this.isAmbusher) {
+      const dM = dist(player.x, player.z, mouth.x, mouth.z);
+      if (dM > 110) return false;
+      if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return false;
+      const effSpd = Math.max(8, Math.min(player.speed, player.params.maxSpeed));
+      const theirEtaE = dM / effSpd;
+      const aRun = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
+      const topRun = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+      const tAcc = topRun / aRun;
+      const dAcc = 0.5 * aRun * tAcc * tAcc;
+      const rw = dist(v.x, v.z, mouth.x, mouth.z) + 7;
+      const ourEtaE =
+        0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
+      return theirEtaE <= ourEtaE + cfg.leadTime;
+    }
     const lead =
       ctx.terrain.progressAt(mouth.x, mouth.z) -
       ctx.terrain.progressAt(player.x, player.z);

@@ -476,19 +476,46 @@ export class PoliceCar {
         return;
       }
       /*
-       * Relentless. The heavy handoff still danced - flank posture, charge windups -
-       * and dances can miss. The contract on this class is contact every single time,
-       * so the hunt is a plain chase-down: aim just through a short lead on the
-       * player, hold a hard speed edge, rails on, and back off to re-point when a
-       * wall interrupts. Nothing here ever declares a miss; only the clock or the
-       * pin ends it.
+       * One shot, strictly. A burst that ends up down-course of the player has
+       * missed, and a missed juggernaut that keeps driving is a chaser - the exact
+       * thing this class must never be. It dies where the miss happened.
        */
+      if (
+        ctx.terrain.progressAt(v.x, v.z) -
+          ctx.terrain.progressAt(ctx.player.x, ctx.player.z) <
+        -7
+      ) {
+        this.spent = true;
+        return;
+      }
       /*
        * PURE pursuit: aim at the player, not a forecast. An intercept lead overshoots
        * the moment the target brakes; aiming at the body itself converges from any
        * geometry - the worst case is sliding onto the rear quarter, which is still
        * contact, which is the contract.
        */
+      /*
+       * Beyond pounce range, the truck does not sail across the road - it POSTS UP:
+       * kills its crossing momentum in the player's lane, squares to face them, and
+       * becomes the rolling roadblock the player praised the regular cops for. Any
+       * gate error in either direction now degrades into a block in your path
+       * instead of a truck vanishing ahead. The pounce is the last 18 units, from a
+       * standing set, straight into the magnet's envelope.
+       */
+      if (pd > 18) {
+        const errB = wrapAngle(
+          headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading,
+        );
+        this.input.throttle = v.speed < 4 ? 0.3 : 0;
+        this.input.brake = v.speed > 10 ? 0.7 : 0;
+        this.input.steer = clamp(errB / CONFIG.police.shared.steerFullLockAngle, -1, 1);
+        this.input.boost = false;
+        v.drive = 1;
+        v.contactBoost = 4;
+        v.applySpin(clamp(errB, -0.8, 0.8) * cfg.turnAssist * dt);
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
       const aimX = ctx.player.x + ctx.player.vx * 0.1;
       const aimZ = ctx.player.z + ctx.player.vz * 0.1;
       const err = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
@@ -914,10 +941,24 @@ export class PoliceCar {
      * that passes behind is an honest miss that reads as a dodge, not a farce.
      */
     const v = this.vehicle;
+    /*
+     * Real launch kinematics: the truck accelerates from a standstill, it does not
+     * cruise - over an eleven-unit runway the accel phase IS the run. The old cruise
+     * formula overestimated its time by ~0.2s, which fired the gate that much early,
+     * which was the residual 'slightly in front, every time'. And the bias is 0.3
+     * and asymmetric on purpose: the player slows into bends where spurs live, so
+     * live speed always over-promises their arrival - and a late burst is recovered
+     * by pure pursuit onto the tail, while an early one is unrecoverable forever.
+     * 0.12: with honest kinematics the bias only needs to cover the human lift-off
+     * into the bend, not a formula error. 0.3 arrived after the player had passed.
+     */
+    const runway = dist(v.x, v.z, mouth.x, mouth.z) + 6;
+    const a = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
+    const top = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+    const tAccel = top / a;
+    const dAccel = 0.5 * a * tAccel * tAccel;
     const tSelf =
-      0.2 +
-      (dist(v.x, v.z, mouth.x, mouth.z) + 6) /
-        Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+      0.12 + (runway <= dAccel ? Math.sqrt((2 * runway) / a) : tAccel + (runway - dAccel) / top);
     const tPlayer = roadLead / Math.max(10, player.speed);
     if (tPlayer > tSelf - 0.12) return null;
     return 1;

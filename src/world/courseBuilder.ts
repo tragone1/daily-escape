@@ -196,9 +196,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   const spineSlices = segments.filter((sg) => !sg.branch && !sg.overlay);
   buildSpineRibbons(r, spineSlices);
   buildSpineDecor(r, spineSlices, colliders, segments);
-  for (const seg of spineSlices) {
-    if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments, terrain);
-  }
+  buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
@@ -713,6 +711,137 @@ function placePropStation(
   const side = station % 2 === 0 ? 1 : -1;
   const lateral = (seg.halfWidth - 2.2) * side;
   drop(px + rx * lateral, pz + rz * lateral, size);
+}
+
+/*
+ * Fence the whole spine with walls that follow the WALL LINE, not the road spine.
+ *
+ * The old per-segment builder placed the same chunks at a fixed offset on both sides
+ * of every slice - but on a bend the outer wall line is longer than the spine and the
+ * inner one shorter, so the outside opened black gaps a car could be shoved through
+ * while the inside crammed blocks into jagged teeth. This builder computes the mitred
+ * offset polyline per side (the ribbon ground's own geometry), marches ITS arc length,
+ * and fits chunks to it: the inner line simply gets fewer, shorter chunks and the
+ * outer more - both continuous by construction. Colliders overlap joint-to-joint so
+ * the collision surface is one unbroken rail.
+ */
+function buildSpineWallLines(
+  r: Renderer,
+  slices: CourseSegment[],
+  colliders: StaticCollider[],
+  wallShades: Record<string, Rgb[]>,
+  segments: CourseSegment[],
+  terrain?: Terrain,
+): void {
+  if (slices.length === 0) return;
+  const heightAt = (x: number, z: number, fallback: number): number =>
+    terrain ? terrain.heightAt(x, z) : fallback;
+
+  for (let side = -1; side <= 1; side += 2) {
+    let run: { x: number; z: number; seg: CourseSegment }[] = [];
+    let runStyle: Exclude<WallStyle, "none"> | null = null;
+
+    const flushRun = () => {
+      const pts = run;
+      const styleName = runStyle;
+      run = [];
+      runStyle = null;
+      if (!styleName || pts.length < 2) return;
+      const style = WALL_STYLE[styleName];
+      const shades = wallShades[styleName];
+      // Arc lengths along the wall line itself.
+      const arc: number[] = [0];
+      for (let i = 1; i < pts.length; i++) {
+        arc.push(arc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+      }
+      const total = arc[arc.length - 1];
+      if (total < 2) return;
+      const count = Math.max(1, Math.round(total / style.chunk));
+      const at = (a: number): { x: number; z: number; seg: CourseSegment } => {
+        let i = 1;
+        while (i < arc.length - 1 && arc[i] < a) i++;
+        const t = (a - arc[i - 1]) / Math.max(0.001, arc[i] - arc[i - 1]);
+        return {
+          x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+          z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t,
+          seg: pts[i - 1].seg,
+        };
+      };
+      for (let i = 0; i < count; i++) {
+        const a0 = (i / count) * total;
+        const a1 = ((i + 1) / count) * total;
+        const P0 = at(a0);
+        const P1 = at(a1);
+        const cx = (P0.x + P1.x) / 2;
+        const cz = (P0.z + P1.z) / 2;
+        const span = Math.hypot(P1.x - P0.x, P1.z - P0.z);
+        if (span < 0.8) continue;
+        const heading = Math.atan2(P1.x - P0.x, P1.z - P0.z);
+        const seg = P0.seg;
+        // Junction and spur mouths stay open: never wall across a connecting road.
+        if (
+          onOtherRoad(segments, seg, cx, cz, JUNCTION_CLEARANCE, terrain) ||
+          onOtherRoad(segments, seg, P0.x, P0.z, JUNCTION_CLEARANCE, terrain) ||
+          onOtherRoad(segments, seg, P1.x, P1.z, JUNCTION_CLEARANCE, terrain)
+        ) {
+          continue;
+        }
+        const y0 = heightAt(P0.x, P0.z, seg.ay);
+        const y1 = heightAt(P1.x, P1.z, seg.by);
+        const groundY = (y0 + y1) / 2;
+        const rnd = hash2(cx, cz);
+        const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
+        const mesh = r.createMesh(
+          { kind: "box", width: style.thickness, height, depth: span * 1.06 },
+          {
+            color: [...shades[Math.floor(rnd * 997) % shades.length]],
+            emissive: 0.24,
+            isStatic: true,
+          },
+        );
+        mesh.position.set(cx, groundY + height / 2, cz);
+        mesh.rotation.y = heading;
+        mesh.rotation.x = -Math.atan((y1 - y0) / Math.max(0.001, span));
+        // Colliders overlap a little past each joint: one unbroken rail to slide on.
+        addCollider(colliders, cx, cz, span / 2 + 0.35, style.thickness / 2, heading, groundY + height);
+      }
+    };
+
+    for (let i = 0; i < slices.length; i++) {
+      const seg = slices[i];
+      const prev = i > 0 ? slices[i - 1] : null;
+      const contiguous = prev !== null && Math.hypot(seg.ax - prev.bx, seg.az - prev.bz) < 1.5;
+      const wall = seg.wall as WallStyle;
+      if (!contiguous || wall === "none" || wall !== runStyle) flushRun();
+      if (wall === "none") continue;
+      // Mitred perp at this slice's A-joint: average of the adjacent directions,
+      // scaled so the offset line stays parallel through the corner.
+      let px = seg.dz;
+      let pz = -seg.dx;
+      if (prev !== null && contiguous) {
+        const mx = prev.dz + seg.dz;
+        const mz = -prev.dx - seg.dx;
+        const ml = Math.hypot(mx, mz) || 1;
+        const cosHalf = Math.max(0.45, (mx / ml) * seg.dz + (mz / ml) * -seg.dx);
+        px = (mx / ml) / cosHalf;
+        pz = (mz / ml) / cosHalf;
+      }
+      const styleName = wall as Exclude<WallStyle, "none">;
+      const offset = seg.halfWidth + seg.shoulder + WALL_STYLE[styleName].thickness / 2;
+      if (runStyle === null) runStyle = styleName;
+      run.push({ x: seg.ax + px * offset * side, z: seg.az + pz * offset * side, seg });
+      // Close the final joint of the course with the last slice's own perp.
+      if (i === slices.length - 1) {
+        run.push({
+          x: seg.bx + seg.dz * offset * side,
+          z: seg.bz - seg.dx * offset * side,
+          seg,
+        });
+        flushRun();
+      }
+    }
+    flushRun();
+  }
 }
 
 /** Fence a segment in with themed chunks on both sides. */

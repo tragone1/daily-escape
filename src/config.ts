@@ -1057,7 +1057,7 @@ export const CONFIG = {
        * still waited most of a minute to be punished. These arrive within seconds, so
        * no part of the run is a freebie, including the first breath of it.
        */
-      openingChasers: [110, 180, 250],
+      openingChasers: [220, 300, 380],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**
@@ -1299,8 +1299,8 @@ export const CONFIG = {
        * The stopped-player swarm does not live here - it lives in wake persistence,
        * pool depth and the relaxed slow-player spawn floor, which are untouched.
        */
-      baseActive: 9,
-      activePerSection: 1.2,
+      baseActive: 7,
+      activePerSection: 1.4,
       /**
        * Section one only. The curve's 12 there meant four wake-fill cars trailing in
        * behind the three opening chasers, which read as a pack; 10 halves that fill.

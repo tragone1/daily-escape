@@ -1196,6 +1196,13 @@ export const CONFIG = {
         releaseBehindRange: 90,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
         maxWait: 24,
+        // Pin fields exist for type unity with the openRoad ambush block; only the
+        // armoured ambushers ever enter the pin, so these are never read in anger.
+        pinRange: 5.4,
+        pinTime: 4.5,
+        pinLostRange: 14,
+        springRange: 46,
+        turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
       sideShoulderMin: 9,
@@ -1421,11 +1428,33 @@ export const CONFIG = {
            * mistimed launch turn into a near miss; at 190 the run is steered essentially
            * all the way onto the player, which is what "high percentage" costs.
            */
-          homeDistance: 240,
+          homeDistance: 340,
           /** Aim this far past the intercept, so the contact is across them, not alongside. */
           strikeDepth: 15,
           /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 2.2,
+          launchSpeedBonus: 2.6,
+          /**
+           * The pin. Contact during the strike converts the run into a hold: the unit
+           * keeps its nose in the player and grinds them into whatever is behind for
+           * `pinTime` seconds, feeding the box-in meter, before standing down. Losing
+           * the player past `pinLostRange` ends it early. This is what makes the slam
+           * a sentence rather than a speed bump.
+           */
+          pinRange: 6.5,
+          pinTime: 4.5,
+          pinLostRange: 14,
+          /**
+           * Inside this range of the mouth the shot simply goes, whatever the timing
+           * math says. A weaving, braking player made the ETA gate flicker closed
+           * through its whole firing window and the unit died waiting for perfect.
+           */
+          springRange: 70,
+          /**
+           * Direct yaw assist while homing, rad/s^2 against the aim error. The chassis
+           * is deliberately slow to steer everywhere else; the strike gets rails, so
+           * swerving, braking and boosting all converge on the same contact.
+           */
+          turnAssist: 9,
           /**
            * Once the player is this far past, the shot is gone and so is the unit.
            *

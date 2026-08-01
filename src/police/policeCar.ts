@@ -80,12 +80,12 @@ export class PoliceCar {
   /** While set, the unit is holding in a spur waiting to launch. The mouth it faces. */
   ambushAt: { x: number; z: number } | null = null;
   private ambushWait = 0;
-  /** Player speed as read once on approach; the launch is timed against this, not live. */
-  private ambushReadSpeed = 0;
   /** Mouth of the spur it sprang from, held while it is still steering the strike. */
   private springFrom: { x: number; z: number } | null = null;
   /** Outward unit vector through the mouth, set at spring time; null once clear of it. */
   private springExit: { x: number; z: number } | null = null;
+  /** Seconds left of holding a struck player against the wall. */
+  private pinTimer = 0;
   /**
    * An ambusher that has taken its shot, hit or miss.
    *
@@ -184,9 +184,9 @@ export class PoliceCar {
     this.boxPress = 0;
     this.ambushAt = null;
     this.ambushWait = 0;
-    this.ambushReadSpeed = 0;
     this.springFrom = null;
     this.springExit = null;
+    this.pinTimer = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -372,8 +372,49 @@ export class PoliceCar {
      * whatever speed they happen to be doing. It is also what lets the ambush work on
      * someone who boosts after it has already committed.
      */
+    /*
+     * Holding a pin: the strike connected, and the unit's job is now to keep its nose
+     * buried in the player and press them into whatever the slam put behind them. No
+     * pursuit afterwards - the hold runs its clock, feeds the box-in meter, and ends.
+     */
+    if (this.pinTimer > 0) {
+      const cfg = this.ambushTuning;
+      const pd = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      this.pinTimer -= dt;
+      if (this.pinTimer <= 0 || pd > cfg.pinLostRange) {
+        this.pinTimer = 0;
+        this.springFrom = null;
+        this.springExit = null;
+        this.spent = true;
+        return;
+      }
+      this.input.throttle = 1;
+      this.input.brake = 0;
+      this.input.steer = clamp(
+        wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading) /
+          CONFIG.police.shared.steerFullLockAngle,
+        -1,
+        1,
+      );
+      this.input.boost = false;
+      v.drive = 1.15;
+      v.applySpin(
+        clamp(
+          wrapAngle(headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading),
+          -0.8,
+          0.8,
+        ) * cfg.turnAssist * dt,
+      );
+      v.update(this.input, dt, ctx.terrain);
+      return;
+    }
+
     if (this.springFrom) {
       const cfg = this.ambushTuning;
+      // Contact converts the strike into the pin, hit angle be damned.
+      if (this.isAmbusher && dist(v.x, v.z, ctx.player.x, ctx.player.z) < cfg.pinRange) {
+        this.pinTimer = cfg.pinTime;
+      }
       /*
        * The shot exists only while the unit is still across or ahead of the player.
        *
@@ -389,7 +430,10 @@ export class PoliceCar {
       const fwdZ = Math.cos(ctx.player.heading);
       const along =
         (v.x - ctx.player.x) * fwdX + (v.z - ctx.player.z) * fwdZ;
-      const missed = this.isAmbusher && along < -8;
+      // -14: a boosting player passing the mouth used to end the shot while it was
+      // still winnable; the homing below can recover a strike from a full car length
+      // and a half behind.
+      const missed = this.isAmbusher && along < -14;
       if (missed || dist(v.x, v.z, this.springFrom.x, this.springFrom.z) > cfg.homeDistance) {
         this.springFrom = null;
         this.springExit = null;
@@ -445,9 +489,17 @@ export class PoliceCar {
         const tx = lead.x - v.x;
         const tz = lead.z - v.z;
         const tl = Math.hypot(tx, tz) || 1;
+        /*
+         * Terminal guidance: the through-point shrinks as the range closes. At full
+         * depth a player who brakes or swerves late walks the aim point off their far
+         * side and the run crosses ahead of them; scaling the depth down with distance
+         * converges the aim onto the player themselves, so speeding up, slowing down
+         * and turning all lead to the same place - contact.
+         */
+        const depth = cfg.strikeDepth * clamp(tl / 45, 0.35, 1);
         const aim = {
-          x: lead.x + (tx / tl) * cfg.strikeDepth,
-          z: lead.z + (tz / tl) * cfg.strikeDepth,
+          x: lead.x + (tx / tl) * depth,
+          z: lead.z + (tz / tl) * depth,
         };
         this.input.throttle = 1;
         this.input.brake = 0;
@@ -459,6 +511,12 @@ export class PoliceCar {
         );
         this.input.boost = false;
         v.drive = 1 + cfg.launchSpeedBonus;
+        // The strike gets rails: direct yaw toward the aim, so late swerves are tracked.
+        v.applySpin(
+          clamp(wrapAngle(headingOf(aim.x - v.x, aim.z - v.z) - v.heading), -0.8, 0.8) *
+            cfg.turnAssist *
+            dt,
+        );
         v.update(this.input, dt, ctx.terrain);
         return;
       }
@@ -629,18 +687,21 @@ export class PoliceCar {
     const player = ctx.player;
 
     const toPlayer = dist(player.x, player.z, mouth.x, mouth.z);
-    // Past us already: come out and give chase rather than sitting in a dead end.
+    /*
+     * Inside the trigger band the shot simply goes. The pure ETA gate died against
+     * evasive driving: a read-once speed went stale the moment the player braked, and
+     * the closing test flickered false on every swerve, so the firing window could be
+     * skipped entirely and the unit rotted in its alley. The homing run is long enough
+     * to turn an imperfect launch into contact; a launch that never happens is the one
+     * miss nothing can recover.
+     */
+    if (toPlayer < cfg.springRange) return true;
     const closing = (mouth.x - player.x) * player.vx + (mouth.z - player.z) * player.vz > 0;
     if (!closing) return toPlayer < cfg.releaseBehindRange;
 
-    // Read their pace once, on the way in, and commit to it.
-    if (this.ambushReadSpeed === 0 && toPlayer < cfg.readRange) {
-      this.ambushReadSpeed = player.speed;
-    }
-    const assumed = this.ambushReadSpeed || player.speed;
-
+    // Live pace, re-read every frame; the trigger band above covers the liars.
     const ourEta = dist(v.x, v.z, mouth.x, mouth.z) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
-    const theirEta = toPlayer / Math.max(8, assumed);
+    const theirEta = toPlayer / Math.max(8, player.speed);
     return theirEta <= ourEta + cfg.leadTime;
   }
 

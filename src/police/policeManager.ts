@@ -651,8 +651,8 @@ export class PoliceManager {
           : [-pacing.spawnBehind, -pacing.spawnBehind * 1.5, -pacing.spawnBehind * 0.7]
         : mode === "ahead"
           ? wide
-            ? [1, 1.3, 0.75, 1.7, 2.2].map((k) => pacing.spawnAhead * k)
-            : [pacing.spawnAhead, pacing.spawnAhead * 1.4, pacing.spawnAhead * 0.7]
+            ? [1, 1.35, 1.8, 2.3, 2.9].map((k) => pacing.spawnAhead * k)
+            : [pacing.spawnAhead, pacing.spawnAhead * 1.4, pacing.spawnAhead * 1.9]
           : wide
             ? [0.7, 1.1, -0.6, -1.2, -1.8].map((k) =>
                 k > 0 ? pacing.spawnAhead * k : pacing.spawnBehind * k)

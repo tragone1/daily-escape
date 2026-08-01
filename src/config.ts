@@ -1077,7 +1077,14 @@ export const CONFIG = {
        * those two reads as a queue: you outrun the ones behind, then dodge the ones in
        * front one at a time. The threat has to be able to come from off to the side.
        */
-      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 0.8 },
+      /*
+       * Ahead carries real weight now. When the ahead minimum went to 145 the old
+       * ladder rungs below it were silently refused every tick, and head-on pressure
+       * quietly drained out of the game - the cars landed behind or sideways instead.
+       * More weight plus a deeper ladder means a near-constant stream arriving from up
+       * the road, every one of them spawned beyond sight-distance and driving in.
+       */
+      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 3.0 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.

@@ -529,6 +529,31 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
     emit(pos, norm, idx, SURFACE_COLOR.grass, 0.3);
   }
 
+  /*
+   * A dark-earth berm just beyond the drivable edge, both sides, the whole way. The
+   * boundary's small diagonal overlaps left slivers of raw void visible at the edge,
+   * and being knocked toward one read as being knocked out of the world. The berm is
+   * deliberately not grass - it finishes the ground without promising drivability,
+   * which is the mistake the old mouth pads made.
+   */
+  {
+    const pos: number[] = [];
+    const norm: number[] = [];
+    const idx: number[] = [];
+    for (let k = 0; k < spine.length; k++) {
+      const r0 = rows[k];
+      const r1 = rows[k + 1];
+      for (const side of [-1, 1]) {
+        quad(pos, norm, idx,
+          [r0.x + r0.px * (r0.w + r0.s) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s) * side],
+          [r0.x + r0.px * (r0.w + r0.s + 2.6) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s + 2.6) * side],
+          [r1.x + r1.px * (r1.w + r1.s + 2.6) * side, r1.y - 0.1, r1.z + r1.pz * (r1.w + r1.s + 2.6) * side],
+          [r1.x + r1.px * (r1.w + r1.s) * side, r1.y - 0.1, r1.z + r1.pz * (r1.w + r1.s) * side]);
+      }
+    }
+    emit(pos, norm, idx, [0.17, 0.12, 0.08], 0.24);
+  }
+
   // Dark skirts at the outer edge, so the ground reads as cut into the world.
   {
     const pos: number[] = [];
@@ -539,8 +564,8 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
       const r1 = rows[k + 1];
       for (const side of [-1, 1]) {
         vquad(pos, norm, idx,
-          [r0.x + r0.px * (r0.w + r0.s) * side, r0.y - 0.05, r0.z + r0.pz * (r0.w + r0.s) * side],
-          [r1.x + r1.px * (r1.w + r1.s) * side, r1.y - 0.05, r1.z + r1.pz * (r1.w + r1.s) * side],
+          [r0.x + r0.px * (r0.w + r0.s + 2.6) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s + 2.6) * side],
+          [r1.x + r1.px * (r1.w + r1.s + 2.6) * side, r1.y - 0.1, r1.z + r1.pz * (r1.w + r1.s + 2.6) * side],
           14);
       }
     }

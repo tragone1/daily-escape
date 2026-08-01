@@ -92,8 +92,6 @@ export class PoliceCar {
   private springExit: { x: number; z: number } | null = null;
   /** Seconds left of holding a struck player against the wall. */
   private pinTimer = 0;
-  /** Seconds of open-road hunting left after an ambusher leaves its alley. */
-  private strikeTimer = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
   aggro = 0;
   /**
@@ -201,7 +199,6 @@ export class PoliceCar {
     this.springFrom = null;
     this.springExit = null;
     this.pinTimer = 0;
-    this.strikeTimer = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -399,8 +396,14 @@ export class PoliceCar {
           return;
         }
       }
-      const burst = this.isAmbusher ? this.readyToBurst(ctx) : null;
-      const go = this.isAmbusher ? burst !== null : this.readyToSpring(ctx);
+      /*
+       * One gate for everyone: the fleet's ETA spring. The player's own verdict,
+       * session after session, is that the regular cops "sit in the back of the
+       * alley and broadside me pretty good" - while every bespoke juggernaut
+       * trigger ever built fired early or late. So the juggernaut uses the exact
+       * timing that works, and its identity lives in what happens on contact.
+       */
+      const go = this.readyToSpring(ctx);
       if (go) {
         // Re-arm the wait clock: it now times the poised hold at the mouth, so a
         // player who never comes releases the budget instead of locking it forever.
@@ -413,7 +416,6 @@ export class PoliceCar {
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
         if (this.isAmbusher) {
-          this.strikeTimer = this.ambushTuning.strikeTime;
           // The claw deploys: collider goes blade-wide for the strike only.
           if (this.ambushTuning.bladeHalfWidth > 0) {
             v.params = { ...v.params, halfWidth: this.ambushTuning.bladeHalfWidth };
@@ -436,55 +438,8 @@ export class PoliceCar {
          * a player that far out - staged at the mouth its launch is ~0.5s, which is
          * inside the window the timing math genuinely controls.
          */
-        const mouth = this.ambushAt;
-        /*
-         * The hold point is INSIDE the alley, a truck length short of the mouth -
-         * never the mouth itself. Creeping "to the mouth" let momentum carry the
-         * truck through it, and it ended up parked in the open road: a sitting duck
-         * the player could drive around, which is the opposite of an ambush. It
-         * stays hidden behind the wall line and fires through the mouth like a
-         * piston when the gate says now.
-         */
-        const out = this.ambushOut;
-        if (this.isAmbusher && out) {
-          /*
-           * Absolute rule, above any hold-point arithmetic: an ARMED truck is never
-           * within a car length of its mouth. Odd spur geometries (short spurs,
-           * inverted definitions) let the creep's target land at or past the lip -
-           * this stops the creep dead before the wall line no matter what the
-           * numbers upstream say. Hidden is a hard invariant, not a tuning value.
-           */
-          const alongOut =
-            (v.x - mouth.x) * out.x + (v.z - mouth.z) * out.z;
-          if (alongOut > -3.5) {
-            this.input.throttle = 0;
-            this.input.brake = v.speed > 0.5 ? 1 : 0;
-            this.input.steer = 0;
-            this.input.boost = false;
-            this.view.setCharge(0);
-            v.drive = 1;
-            v.update(this.input, dt, ctx.terrain);
-            return;
-          }
-          const hx = mouth.x - out.x * 12;
-          const hz = mouth.z - out.z * 12;
-          const toHold = dist(v.x, v.z, hx, hz);
-          if (toHold > 2.5) {
-            this.input.throttle = v.speed > 9 ? 0 : 0.6;
-            this.input.brake = v.speed > 11 ? 0.5 : 0;
-            this.input.steer = clamp(
-              wrapAngle(headingOf(hx - v.x, hz - v.z) - v.heading) /
-                CONFIG.police.shared.steerFullLockAngle,
-              -1,
-              1,
-            );
-            this.input.boost = false;
-            this.view.setCharge(0);
-            v.drive = 1;
-            v.update(this.input, dt, ctx.terrain);
-            return;
-          }
-        }
+        // No creeping, ever: it waits at its seat deep in the alley exactly like
+        // the fleet ambushers the player praises, and steers its whole strike out.
         this.input.throttle = 0;
         this.input.brake = v.speed > 1 ? 1 : 0;
         this.input.steer = 0;
@@ -572,6 +527,18 @@ export class PoliceCar {
        * player reads it as a miss. Locking the early pin lets the magnet and the
        * 1.75x drive reel them back in, so every touch becomes a felt grind.
        */
+      /*
+       * GLUE. Within the claw the player does not bounce: the truck takes infinite
+       * effective mass with zero restitution (jam), and the player's velocity is
+       * fused toward the truck's own - stuck to the blade while it drives them to
+       * the wall, where the full anchor takes over. A glue trap, as specified.
+       */
+      if (pd < 8) {
+        v.jam = true;
+        const fuse = 1 - Math.exp(-8 * dt);
+        ctx.player.vx += (v.vx - ctx.player.vx) * fuse;
+        ctx.player.vz += (v.vz - ctx.player.vz) * fuse;
+      }
       const gripForming = cfg.pinTime - this.pinTimer < 1.3;
       if (this.pinTimer <= 0 || (!gripForming && pd > cfg.pinLostRange)) {
         this.pinTimer = 0;
@@ -615,13 +582,10 @@ export class PoliceCar {
     }
 
     /*
-     * An ambusher out of its alley is not a guided missile any more - it is a heavy.
-     * The predictive launch (timed spring, intercept homing) missed real players in
-     * every geometry the course could bend into, while the ordinary flank-abeam-
-     * drive-through logic was landing T-bones all day. So: exit the alley on rails,
-     * then hand straight over to `heavyGoal` and the charge system for `strikeTime`
-     * seconds, with the pin conversion on contact. The alley is the surprise; the
-     * hit is the proven one.
+     * The ambusher's strike is the fleet's strike - the steered, homing spring the
+     * player praises every session - carried out with the blade, the plow and the
+     * glue pin. It exits the alley on rails and then the shared homing below owns
+     * the run; nothing here predicts, everything adjusts.
      */
     if (this.isAmbusher && this.springFrom) {
       const cfg = this.ambushTuning;
@@ -631,7 +595,6 @@ export class PoliceCar {
           (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
         if (cleared) {
           this.springExit = null;
-          this.springFrom = null;
         } else {
           const aimX = this.springFrom.x + exit.x * 6;
           const aimZ = this.springFrom.z + exit.z * 6;
@@ -648,100 +611,18 @@ export class PoliceCar {
           v.update(this.input, dt, ctx.terrain);
           return;
         }
-      } else {
-        this.springFrom = null;
       }
-    }
-
-    if (this.isAmbusher && this.strikeTimer > 0) {
-      const cfg = this.ambushTuning;
-      this.strikeTimer -= dt;
-      const pd = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-      if (pd < cfg.pinRange) {
-        this.pinTimer = cfg.pinTime;
-      }
-      if (this.strikeTimer <= 0) {
-        this.spent = true;
-        return;
-      }
-      /*
-       * One shot, strictly - but never amputate a landing blow. A crossing truck's
-       * course progress dips "behind" the moment the player passes its mouth, even
-       * while it is two car lengths away and turning INTO them - the old check
-       * declared those strikes dead mid-lunge, which was every remaining near-miss.
-       * Distance is the tiebreak: within twenty units the lunge finishes, full stop;
-       * beyond that, down-course means missed and the run dies where it stands.
-       */
-      /*
-       * One shot, unconditional. The 20-unit "finish the lunge" exemption kept a
-       * behind-miss alive at close range, which in play was a truck chasing and
-       * bouncing the player around after its moment had passed. The piston fires,
-       * and whatever happened next to the player, behind means done.
-       */
-      if (
-        ctx.terrain.progressAt(v.x, v.z) -
-          ctx.terrain.progressAt(ctx.player.x, ctx.player.z) <
-        -7
-      ) {
-        this.spent = true;
-        return;
-      }
-      /*
-       * PURE pursuit: aim at the player, not a forecast. An intercept lead overshoots
-       * the moment the target brakes; aiming at the body itself converges from any
-       * geometry - the worst case is sliding onto the rear quarter, which is still
-       * contact, which is the contract.
-       */
-      /*
-       * No posting up. Braking to a set and pouncing the last stretch from zero
-       * speed lost every race to a player crossing at forty - the pounce needs its
-       * momentum. Pure pursuit runs from the first frame out of the alley: against
-       * an approaching player that reads as the truck coming across INTO you or
-       * standing you up nose-to-nose (the block, sanctioned), never sailing past,
-       * because the aim is the body itself, recomputed every frame.
-       */
-      const aimX = ctx.player.x + ctx.player.vx * 0.1;
-      const aimZ = ctx.player.z + ctx.player.vz * 0.1;
-      const err = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
-      if (v.speed < 5 && Math.abs(err) > 0.7) {
-        this.input.throttle = 0;
-        this.input.brake = 1;
-        this.input.steer = err > 0 ? -1 : 1;
-        this.input.boost = false;
-        v.drive = 1;
-        v.update(this.input, dt, ctx.terrain);
-        return;
-      }
-      this.input.throttle = 1;
-      this.input.brake = 0;
-      this.input.steer = clamp(err / CONFIG.police.shared.steerFullLockAngle, -1, 1);
-      this.input.boost = false;
-      v.drive = 1 + cfg.chaseSpeed;
-      // The plow: police in the lane are shoved aside, not obstacles. Nothing between
-      // this and the player is allowed to matter.
-      v.contactBoost = 7;
-      v.plow = true;
-      /*
-       * Terminal magnet. The last half car length is pure yaw physics, and yaw
-       * physics loses to a well-timed flick every twelfth run - the one escape left.
-       * Inside fourteen units the strike stops being a steering problem: momentum
-       * itself bends toward the target, boost-strength, for at most a third of a
-       * second. It reads as eight tonnes committing, and it does not miss.
-       */
-      if (pd < 24) {
-        const nx = (ctx.player.x - v.x) / pd;
-        const nz = (ctx.player.z - v.z) / pd;
-        v.applyImpulse(nx * 120 * dt, nz * 120 * dt);
-      }
-      // Triple rails inside twenty units: the last half car length is where a swerve
-      // used to buy a graze instead of a hit.
-      v.applySpin(clamp(err, -0.8, 0.8) * cfg.turnAssist * (pd < 20 ? 3 : 1) * dt);
-      v.update(this.input, dt, ctx.terrain);
-      return;
     }
 
     if (this.springFrom) {
       const cfg = this.ambushTuning;
+      if (this.isAmbusher) {
+        // The blade is live: contact converts to the glue pin, colleagues scatter.
+        const pd0 = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+        if (pd0 < cfg.pinRange) this.pinTimer = cfg.pinTime;
+        v.plow = true;
+        v.contactBoost = 7;
+      }
       /*
        * The shot exists only while the unit is still across or ahead of the player.
        *
@@ -1080,80 +961,6 @@ export class PoliceCar {
    * with brakes or boost moves them far off a half-second prediction - and line of
    * sight gates the whole thing so no switchback can fake it.
    */
-  /*
-   * No timing solve at all. Every predictive gate ever tried here fired early or late
-   * the moment the player's speed changed - and this player's speed changes because
-   * they are being rammed, walled and boosted. Fire on presence: close and seen.
-   * The pure-pursuit burst does the rest, because it aims at the player themselves
-   * and cannot be wrong about where they will be.
-   */
-  private readyToBurst(ctx: PursuitContext): number | null {
-    const cfg = this.ambushTuning;
-    const mouth = this.ambushAt as { x: number; z: number };
-    /*
-     * A stale ambush stands down IN the alley, hidden, and the director re-seats a
-     * fresh one nearer the player. The old maxWait behaviour was to burst anyway -
-     * at nobody - which in real play was most bursts, and every single one of them
-     * was 'a juggernaut charging around well ahead of me'. The class never moves
-     * except at a target it can see.
-     */
-    if (this.ambushWait > cfg.maxWait) {
-      this.spent = true;
-      return null;
-    }
-    /*
-     * Only a STAGED truck may fire. A shot from mid-creep carries a second-long
-     * horizon, and a player who gets rammed or brakes inside that second turns it
-     * into the face-cross. From the hold point the horizon is under half a second -
-     * the only window the gate genuinely controls. If the player arrives before
-     * staging completes, there is no shot; a no-show is invisible, a face-cross is
-     * a broken promise.
-     */
-    const v0 = this.vehicle;
-    if (dist(v0.x, v0.z, mouth.x, mouth.z) > 15) return null;
-    const player = ctx.player;
-    const d = dist(player.x, player.z, mouth.x, mouth.z);
-    if (d > 120) return null;
-    if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
-    /*
-     * The player's arrival time must be measured along the ROAD, not the chord. The
-     * road bends on the approach to nearly every spur, so straight-line distance
-     * always under-measures the drive - which made the gate fire early by the same
-     * margin on every launch, exactly as reported. Progress distance is the road.
-     */
-    const roadLead =
-      ctx.terrain.progressAt(mouth.x, mouth.z) -
-      ctx.terrain.progressAt(player.x, player.z);
-    if (roadLead < 2) return null;
-    /*
-     * The equation of the broadside. The burst is a cannonball: it exits the mouth
-     * at launch speed perpendicular to the road, and no steering can bend that
-     * momentum afterwards - so WHEN it fires is everything. Fire when the player's
-     * live time-to-mouth first drops to the truck's own time-to-lane, biased LATE
-     * by 0.12s: the error budget spends itself on the player's flank and tail, and
-     * structurally never in front of them. Firing early was every miss the player
-     * ever reported; a late shot that clips the tail is still a hit, and a shot
-     * that passes behind is an honest miss that reads as a dodge, not a farce.
-     */
-    /*
-     * MEASURED, not modelled: batteries clocked staged launches at ~0.42s from hold
-     * to the road. Every physics formula tried here overestimated by a quarter
-     * second, and a quarter second early is twenty units of 'it shot out well in
-     * front of me like it's nothing'. The truck is a piston: it does not need to
-     * move until the player is nearly at the lip, so the trigger is the lip.
-     */
-    const tSelf = 0.42;
-    /*
-     * Believe the chassis, not the boost. A boost that ends mid-window sheds
-     * fifteen units a second and re-creates the early fire; clamping the believed
-     * speed to the unboosted maximum makes boosted approaches read pessimistically
-     * long, so their error lands tail-side - the sanctioned side.
-     */
-    const eff = Math.min(player.speed, player.params.maxSpeed);
-    const tPlayer = roadLead / Math.max(10, eff);
-    if (tPlayer > tSelf - 0.12) return null;
-    return 1;
-  }
 
   private readyToSpring(ctx: PursuitContext): boolean {
     const cfg = this.ambushTuning;

@@ -1455,7 +1455,7 @@ export const CONFIG = {
           /** Aim this far past the intercept, so the contact is across them, not alongside. */
           strikeDepth: 15,
           /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 2.6,
+          launchSpeedBonus: 1.3,
           /**
            * The pin. Contact during the strike converts the run into a hold: the unit
            * keeps its nose in the player and grinds them into whatever is behind for
@@ -1477,7 +1477,7 @@ export const CONFIG = {
            * trigger. Decoupling the two is what makes it a missile on a rail instead
            * of a truck accelerating from cold as the player arrives.
            */
-          springRange: 90,
+          springRange: 28,
           /**
            * Hard cap on the burst, seconds. Short: the touch happens in the first two
            * seconds or the geometry has moved on, and a long tail-chase grinding

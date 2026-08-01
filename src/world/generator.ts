@@ -244,23 +244,29 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
        * PRNG, so which day has the vicious corner is part of what the day is.
        */
       const move = opening || i === rampLeg ? "cruise" : rnd();
-      const hardCorner = typeof move === "number" && move < 0.1 && s > 0;
+      /*
+       * No hard corners in the corridor themes: at fourteen units between rock faces a
+       * near-right-angle is not a corner, it is a wall with extra steps. The open themes
+       * have shoulder to slide into and keep them.
+       */
+      const corridor = theme.minHalfWidth > 7;
+      const hardCorner = typeof move === "number" && move < 0.1 && s > 0 && !corridor;
       const flatStraight = typeof move === "number" && move >= 0.1 && move < 0.24;
       const steep = typeof move === "number" && move >= 0.24 && move < 0.36;
 
       if (hardCorner) {
         // Approach stub, then the turn itself, then an exit stub. Short stubs pin the
         // spline tight to the apex, so the corner stays a corner instead of an arc.
-        const stub = 16 + rnd() * 8;
+        const stub = 26 + rnd() * 10;
         x += Math.sin(heading) * stub;
         z += Math.cos(heading) * stub;
         y = Math.max(0, y + grade * stub);
         legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
         // Turn across the current drift, so the corner also recentres the course.
         const sign = x / LATERAL_LIMIT + heading * 0.4 > 0 ? -1 : 1;
-        heading += sign * (1.1 + rnd() * 0.45);
+        heading += sign * (0.95 + rnd() * 0.4);
         heading = Math.max(-1.35, Math.min(1.35, heading));
-        const stub2 = 16 + rnd() * 8;
+        const stub2 = 26 + rnd() * 10;
         x += Math.sin(heading) * stub2;
         z += Math.cos(heading) * stub2;
         legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
@@ -275,7 +281,10 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         } else {
           // Turn, biased back toward +Z whenever the course drifts sideways.
           const drift = x / LATERAL_LIMIT;
-          const turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
+          let turn = (rnd() - 0.5) * 1.5 - drift * 0.9;
+          // In a corridor there is no shoulder to save a hot entry: the same wander
+          // that reads as a sweeper on the flats reads as a trap between rock faces.
+          if (corridor) turn = Math.max(-0.55, Math.min(0.55, turn));
           heading += turn;
           // Keep every leg pointed broadly forward so the course always advances.
           heading = Math.max(-1.15, Math.min(1.15, heading));

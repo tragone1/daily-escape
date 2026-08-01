@@ -696,7 +696,16 @@ function placePropStation(
     const slotShift = (hash2(pz * 1.9, px * 0.4) - 0.5) * (seg.halfWidth - 3.4 - size);
     for (const side of [-1, 1]) {
       const lateral = slotShift + side * (3.4 + size / 2);
-      if (Math.abs(lateral) + size / 2 > seg.halfWidth - 0.4) continue;
+      /*
+       * The outside lane has to be real. A block that leaves less than a car's width
+       * of daylight to the wall reads as a lane and drives as a trap, which is worse
+       * than no lane: the old 0.4 clearance kept the block off the wall and nothing
+       * more. 3.4 matches the centre slot's half-spacing - proven drivable - and is
+       * measured against the collider (0.7 of full size), which is wider than the
+       * visual block. A side that cannot afford it simply goes without, demoting
+       * the gate to a single kerb block.
+       */
+      if (seg.halfWidth - (Math.abs(lateral) + size * 0.7) < 3.4) continue;
       drop(px + rx * lateral, pz + rz * lateral, size);
     }
     return;

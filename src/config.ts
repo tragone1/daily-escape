@@ -1203,6 +1203,7 @@ export const CONFIG = {
         pinLostRange: 14,
         springRange: 40,
         strikeGo: 46,
+        strikeTime: 12,
         turnAssist: 2,
       },
       /** Lateral spawns need at least this much run-off to sit in. */
@@ -1456,6 +1457,8 @@ export const CONFIG = {
            * of a truck accelerating from cold as the player arrives.
            */
           springRange: 90,
+          /** Seconds of open-road hunting after leaving the alley before it is spent. */
+          strikeTime: 12,
           /**
            * The launch proper does not begin until the player is inside this range.
            * An early spring - live timing fired optimistic, player braked - now means

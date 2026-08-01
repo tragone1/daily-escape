@@ -86,6 +86,8 @@ export class PoliceCar {
   private springExit: { x: number; z: number } | null = null;
   /** Seconds left of holding a struck player against the wall. */
   private pinTimer = 0;
+  /** Seconds of open-road hunting left after an ambusher leaves its alley. */
+  private strikeTimer = 0;
   /**
    * An ambusher that has taken its shot, hit or miss.
    *
@@ -187,6 +189,7 @@ export class PoliceCar {
     this.springFrom = null;
     this.springExit = null;
     this.pinTimer = 0;
+    this.strikeTimer = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigTimer = 0;
@@ -335,7 +338,8 @@ export class PoliceCar {
           return;
         }
       }
-      if (this.readyToSpring(ctx)) {
+      const go = this.isAmbusher ? this.readyToPounce(ctx) : this.readyToSpring(ctx);
+      if (go) {
         // Re-arm the wait clock: it now times the poised hold at the mouth, so a
         // player who never comes releases the budget instead of locking it forever.
         this.ambushWait = 0;
@@ -346,6 +350,12 @@ export class PoliceCar {
         const oz = this.ambushAt.z - v.z;
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
+        if (this.isAmbusher) {
+          this.strikeTimer = this.ambushTuning.strikeTime;
+          // Out of the alley with the charge already wound: the telegraphed run is
+          // the hit this class exists for, and it should be available immediately.
+          this.chargeCooldown = 0;
+        }
         this.ambushAt = null;
       } else {
         this.input.throttle = 0;
@@ -414,12 +424,60 @@ export class PoliceCar {
       return;
     }
 
-    if (this.springFrom) {
+    /*
+     * An ambusher out of its alley is not a guided missile any more - it is a heavy.
+     * The predictive launch (timed spring, intercept homing) missed real players in
+     * every geometry the course could bend into, while the ordinary flank-abeam-
+     * drive-through logic was landing T-bones all day. So: exit the alley on rails,
+     * then hand straight over to `heavyGoal` and the charge system for `strikeTime`
+     * seconds, with the pin conversion on contact. The alley is the surprise; the
+     * hit is the proven one.
+     */
+    if (this.isAmbusher && this.springFrom) {
       const cfg = this.ambushTuning;
-      // Contact converts the strike into the pin, hit angle be damned.
-      if (this.isAmbusher && dist(v.x, v.z, ctx.player.x, ctx.player.z) < cfg.pinRange) {
+      if (this.springExit) {
+        const exit = this.springExit;
+        const cleared =
+          (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
+        if (cleared) {
+          this.springExit = null;
+          this.springFrom = null;
+        } else {
+          const aimX = this.springFrom.x + exit.x * 6;
+          const aimZ = this.springFrom.z + exit.z * 6;
+          this.input.throttle = 1;
+          this.input.brake = 0;
+          this.input.steer = clamp(
+            wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading) /
+              CONFIG.police.shared.steerFullLockAngle,
+            -1,
+            1,
+          );
+          this.input.boost = false;
+          v.drive = 1 + cfg.launchSpeedBonus;
+          v.update(this.input, dt, ctx.terrain);
+          return;
+        }
+      } else {
+        this.springFrom = null;
+      }
+    }
+
+    if (this.isAmbusher && this.strikeTimer > 0) {
+      const cfg = this.ambushTuning;
+      this.strikeTimer -= dt;
+      if (dist(v.x, v.z, ctx.player.x, ctx.player.z) < cfg.pinRange) {
         this.pinTimer = cfg.pinTime;
       }
+      if (this.strikeTimer <= 0) {
+        this.spent = true;
+        return;
+      }
+      // No return: fall through to the ordinary drive - heavyGoal broadside + charge.
+    }
+
+    if (this.springFrom) {
+      const cfg = this.ambushTuning;
       /*
        * The shot exists only while the unit is still across or ahead of the player.
        *
@@ -750,6 +808,20 @@ export class PoliceCar {
    * current speed, ours from a standing start. Matching the two is what turns a car
    * leaving a side road into an interception rather than an obstacle already spent.
    */
+  /**
+   * The armoured ambusher's trigger: the player is genuinely close and the mouth can
+   * SEE them. Line of sight is what makes this immune to every switchback lie the
+   * course can tell - a wall between you and the alley means no pounce, full stop.
+   */
+  private readyToPounce(ctx: PursuitContext): boolean {
+    const cfg = this.ambushTuning;
+    if (this.ambushWait > cfg.maxWait) return true;
+    const mouth = this.ambushAt as { x: number; z: number };
+    const d = dist(ctx.player.x, ctx.player.z, mouth.x, mouth.z);
+    if (d > cfg.strikeGo + 12) return false;
+    return ctx.world.lineOfSight(mouth.x, mouth.z, ctx.player.x, ctx.player.z);
+  }
+
   private readyToSpring(ctx: PursuitContext): boolean {
     const cfg = this.ambushTuning;
     if (this.ambushWait > cfg.maxWait) return true;

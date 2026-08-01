@@ -613,7 +613,10 @@ export class PoliceCar {
            * pocket, the exaggerated real-life crush where the metal digs in and
            * holds, rather than kissing the surface.
            */
-          if (relAlong > v.params.halfLength - 2.0 && Math.abs(relLat) < 4.6) {
+          const frontBite = relAlong > 0 && Math.abs(relLat) < 6.0;
+          const sideBite =
+            relAlong > -v.params.halfLength && Math.abs(relLat) < 4.6 && pd < 6.0;
+          if (frontBite || sideBite) {
             this.glueLocal = {
               along: v.params.halfLength + 1.1,
               lateral: Math.max(-3.0, Math.min(3.0, relLat)),
@@ -749,7 +752,12 @@ export class PoliceCar {
             const relZE = ctx.player.z - v.z;
             const relAlongE = relXE * fxE + relZE * fzE;
             const relLatE = relXE * rxE + relZE * rzE;
-            if (relAlongE > v.params.halfLength - 2.0 && Math.abs(relLatE) < 4.6) {
+            const frontBiteE = relAlongE > 0 && Math.abs(relLatE) < 6.0;
+            // Side bite: crushing metal keeps whatever it touches - a player who
+            // clips our flank grinds along the blade into the pocket.
+            const sideBiteE =
+              relAlongE > -v.params.halfLength && Math.abs(relLatE) < 4.6 && pdE < 6.0;
+            if (frontBiteE || sideBiteE) {
               this.glueLocal = {
                 along: v.params.halfLength + 1.1,
                 lateral: Math.max(-3.0, Math.min(3.0, relLatE)),

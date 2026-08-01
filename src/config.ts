@@ -1049,7 +1049,7 @@ export const CONFIG = {
        * begins read as a bug, not as pressure. These are coming the other way instead,
        * and any spur near the start gets one waiting in it.
        */
-      openingWave: [190, 285, 380],
+      openingWave: [240, 340],
       /**
        * Units that open the run already hunting, placed this far up the road facing
        * back down it. Without them, second zero had two ambushers waiting, three
@@ -1057,7 +1057,7 @@ export const CONFIG = {
        * still waited most of a minute to be punished. These arrive within seconds, so
        * no part of the run is a freebie, including the first breath of it.
        */
-      openingChasers: [220, 300, 380],
+      openingChasers: [340, 440, 540],
       /** How many of the opening units wait in a spur rather than on the road. */
       openingAmbushes: 2,
       /**
@@ -1065,7 +1065,7 @@ export const CONFIG = {
        * seconds are clean, close enough that the first thing to come at you sideways does
        * so within about ten seconds of the lights going green.
        */
-      openingSpurRange: [260, 820],
+      openingSpurRange: [380, 820],
       /**
        * Beyond this distance a unit may appear even in plain view. Requiring concealment
        * outright left the open sections completely empty, because there is nothing out
@@ -1302,11 +1302,11 @@ export const CONFIG = {
       baseActive: 7,
       activePerSection: 1.4,
       /**
-       * Section one only. The curve's 12 there meant four wake-fill cars trailing in
-       * behind the three opening chasers, which read as a pack; 10 halves that fill.
-       * Section two onward uses the curve untouched.
+       * Section one only, and it equals the opening set exactly: two wave cars, three
+       * chasers, two alley ambushers. No wake-fill pack at all - the first fresh face
+       * arrives with section two's budget.
        */
-      openingActive: 10,
+      openingActive: 7,
       /**
        * Ceiling, for frame time more than fairness.
        *

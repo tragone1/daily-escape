@@ -653,13 +653,25 @@ export class PoliceManager {
       }
       if (claimed) continue;
       /*
-       * FIXED seat depth: sixteen units in from the mouth, every alley. The old
-       * proportional depth made the launch runway vary from ~17 to ~65 units by
-       * spur, so no single gate timing could ever be right - the source of the
-       * eternal early/late scatter. One runway, one launch time, one calibration.
+       * An alley that cannot SEE the approach cannot time a strike: require line of
+       * sight from the mouth to the road ~30 units up-course, or refuse the seat.
+       * The one chronic acceptance-test miss was a spur whose walls hid the player
+       * until the launch was already late.
+       */
+      if (CONFIG.police.escalation.openRoad.roles.includes(unit.role)) {
+        const sightNode = ctx.nav.nodeAtProgress(Math.max(0, spur.progress - 30));
+        if (!ctx.world.lineOfSight(mx, mz, sightNode.x, sightNode.z)) continue;
+      }
+      /*
+       * Seat depth is role-split. The FLEET keeps its proportional deep seat - the
+       * player's verdict: they had it right, hidden in the back. The JUGGERNAUT
+       * alone sits at a CONSTANT twenty units from the mouth: deep enough that
+       * nothing pokes out, and constant because a fixed runway is what makes its
+       * one launch timing calibratable at all.
        */
       const len = Math.hypot(dx - mx, dz - mz);
-      const t = Math.min(0.85, 16 / Math.max(1, len));
+      const isArmoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
+      const t = isArmoured ? Math.min(0.85, 20 / Math.max(1, len)) : pacing.ambushDepth;
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;
       if (Math.hypot(x - mx, z - mz) < 5) continue;

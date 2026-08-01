@@ -368,6 +368,12 @@ export class Game {
        * was spent on. Police still collide with it: their pile-up is your open lane.
        */
       if (unit.destroyed) continue;
+      /*
+       * A welded juggernaut owns its player: the weld drives them INTO the blade
+       * pocket on purpose, and the separation solver ejecting them back out every
+       * frame was the weld losing a fight it should never have been in.
+       */
+      if (unit.welded) continue;
       const hit = this.collision.resolveCars(this.player, unit.vehicle);
       if (hit && (!strongest || hit.speed > strongest.speed)) strongest = hit;
     }
@@ -377,7 +383,7 @@ export class Game {
      * not bounced. This is what makes the wide mouth a mouth.
      */
     for (const unit of active) {
-      if (unit.role !== "juggernaut") continue;
+      if (unit.role !== "juggernaut" || unit.welded) continue;
       for (const wing of unit.wingObbs()) {
         const hit = obbVsOBB(this.player.obb, wing);
         if (!hit) continue;

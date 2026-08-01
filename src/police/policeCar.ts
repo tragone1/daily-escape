@@ -94,6 +94,10 @@ export class PoliceCar {
   private pinTimer = 0;
   /** The weld: player's offset in the truck frame, latched at first contact. */
   private glueLocal: { along: number; lateral: number } | null = null;
+  /** The collision solver stands down for a welded pair: the weld IS the contact. */
+  get welded(): boolean {
+    return this.glueLocal !== null;
+  }
   /** One backed-up second attempt per ambush, then it is spent for real. */
   private retries = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
@@ -480,6 +484,21 @@ export class PoliceCar {
           const toHold2 = dist(v.x, v.z, hx2, hz2);
           const outside =
             (v.x - this.ambushAt.x) * out2.x + (v.z - this.ambushAt.z) * out2.z > -2;
+          /*
+           * Never retreat THROUGH the player: a reversing truck crossing their path
+           * registered hollow contacts with no pin machinery live - the exact
+           * "feels like decoration" report. Hold still until they are clear.
+           */
+          if (outside && dist(v.x, v.z, ctx.player.x, ctx.player.z) < 16) {
+            this.input.throttle = 0;
+            this.input.brake = v.speed > 0.5 ? 1 : 0;
+            this.input.steer = 0;
+            this.input.boost = false;
+            this.view.setCharge(0);
+            v.drive = 1;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
           if (outside && toHold2 > 3) {
             this.input.throttle = 0;
             this.input.brake = 1; // reverse toward the alley
@@ -552,6 +571,27 @@ export class PoliceCar {
           v.vx = 0;
           v.vz = 0;
           /*
+           * The weld HOLDS through the jam - this branch returns early, and losing
+           * the joint at the exact moment the blade anchors to the wall was every
+           * half-second weld break: the player bounced off the wall and drifted
+           * free while the truck sat bolted. Anchored truck, welded player, zero
+           * velocity: the trap, complete.
+           */
+          if (this.glueLocal) {
+            const fxJ = Math.sin(v.heading);
+            const fzJ = Math.cos(v.heading);
+            const rxJ = Math.cos(v.heading);
+            const rzJ = -Math.sin(v.heading);
+            const gl = this.glueLocal;
+            const txJ = v.x + fxJ * gl.along + rxJ * gl.lateral;
+            const tzJ = v.z + fzJ * gl.along + rzJ * gl.lateral;
+            const pullJ = 1 - Math.exp(-12 * dt);
+            ctx.player.x += (txJ - ctx.player.x) * pullJ;
+            ctx.player.z += (tzJ - ctx.player.z) * pullJ;
+            ctx.player.vx = 0;
+            ctx.player.vz = 0;
+          }
+          /*
            * The claw's grip. A flat collider lets the prey slide along the blade and
            * off the end - so while the jam holds, anything inside the trap zone
            * (between the blade face and the wall, within the wings) is damped hard.
@@ -590,7 +630,7 @@ export class PoliceCar {
        * force to fight - a fork stuck in the car. Bouncing is geometrically
        * impossible; release comes only when the pin clock does.
        */
-      if (pd < 8) {
+      if (pd < 10) {
         v.jam = true;
         const fx2 = Math.sin(v.heading);
         const fz2 = Math.cos(v.heading);
@@ -629,7 +669,7 @@ export class PoliceCar {
           ctx.player.vx = v.vx;
           ctx.player.vz = v.vz;
         }
-      } else if (this.glueLocal && pd > 11) {
+      } else if (this.glueLocal && pd > 13) {
         this.glueLocal = null;
       }
       const gripForming = cfg.pinTime - this.pinTimer < 1.3;
@@ -713,6 +753,28 @@ export class PoliceCar {
         // The blade is live: contact converts to the glue pin, colleagues scatter.
         const pd0 = dist(v.x, v.z, ctx.player.x, ctx.player.z);
         if (pd0 < cfg.pinRange) this.pinTimer = cfg.pinTime;
+        /*
+         * Latch the weld HERE, at the frame of arrival - waiting for the pin branch
+         * gave the collision separation a frame to shove the player past the latch
+         * window, and the joint never formed on half of dead-centre hits.
+         */
+        if (pd0 < 7.5 && !this.glueLocal) {
+          const fxL = Math.sin(v.heading);
+          const fzL = Math.cos(v.heading);
+          const rxL = Math.cos(v.heading);
+          const rzL = -Math.sin(v.heading);
+          const relXL = ctx.player.x - v.x;
+          const relZL = ctx.player.z - v.z;
+          const relAlongL = relXL * fxL + relZL * fzL;
+          const relLatL = relXL * rxL + relZL * rzL;
+          if (relAlongL > v.params.halfLength - 1.6 && Math.abs(relLatL) < 3.6) {
+            this.glueLocal = {
+              along: v.params.halfLength + 1.1,
+              lateral: Math.max(-2.6, Math.min(2.6, relLatL)),
+            };
+            this.pinTimer = cfg.pinTime;
+          }
+        }
         v.plow = true;
         v.contactBoost = 7;
       }
@@ -887,7 +949,7 @@ export class PoliceCar {
         const tl = Math.hypot(tx, tz) || 1;
         if (this.isAmbusher) {
           v.jam = true;
-          if (tl < 20) v.applyImpulse((tx / tl) * 120 * dt, (tz / tl) * 120 * dt);
+          if (tl < 22) v.applyImpulse((tx / tl) * 140 * dt, (tz / tl) * 140 * dt);
         }
         /*
          * Terminal guidance: the through-point shrinks as the range closes. At full

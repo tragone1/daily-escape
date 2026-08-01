@@ -1445,7 +1445,7 @@ export const CONFIG = {
            * called it: uncalibrated. +0.22 fires that much earlier, centring the
            * error; the homing absorbs both tails.
            */
-          leadTime: -0.3,
+          leadTime: -0.458,
           /** Assumed fraction of top speed out of the spur. */
           launchSpeedFactor: 0.95,
           /** Reads your pace from further out, so the commitment is better informed. */

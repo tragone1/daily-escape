@@ -891,15 +891,25 @@ export class PoliceCar {
     }
     const player = ctx.player;
     const d = dist(player.x, player.z, mouth.x, mouth.z);
-    if (d > 85) return null;
-    /*
-     * Fire on TIME to the mouth, not distance - live speed, re-read every frame, so
-     * a boosting player trips the gate from further out and a crawling one up close.
-     * 0.85s is the truck's own nose-to-lane time; the floor keeps a stopped player
-     * from parking outside an alley that never fires.
-     */
-    if (d > player.speed * 1.0 + 16) return null;
+    if (d > 120) return null;
     if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return null;
+    /*
+     * The equation of the broadside. The burst is a cannonball: it exits the mouth
+     * at launch speed perpendicular to the road, and no steering can bend that
+     * momentum afterwards - so WHEN it fires is everything. Fire when the player's
+     * live time-to-mouth first drops to the truck's own time-to-lane, biased LATE
+     * by 0.12s: the error budget spends itself on the player's flank and tail, and
+     * structurally never in front of them. Firing early was every miss the player
+     * ever reported; a late shot that clips the tail is still a hit, and a shot
+     * that passes behind is an honest miss that reads as a dodge, not a farce.
+     */
+    const v = this.vehicle;
+    const tSelf =
+      0.2 +
+      (dist(v.x, v.z, mouth.x, mouth.z) + 6) /
+        Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
+    const tPlayer = d / Math.max(10, player.speed);
+    if (tPlayer > tSelf - 0.12) return null;
     return 1;
   }
 

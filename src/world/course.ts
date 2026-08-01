@@ -470,9 +470,14 @@ export function buildCourseSegments(): BuiltCourse {
   let firstSpine = true;
   for (const seg of segments) {
     if (seg.overlay) continue;
-    // Micro-joints bend a few degrees at most, so a two-unit apron seals their wedges;
-    // a spur still meets the spine at a real angle and keeps the deep one at its mouth.
-    seg.extA = seg.branch ? 9 : 2;
+    /*
+     * Micro-joints bend a few degrees at most, so a two-unit apron seals their wedges.
+     * Branches get the same: the old deep mouth apron pointed backwards INTO the main
+     * road - the mouth sits on the spine centreline, so nine units of extension painted
+     * grass over the carriageway and promised drivable ground the terrain then
+     * contradicted at its edges, which played as an invisible wall.
+     */
+    seg.extA = 2;
     seg.extB = 2;
     if (!seg.branch && firstSpine) {
       seg.extA = 0;

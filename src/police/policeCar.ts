@@ -459,25 +459,39 @@ export class PoliceCar {
           const cleared =
             (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5;
           const playerDist = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-          if (cleared && playerDist <= cfg.strikeGo) {
-            this.springExit = null;
-          } else if (
-            playerDist > cfg.strikeGo &&
-            dist(v.x, v.z, this.springFrom.x, this.springFrom.z) < 7
-          ) {
+          if (playerDist <= cfg.strikeGo) {
+            if (cleared) this.springExit = null;
+          } else {
             /*
-             * Poised at the mouth, target not yet in the window: hold. An optimistic
-             * spring used to send the whole run across an empty road into the far
-             * wall while the player watched it happen from sixty units back. The
-             * missile waits on the rail until the shot is real.
+             * Target not in the window yet: hold INSIDE the alley, a car length short
+             * of the mouth. Poised at the mouth itself it was readable - the player
+             * braked on sight and the whole ambush unravelled from sixty units back.
+             * In cover it stays a surprise, and the extra length is launch runway.
              */
-            this.input.throttle = 0;
-            this.input.brake = v.speed > 1 ? 1 : 0;
-            this.input.steer = 0;
+            const hx = this.springFrom.x - exit.x * 5;
+            const hz = this.springFrom.z - exit.z * 5;
+            if (dist(v.x, v.z, hx, hz) < 4) {
+              this.input.throttle = 0;
+              this.input.brake = v.speed > 1 ? 1 : 0;
+              this.input.steer = 0;
+              this.input.boost = false;
+              v.update(this.input, dt, ctx.terrain);
+              return;
+            }
+            this.input.throttle = v.speed < 9 ? 0.5 : 0;
+            this.input.brake = v.speed > 10 ? 0.6 : 0;
+            this.input.steer = clamp(
+              wrapAngle(headingOf(hx - v.x, hz - v.z) - v.heading) /
+                CONFIG.police.shared.steerFullLockAngle,
+              -1,
+              1,
+            );
             this.input.boost = false;
+            v.drive = 1;
             v.update(this.input, dt, ctx.terrain);
             return;
-          } else {
+          }
+          if (this.springExit) {
             const aimX = this.springFrom.x + exit.x * 6;
             const aimZ = this.springFrom.z + exit.z * 6;
             this.input.throttle = 1;
@@ -490,6 +504,27 @@ export class PoliceCar {
             );
             this.input.boost = false;
             v.drive = 1 + cfg.launchSpeedBonus;
+            v.update(this.input, dt, ctx.terrain);
+            return;
+          }
+        }
+        /*
+         * Re-attack. A strike that crossed the player's line ends nose-first against
+         * the far wall - grinding there at full throttle while the player drives past
+         * was every "missed me entirely" report. A missile does not sulk: back off,
+         * swing the nose, and come again. The run is still bounded by homeDistance
+         * and the behind-check, so this cannot decay into a chase.
+         */
+        {
+          const aimErrNow = wrapAngle(
+            headingOf(ctx.player.x - v.x, ctx.player.z - v.z) - v.heading,
+          );
+          if (v.speed < 5 && Math.abs(aimErrNow) > 0.7) {
+            this.input.throttle = 0;
+            this.input.brake = 1;
+            this.input.steer = aimErrNow > 0 ? -1 : 1;
+            this.input.boost = false;
+            v.drive = 1;
             v.update(this.input, dt, ctx.terrain);
             return;
           }

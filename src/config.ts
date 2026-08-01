@@ -1469,7 +1469,7 @@ export const CONFIG = {
            * is deliberately slow to steer everywhere else; the strike gets rails, so
            * swerving, braking and boosting all converge on the same contact.
            */
-          turnAssist: 9,
+          turnAssist: 12,
           /**
            * Once the player is this far past, the shot is gone and so is the unit.
            *

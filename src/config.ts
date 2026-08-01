@@ -743,7 +743,7 @@ export const CONFIG = {
        * you sideways into whatever is there rather than down the road. That is the hit
        * this class is supposed to land, so it is the only one that gets amplified.
        */
-      broadsideBoost: 2.7,
+      broadsideBoost: 3.6,
       /**
        * The broadside run: hold the flank until actually abeam, then drive *through*.
        *
@@ -760,9 +760,9 @@ export const CONFIG = {
        */
       broadside: {
         /** Fore-and-aft offset, in units, inside which it counts as abeam and may commit. */
-        alongWindow: 7,
+        alongWindow: 9,
         /** How far past the player's far side to aim, so it drives through rather than at. */
-        throughDepth: 9,
+        throughDepth: 12,
         /** Seconds of player travel to lead by while lining the run up. */
         lead: 0.45,
       },
@@ -1421,11 +1421,11 @@ export const CONFIG = {
            * mistimed launch turn into a near miss; at 190 the run is steered essentially
            * all the way onto the player, which is what "high percentage" costs.
            */
-          homeDistance: 190,
+          homeDistance: 240,
           /** Aim this far past the intercept, so the contact is across them, not alongside. */
-          strikeDepth: 13,
+          strikeDepth: 15,
           /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 1.9,
+          launchSpeedBonus: 2.2,
           /**
            * Once the player is this far past, the shot is gone and so is the unit.
            *

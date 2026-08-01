@@ -116,6 +116,11 @@ export class Vehicle {
   /** Striking juggernaut: police in its path take full, undamped impulses. */
   plow = false;
   /**
+   * Jammed against the wall mid-pin: this body is machinery, not a car. Infinite
+   * effective mass, zero restitution against it - whatever it holds, stays held.
+   */
+  jam = false;
+  /**
    * Shove multiplier for a T-bone, used instead of `contactBoost` when this vehicle hits
    * a player square in the side. Separate because the two hits do opposite things: a
    * nose-to-tail shove hands the player speed down the road, a broadside carries them

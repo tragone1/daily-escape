@@ -141,8 +141,10 @@ export class CollisionWorld {
     // mass for the exchange, which is what makes a parked roadblock answerable.
     const aBarge = a.isPolice ? 1 : a.boosting ? c.boostBargeScale : 1;
     const bBarge = b.isPolice ? 1 : b.boosting ? c.boostBargeScale : 1;
-    const ma = a.params.mass * a.pushResistance * bBarge;
-    const mb = b.params.mass * b.pushResistance * aBarge;
+    // A jammed body is anchored machinery: effectively infinite mass, the other
+    // party absorbs the whole separation.
+    const ma = a.jam ? 1e9 : a.params.mass * a.pushResistance * bBarge;
+    const mb = b.jam ? 1e9 : b.params.mass * b.pushResistance * aBarge;
     const total = ma + mb;
     // Lighter car gets moved more.
     const shareA = mb / total;
@@ -194,12 +196,18 @@ export class CollisionWorld {
         }
       }
     }
+    /*
+     * Against a jammed juggernaut nothing bounces and nothing is thrown: the trap
+     * closes and the contact SETTLES, which is the difference between "pinned to the
+     * wall" and "hit into the wall and back out again".
+     */
+    const jammed = a.jam || b.jam;
     const shove =
-      c.carImpulse *
+      (jammed ? 0 : c.carImpulse) *
       boost *
       (friendly ? c.policeImpulseScale : 1) *
       (settling ? c.pinShoveScale : 1);
-    const bounce = settling ? c.pinRestitution : c.restitution;
+    const bounce = jammed ? 0 : settling ? c.pinRestitution : c.restitution;
     if (vn < 0) {
       const j = (-vn * (1 + bounce) + shove) / total;
       a.vx += hit.nx * j * mb;

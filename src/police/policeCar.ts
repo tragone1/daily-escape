@@ -281,6 +281,7 @@ export class PoliceCar {
     const shared = CONFIG.police.shared;
     const v = this.vehicle;
     v.plow = false;
+    v.jam = false;
 
     // A wreck: no driver, ever again. Let it coast to a stop and stay there.
     if (this.wrecked) {
@@ -515,6 +516,49 @@ export class PoliceCar {
       const cfg = this.ambushTuning;
       const pd = dist(v.x, v.z, ctx.player.x, ctx.player.z);
       this.pinTimer -= dt;
+      /*
+       * THE JAM. Once the pin has its prey near and a wall within the blade's reach,
+       * the truck stops being a vehicle: velocity zeroed, position latched, infinite
+       * effective mass, no restitution. The claw is bolted to the wall and the player
+       * is held between them - machinery, exactly as designed. Physics resumes when
+       * the pin clock runs out.
+       */
+      if (pd < 9) {
+        const fx = Math.sin(v.heading);
+        const fz = Math.cos(v.heading);
+        const wallAhead = ctx.world.raycastDistance(v.x, v.z, fx, fz, 7);
+        if (wallAhead < 7) {
+          v.jam = true;
+          v.plow = true;
+          v.contactBoost = 1;
+          v.vx = 0;
+          v.vz = 0;
+          /*
+           * The claw's grip. A flat collider lets the prey slide along the blade and
+           * off the end - so while the jam holds, anything inside the trap zone
+           * (between the blade face and the wall, within the wings) is damped hard.
+           * Not an impulse, not a bounce: machinery closing. Release comes only when
+           * the pin clock runs out.
+           */
+          const rx = Math.cos(v.heading);
+          const rz = -Math.sin(v.heading);
+          const relX = ctx.player.x - v.x;
+          const relZ = ctx.player.z - v.z;
+          const along = relX * fx + relZ * fz;
+          const lateral = relX * rx + relZ * rz;
+          if (along > 1.5 && along < wallAhead + 2.5 && Math.abs(lateral) < 3.8) {
+            const grip = Math.exp(-5 * dt);
+            ctx.player.vx *= grip;
+            ctx.player.vz *= grip;
+          }
+          this.input.throttle = 0.35;
+          this.input.brake = 0;
+          this.input.steer = 0;
+          this.input.boost = false;
+          this.view.setCharge(1);
+          return;
+        }
+      }
       /*
        * The first 1.3 seconds of a pin cannot be broken by range: a graze at fifty
        * units a second is a touch that slides off before the grip forms, and the

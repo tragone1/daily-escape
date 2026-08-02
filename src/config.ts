@@ -271,7 +271,13 @@ export const CONFIG = {
     lateSpeed: {
       fromSection: 9,
       perSection: 0.6,
-      max: 12,
+      /**
+       * Capped where the POLICE speed bonus caps (+30 lands mid round 22):
+       * the player's ramp stops rising the same round theirs does, per
+       * design - after that the only thing still climbing is the arrest
+       * clock. Retune this if the escalation slopes move.
+       */
+      max: 7.2,
     },
     boost: {
       /** Extra acceleration while boosting, u/s^2. */

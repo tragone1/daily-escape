@@ -595,8 +595,9 @@ export const CONFIG = {
          * broadside INTO their lane as it snaps, timed by meet-time.
          */
         stageOffset: 5.5,
-        /** Snap when the predicted meeting is this many seconds away. */
-        snapMeetTime: 1.35,
+        /** Snap when the predicted meeting is this many seconds away - early
+         *  enough that the wall stands fully perpendicular before arrival. */
+        snapMeetTime: 1.9,
         /**
          * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
          * eligible units in the same window slide together, offset to cover
@@ -617,11 +618,21 @@ export const CONFIG = {
         commitLead: 0.85,
         /** Hits on a sliding/holding blocker land harder than pack rubbing. */
         contactBoost: 2.2,
-        /** Yaw authority during the slide, rad/s toward perpendicular. */
-        spinRate: 4.6,
-        brake: 0.55,
-        slideTime: 1.65,
-        holdTime: 1.2,
+        /**
+         * MAXED, by request, physics bent on purpose: the snap is a near
+         * pivot - full perpendicular in about a quarter second - while the
+         * momentum keeps carrying the car forward, so it never has to arc
+         * past the player and back up. The assists glide the formed wall
+         * onto (and along with) the player's line; they are deliberately
+         * about half the strength of the old objectionable carve, and with
+         * the fast pivot they read as drift control.
+         */
+        spinRate: 11,
+        brake: 0.7,
+        slideTime: 1.25,
+        holdTime: 1.6,
+        slideAssist: 70,
+        holdAssist: 45,
       },
       pileup: {
         /** Relative impact speed below which nothing happens. */

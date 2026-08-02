@@ -135,7 +135,6 @@ export class PoliceCar {
   private slideAim = 0;
   private slideLane = 0;
   private slideFinal = 0;
-  private slideDir = 1;
   private slideHoldSpent = 0;
 
   /** Units stay dormant until the director wakes them. */
@@ -178,10 +177,9 @@ export class PoliceCar {
    * player's predicted lane (offset by `lane` when part of a double), and only
    * then snap sideways - the broadside lands where the player is going.
    */
-  startSlideBlock(dir: number, stageLane = 0, lineup = 0.5, finalLane = 0): void {
+  startSlideBlock(_dir: number, stageLane = 0, lineup = 0.5, finalLane = 0): void {
     if (this.slideTimer > 0 || this.slideHold > 0 || this.slideAim > 0) return;
     if (this.stunTimer > 0 || this.charging) return;
-    this.slideDir = dir >= 0 ? 1 : -1;
     this.slideLane = stageLane;
     this.slideFinal = finalLane;
     this.slideAim = lineup;
@@ -190,12 +188,18 @@ export class PoliceCar {
     this.vehicle.boostCooldown = 0;
   }
 
-  /** Convert line-up into the actual slide off the current travel direction. */
-  private snapSlide(): void {
+  /**
+   * Convert line-up into the slide. The wall squares up to the PLAYER'S line
+   * of travel - squaring to our own travel left a diagonal car whenever the
+   * J-hook approach was still angled across the road.
+   */
+  private snapSlide(playerHeading: number): void {
     const cfg = CONFIG.police.shared.slideBlock;
     const v = this.vehicle;
     const travel = v.speed > 4 ? Math.atan2(v.vx, v.vz) : v.heading;
-    this.slideHeading = travel + this.slideDir * (Math.PI / 2);
+    let square = playerHeading + Math.PI / 2;
+    if (Math.abs(wrapAngle(square - travel)) > Math.PI / 2) square += Math.PI;
+    this.slideHeading = square;
     this.slideAim = 0;
     // Retarget from the staging lane to the KILL lane: the mid-slide carve
     // pulls the sliding wall onto the player's actual line.
@@ -465,11 +469,10 @@ export class PoliceCar {
       const tMeet = along / closing;
       // Carve INTO the player's lane: spin whichever way sweeps the nose
       // from the staging side across their line.
-      this.slideDir = this.slideLane - this.slideFinal > 0 ? -1 : 1;
       if (along < 6 || Math.abs(latErr) > 16) {
         this.slideAim = 0; // read is dead; rejoin the chase
       } else if (tMeet < cfg.snapMeetTime || along < 14 || this.slideAim <= 0) {
-        this.snapSlide();
+        this.snapSlide(ctx.player.heading);
       } else {
         /*
          * Two-phase approach, all honest driving: hold the STAGING lane while
@@ -507,10 +510,11 @@ export class PoliceCar {
           1,
         );
         // Committed: burn boost flat out. Staging: FEATHER it - quick on/off
-        // pulses to close distance without overshooting the staging lane. Real
-        // boost, real cooldowns; it reads as a pro working the throttle.
+        // pulses, and never mid-turn: a pro squeezes the throttle only when
+        // the wheel is straight.
         this.input.boost =
-          committed || (along > 45 && Math.sin(this.slideAim * 11) > 0.25);
+          (committed || (along > 45 && Math.sin(this.slideAim * 11) > 0.25)) &&
+          Math.abs(this.input.steer) < 0.5;
         v.drive = 1;
         v.update(this.input, dt, ctx.terrain);
         return;
@@ -527,6 +531,17 @@ export class PoliceCar {
       this.slideTimer -= dt;
       const err = wrapAngle(this.slideHeading - v.heading);
       v.applySpin(clamp(err, -1, 1) * cfg.spinRate * dt);
+      // Glide the forming wall onto the kill lane while the player is still
+      // out - momentum does the along-road travel, this does the fine set.
+      const pdG = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      if (pdG > 10) {
+        const prxG = Math.cos(ctx.player.heading);
+        const przG = -Math.sin(ctx.player.heading);
+        const latErrG =
+          (v.x - ctx.player.x) * prxG + (v.z - ctx.player.z) * przG - this.slideLane;
+        const magG = Math.min(1, Math.abs(latErrG) / 3) * cfg.slideAssist;
+        v.applyImpulse(-Math.sign(latErrG) * prxG * magG * dt, -Math.sign(latErrG) * przG * magG * dt);
+      }
       this.input.throttle = 0;
       this.input.brake = cfg.brake;
       this.input.steer = clamp(err / 0.5, -1, 1);
@@ -549,9 +564,14 @@ export class PoliceCar {
        * a hard cap) instead of expiring mid-standoff.
        */
       const pdH = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      // Stay SQUARE while gliding: nudge the pose back to the perpendicular
+      // of the player's travel, whichever end-on is nearer.
+      let squareH = ctx.player.heading + Math.PI / 2;
+      if (Math.abs(wrapAngle(squareH - v.heading)) > Math.PI / 2) squareH += Math.PI;
+      v.applySpin(clamp(wrapAngle(squareH - v.heading), -1, 1) * 2.5 * dt);
       const inbound =
         (v.x - ctx.player.x) * ctx.player.vx + (v.z - ctx.player.z) * ctx.player.vz > 0;
-      if (inbound && pdH < 90 && this.slideHoldSpent < 3.4) {
+      if (inbound && pdH < 90 && this.slideHoldSpent < 4.5) {
         this.slideHold = Math.max(this.slideHold, 0.35);
       }
       let driveH = 0;
@@ -565,13 +585,21 @@ export class PoliceCar {
           Math.min(segH.halfWidth - 1.8, playerAcrossH + this.slideFinal),
         );
         const errH = targetAcrossH - ownAcrossH;
-        if (Math.abs(errH) > 1.0 && v.speed < 3.5) {
+        if (Math.abs(errH) > 1.0 && v.speed < 5) {
           const fwdAcrossH = Math.sin(v.heading) * segH.dz - Math.cos(v.heading) * segH.dx;
           driveH = Math.sign(errH) * Math.sign(fwdAcrossH || 1);
         }
+        // The formed wall GLIDES with the feints - bent physics at half the
+        // old carve strength, and only while the player is still out.
+        if (pdH > 9 && Math.abs(errH) > 0.8) {
+          const cfgH = CONFIG.police.shared.slideBlock;
+          const rH = { x: segH.dz, z: -segH.dx };
+          const magH = Math.min(1, Math.abs(errH) / 3) * cfgH.holdAssist;
+          v.applyImpulse(Math.sign(errH) * rH.x * magH * dt, Math.sign(errH) * rH.z * magH * dt);
+        }
       }
-      this.input.throttle = driveH > 0 ? 0.3 : 0;
-      this.input.brake = driveH < 0 ? 0.45 : v.speed > 0.8 ? 1 : 0;
+      this.input.throttle = driveH > 0 ? 0.45 : 0;
+      this.input.brake = driveH < 0 ? 0.5 : v.speed > 0.8 ? 1 : 0;
       this.input.steer = 0;
       this.input.boost = false;
       v.drive = 1;

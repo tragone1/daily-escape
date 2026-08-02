@@ -259,10 +259,10 @@ export const CONFIG = {
     },
     /**
      * Late-run pace. From `fromSection` (0-indexed; 9 = the tenth section) the
-     * player's top speed climbs per section, capped. The police climb to +12 as
-     * well, so their class edge holds constant rather than growing - this raises
-     * the tempo of the whole late game rather than handing out an advantage: at
-     * 58 every wall and head-on arrives sooner than your reflexes expect.
+     * player's top speed climbs per section, capped. The police do NOT mirror
+     * this ramp (an old version did) - their climb is the escalation bonus in
+     * police.escalation, which from the tenth section is deliberately steeper
+     * than this one: the late game is supposed to get away from you.
      */
     /**
      * Late-run pace ramp. The hard doubling at section ten was tried and rolled back
@@ -1592,8 +1592,8 @@ export const CONFIG = {
        * of the flat climb - the late game was reading as no harder than the mid
        * game once the player's own pace ramp kicked in.
        */
-      lateSpeedPerSection: 0.55,
-      maxSpeedBonus: 18,
+      lateSpeedPerSection: 1.45,
+      maxSpeedBonus: 20,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the

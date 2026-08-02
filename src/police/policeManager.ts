@@ -815,6 +815,7 @@ export class PoliceManager {
       const b = unit.role === "juggernaut" ? 0 : bonus;
       unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + b };
       unit.aggro = aggro;
+      unit.sectionKnown = section;
     }
   }
 

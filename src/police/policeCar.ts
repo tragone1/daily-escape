@@ -137,6 +137,9 @@ export class PoliceCar {
   private slideFinal = 0;
   private slideHoldSpent = 0;
   private slideSnapMeet = 1.2;
+  private slideExecErr = 0;
+  /** Set by the director so per-unit skill can scale with the run. */
+  sectionKnown = 0;
   private slideTravelX = 0;
   private slideTravelZ = 1;
   private slideSpeed = 0;
@@ -205,7 +208,16 @@ export class PoliceCar {
     const travel = v.speed > 4 ? Math.atan2(v.vx, v.vz) : v.heading;
     let square = playerHeading + Math.PI / 2;
     if (Math.abs(wrapAngle(square - travel)) > Math.PI / 2) square += Math.PI;
-    this.slideHeading = square;
+    // Roll this slide's execution: most are close to square, some overcook
+    // past perpendicular toward backwards, some never get fully sideways.
+    // Deep-section crews roll tighter.
+    const spread = Math.max(
+      cfg.execErrMin,
+      Math.min(cfg.execErrMax, cfg.execErrMax - this.sectionKnown * cfg.execErrPerSection),
+    );
+    const rE = Math.random();
+    this.slideExecErr = (Math.random() < 0.5 ? -1 : 1) * rE * rE * spread;
+    this.slideHeading = square + this.slideExecErr;
     this.slideAim = 0;
     // Retarget from the staging lane to the KILL lane: the mid-slide carve
     // pulls the sliding wall onto the player's actual line.
@@ -599,6 +611,7 @@ export class PoliceCar {
       // of the player's travel, whichever end-on is nearer.
       let squareH = ctx.player.heading + Math.PI / 2;
       if (Math.abs(wrapAngle(squareH - v.heading)) > Math.PI / 2) squareH += Math.PI;
+      squareH += this.slideExecErr * 0.6;
       v.applySpin(clamp(wrapAngle(squareH - v.heading), -1, 1) * 2.5 * dt);
       const inbound =
         (v.x - ctx.player.x) * ctx.player.vx + (v.z - ctx.player.z) * ctx.player.vz > 0;

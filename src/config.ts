@@ -647,6 +647,16 @@ export const CONFIG = {
          * standing wall standoff.
          */
         driftPush: 260,
+        /**
+         * EXECUTION PERSONALITY. Each slide rolls a pose error off perfect
+         * square - quadratic, so small slop is common and the occasional
+         * over-rotation ends nearly backwards, or an under-rotation never
+         * quite gets sideways. The spread TIGHTENS with the sections: deep
+         * crews nail it. The wall stand only recovers 60% of a botched pose.
+         */
+        execErrMax: 1.5,
+        execErrPerSection: 0.06,
+        execErrMin: 0.25,
         /** Seconds of player lateral motion the standoff tracking leads by. */
         trackLead: 0.35,
       },

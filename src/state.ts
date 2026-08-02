@@ -149,7 +149,16 @@ export class GameState {
     // How fast the arrest closes scales with how boxed in you are, so the last gap
     // shutting is the moment it becomes urgent.
     const crowd = 0.55 + squeeze * run.captureCrowdBonus;
-    const rate = 1 / run.captureDuration;
+    /*
+     * The FOREVER dial. Every other pressure system caps out by the early
+     * twenties while the player's own pace ramp keeps giving - a good enough
+     * runner would feel the deep game soften. The arrest clock itself
+     * escalates without limit instead: +5% fill speed per section from the
+     * tenth, uncapped. No physics change, no more cars - the law just gets
+     * quicker with the cuffs, forever.
+     */
+    const deep = 1 + Math.max(0, this.section - 9) * 0.05;
+    const rate = deep / run.captureDuration;
     this.captureProgress = clamp(
       this.captureProgress + (pinned ? rate * crowd : -rate * run.captureRecovery) * dt,
       0,

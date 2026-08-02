@@ -567,11 +567,36 @@ export const CONFIG = {
        * cops know, not a script every car runs.
        */
       slideBlock: {
-        fromSection: 9,
+        /** In the arsenal from the first section; skill grows per section. */
+        fromSection: 0,
         roles: ["interceptor", "elite"] as const,
-        /** Seconds between assignments at zero aggro; scaled down by aggro. */
-        interval: 12,
-        chance: 0.6,
+        /** Assignment cadence: base seconds, tightening per section to a floor. */
+        intervalBase: 15,
+        intervalPerSection: 0.55,
+        intervalMin: 5,
+        /** Chance a spotted opportunity is taken: grows per section, capped. */
+        chanceBase: 0.35,
+        chancePerSection: 0.03,
+        chanceMax: 0.9,
+        /**
+         * The LINE-UP: before snapping sideways the unit steers to converge on
+         * the player's predicted lane, so the broadside lands where the player
+         * is GOING, not wherever the cop happened to be. More seconds of
+         * line-up allowance = more expert placement; grows per section.
+         */
+        lineupBase: 0.45,
+        lineupPerSection: 0.03,
+        lineupMax: 0.95,
+        /** Snap early once converged this close to the target lane. */
+        lineupDone: 2.0,
+        /**
+         * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
+         * eligible units in the same window slide together, offset to cover
+         * complementary lanes - a formed two-car wall, arriving sideways.
+         */
+        doubleFromSection: 10,
+        doubleChance: 0.5,
+        doubleLaneOffset: 2.6,
         /** Head-on window, in the player's frame. */
         window: { near: 28, far: 68, lat: 8 },
         minSpeed: 16,

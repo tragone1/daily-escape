@@ -130,6 +130,9 @@ export class PoliceCar {
   private slideTimer = 0;
   private slideHold = 0;
   private slideHeading = 0;
+  private slideAim = 0;
+  private slideLane = 0;
+  private slideDir = 1;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
@@ -166,13 +169,26 @@ export class PoliceCar {
    * Hard cop-on-cop impact: lose the car for a beat. The player juking two
    * chasers into each other MAKES an opening - the chaos is the reward.
    */
-  /** Begin the slide-block: snap sideways off the current travel line. */
-  startSlideBlock(dir: number): void {
-    if (this.slideTimer > 0 || this.slideHold > 0 || this.stunTimer > 0 || this.charging) return;
+  /**
+   * Begin the slide-block. It opens with a LINE-UP: steer to converge on the
+   * player's predicted lane (offset by `lane` when part of a double), and only
+   * then snap sideways - the broadside lands where the player is going.
+   */
+  startSlideBlock(dir: number, lane = 0, lineup = 0.5): void {
+    if (this.slideTimer > 0 || this.slideHold > 0 || this.slideAim > 0) return;
+    if (this.stunTimer > 0 || this.charging) return;
+    this.slideDir = dir >= 0 ? 1 : -1;
+    this.slideLane = lane;
+    this.slideAim = lineup;
+  }
+
+  /** Convert line-up into the actual slide off the current travel direction. */
+  private snapSlide(): void {
     const cfg = CONFIG.police.shared.slideBlock;
     const v = this.vehicle;
     const travel = v.speed > 4 ? Math.atan2(v.vx, v.vz) : v.heading;
-    this.slideHeading = travel + (dir >= 0 ? 1 : -1) * (Math.PI / 2);
+    this.slideHeading = travel + this.slideDir * (Math.PI / 2);
+    this.slideAim = 0;
     this.slideTimer = cfg.slideTime;
   }
 
@@ -289,6 +305,7 @@ export class PoliceCar {
     this.stunCooldown = 0;
     this.slideTimer = 0;
     this.slideHold = 0;
+    this.slideAim = 0;
     this.rigTimer = 0;
     this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
@@ -408,6 +425,45 @@ export class PoliceCar {
       v.drive = 1;
       v.update(this.input, dt, ctx.terrain);
       return;
+    }
+
+    /*
+     * SLIDE-BLOCK LINE-UP: full throttle, steering onto the player's predicted
+     * lane. Snaps into the slide once converged (or when the allowance runs
+     * out, or the player is nearly on top of us); aborts cleanly if the
+     * geometry falls apart so a missed read costs nothing.
+     */
+    if (this.slideAim > 0) {
+      const cfg = CONFIG.police.shared.slideBlock;
+      this.slideAim -= dt;
+      const pfx = Math.sin(ctx.player.heading);
+      const pfz = Math.cos(ctx.player.heading);
+      const prx = Math.cos(ctx.player.heading);
+      const prz = -Math.sin(ctx.player.heading);
+      const rx = v.x - ctx.player.x;
+      const rz = v.z - ctx.player.z;
+      const along = rx * pfx + rz * pfz;
+      const latErr = rx * prx + rz * prz - this.slideLane;
+      if (along < 6 || Math.abs(latErr) > 12) {
+        this.slideAim = 0; // read is dead; rejoin the chase
+      } else if (Math.abs(latErr) < cfg.lineupDone || along < 14 || this.slideAim <= 0) {
+        this.snapSlide();
+      } else {
+        const tx2 = ctx.player.x + pfx * along * 0.55 + prx * this.slideLane;
+        const tz2 = ctx.player.z + pfz * along * 0.55 + prz * this.slideLane;
+        this.input.throttle = 1;
+        this.input.brake = 0;
+        this.input.steer = clamp(
+          wrapAngle(headingOf(tx2 - v.x, tz2 - v.z) - v.heading) /
+            CONFIG.police.shared.steerFullLockAngle,
+          -1,
+          1,
+        );
+        this.input.boost = false;
+        v.drive = 1;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
     }
 
     /*

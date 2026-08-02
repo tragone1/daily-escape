@@ -145,6 +145,9 @@ export class PoliceManager {
       const player = ctx.player;
       const fwd = forwardOf(player.heading);
       const right = rightOf(player.heading);
+      const chance = Math.min(sb.chanceMax, sb.chanceBase + section * sb.chancePerSection);
+      const lineup = Math.min(sb.lineupMax, sb.lineupBase + section * sb.lineupPerSection);
+      const candidates: PoliceCar[] = [];
       for (const u of this.units) {
         if (!u.active || u.destroyed || u.disabled) continue;
         if (!(sb.roles as readonly string[]).includes(u.role)) continue;
@@ -160,10 +163,24 @@ export class PoliceManager {
         // Head-on: their travel opposes the player's heading.
         const spd = v2.speed || 1;
         if ((v2.vx * fwd.x + v2.vz * fwd.z) / spd > -0.45) continue;
-        if (Math.random() > sb.chance) continue;
-        u.startSlideBlock(Math.random() < 0.5 ? -1 : 1);
-        this.slideTimer = sb.interval * (1 - this.aggro);
-        break;
+        candidates.push(u);
+        if (candidates.length >= 2) break;
+      }
+      if (candidates.length > 0 && Math.random() < chance) {
+        const wantDouble =
+          section >= sb.doubleFromSection &&
+          candidates.length >= 2 &&
+          Math.random() < sb.doubleChance;
+        if (wantDouble) {
+          // Complementary lanes, mirrored rotation: a formed two-car wall.
+          candidates[0].startSlideBlock(1, -sb.doubleLaneOffset, lineup);
+          candidates[1].startSlideBlock(-1, sb.doubleLaneOffset, lineup);
+        } else {
+          candidates[0].startSlideBlock(Math.random() < 0.5 ? -1 : 1, 0, lineup);
+        }
+        this.slideTimer =
+          Math.max(sb.intervalMin, sb.intervalBase - section * sb.intervalPerSection) *
+          (1 - this.aggro * 0.5);
       }
     }
 

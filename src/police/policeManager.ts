@@ -692,13 +692,29 @@ export class PoliceManager {
       const hw = cfg.vehicle.halfWidth;
       let theta: number | null = null;
       let proj = 0;
+      let centered = false;
+      // First preference: park CENTERED with a passable opening on BOTH
+      // sides - the block that actually blocks in open sections. Fall back
+      // to the kerb hug (single whole opening) when the road is too narrow.
       for (let deg = 90; deg >= 40; deg -= 5) {
         const t = (deg * Math.PI) / 180;
         const p2 = span * Math.sin(t) + hw * Math.cos(t);
-        if (bw - 2 * p2 >= cfg.minGap) {
+        if (bw - 2 * p2 >= 2 * cfg.centerGap) {
           theta = t;
           proj = p2;
+          centered = true;
           break;
+        }
+      }
+      if (theta === null) {
+        for (let deg = 90; deg >= 40; deg -= 5) {
+          const t = (deg * Math.PI) / 180;
+          const p2 = span * Math.sin(t) + hw * Math.cos(t);
+          if (bw - 2 * p2 >= cfg.minGap) {
+            theta = t;
+            proj = p2;
+            break;
+          }
         }
       }
       if (theta === null) continue;
@@ -707,8 +723,11 @@ export class PoliceManager {
         bestScore = score;
         best = node;
         bestTheta = theta;
-        // Hug one kerb - which one varies by spot - so the opening is single and whole.
-        bestLateral = (node.id & 1) === 0 ? band.hi - proj : band.lo + proj;
+        bestLateral = centered
+          ? (band.lo + band.hi) / 2
+          : (node.id & 1) === 0
+            ? band.hi - proj
+            : band.lo + proj;
         bestClampLo = band.lo + proj;
         bestClampHi = band.hi - proj;
       }

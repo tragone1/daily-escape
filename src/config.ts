@@ -1012,6 +1012,14 @@ export const CONFIG = {
        */
       minGap: 4.6,
       /**
+       * Parked CENTERED (open sections), the openings flank it on both sides -
+       * each can be tighter than the single-opening minimum because the player
+       * has two choices. Centre when both fit, hug the kerb only when the road
+       * cannot afford them: a rig flat against the wall of a wide section
+       * blocks nothing, per playtest.
+       */
+      centerGap: 3.4,
+      /**
        * Same spawn honesty as every other class: a spot must be beyond this
        * euclidean distance OR out of the player's line of sight (and never under
        * 120 regardless). Progress distance alone lies at switchbacks, which is

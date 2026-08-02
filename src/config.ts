@@ -551,11 +551,47 @@ export const CONFIG = {
        * Offsets are in the player's own frame: x across, z along. The forward stations are
        * the brake-check, and they are the reason a fast player has to slow down.
        */
+      /**
+       * Cop-on-cop pile-up physics: a hard hit between two units spins both out
+       * for a beat. The chaos the player asked for by name - juking two chasers
+       * into each other MANUFACTURES an opening in the pack. Threshold keeps
+       * ordinary pack-rubbing free; rigs and welded units shrug it off.
+       */
+      pileup: {
+        /** Relative impact speed below which nothing happens. */
+        minImpact: 30,
+        /**
+         * Crossing angle (radians) below which a hit is pack accordion, not a
+         * crash. A chase train rear-ending itself at speed is business as
+         * usual; two cars arriving on CROSSING lines is the juke paying off.
+         */
+        minAngle: 0.7,
+        /**
+         * Spin-outs only happen within this range of the player. The feature is
+         * the JUKE - two chasers baited into each other making an opening you
+         * drive through. Distant pack-rubbing spinning the fleet out where
+         * nobody sees it just drains the pressure invisibly.
+         */
+        nearPlayer: 45,
+        /** No re-stun within this many seconds of recovering - no carousels. */
+        cooldown: 6,
+        /** Stun seconds = 0.5 + impact * scale, capped. */
+        stunScale: 0.055,
+        maxStun: 2.2,
+      },
       box: {
         /** Units this close are assigned a station instead of chasing the player. */
         range: 78,
         /** How many stations are handed out at once — one per direction. */
         maxAssigned: 8,
+        /**
+         * From this section (0-indexed; 9 = round ten) the box fills its pure
+         * SIDE stations first: two chasers ride level with the player pinning
+         * the lanes before anyone takes a rear station. Fewer cars shoving from
+         * behind, more of a formation you have to out-drive - feint one flanker
+         * into committing and cut the other way.
+         */
+        lateSidesFirst: 9,
         /** Re-assign this often, seconds. Slower than the director so units commit. */
         interval: 0.7,
         /**

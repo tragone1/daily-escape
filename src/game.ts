@@ -383,9 +383,29 @@ export class Game {
       this.player.vx *= k;
       this.player.vz *= k;
     }
+    const pileup = CONFIG.police.shared.pileup;
     for (let i = 0; i < active.length; i++) {
       for (let j = i + 1; j < active.length; j++) {
-        this.collision.resolveCars(active[i].vehicle, active[j].vehicle);
+        const copHit = this.collision.resolveCars(active[i].vehicle, active[j].vehicle);
+        if (
+          copHit &&
+          copHit.speed >= pileup.minImpact &&
+          Math.hypot(active[i].vehicle.x - this.player.x, active[i].vehicle.z - this.player.z) <
+            pileup.nearPlayer
+        ) {
+          // Crossing lines only: the accordion of a chase train rear-ending
+          // itself is business as usual, not a crash.
+          const cross = Math.abs(
+            Math.atan2(
+              Math.sin(active[i].vehicle.heading - active[j].vehicle.heading),
+              Math.cos(active[i].vehicle.heading - active[j].vehicle.heading),
+            ),
+          );
+          if (cross >= pileup.minAngle) {
+            active[i].spinOut(copHit.speed);
+            active[j].spinOut(copHit.speed);
+          }
+        }
       }
     }
     // A second static pass: a ram can shove a car into a wall within the same frame.

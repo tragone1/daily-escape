@@ -123,6 +123,8 @@ export class PoliceCar {
   private rigLateral = 0;
   private rigAlong = 0;
   private rigYaw: number | null = null;
+  private stunTimer = 0;
+  private stunCooldown = 0;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
@@ -144,6 +146,19 @@ export class PoliceCar {
 
   get parkedLateral(): number {
     return this.rigLateral;
+  }
+
+  /**
+   * Hard cop-on-cop impact: lose the car for a beat. The player juking two
+   * chasers into each other MAKES an opening - the chaos is the reward.
+   */
+  spinOut(impact: number): void {
+    if (this.role === "rig" || this.welded || this.destroyed || this.wrecked) return;
+    if (this.stunTimer > 0 || this.stunCooldown > 0) return;
+    const cfg = CONFIG.police.shared.pileup;
+    this.stunTimer = Math.min(cfg.maxStun, 0.5 + impact * cfg.stunScale);
+    this.stunCooldown = this.stunTimer + cfg.cooldown;
+    this.vehicle.applySpin((Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5));
   }
 
   /** Drop the unit onto a route node and wake it up. */
@@ -244,6 +259,8 @@ export class PoliceCar {
     this.rigLateral = 0;
     this.rigAlong = 0;
     this.rigYaw = null;
+    this.stunTimer = 0;
+    this.stunCooldown = 0;
     this.rigTimer = 0;
     this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
@@ -344,6 +361,22 @@ export class PoliceCar {
         v.vx *= k;
         v.vz *= k;
       }
+      return;
+    }
+
+    /*
+     * Spun out by a pile-up: no driver input worth the name until it passes.
+     * Light brake so the car slides to rest instead of parking on a dime.
+     */
+    this.stunCooldown = Math.max(0, this.stunCooldown - dt);
+    if (this.stunTimer > 0) {
+      this.stunTimer -= dt;
+      this.input.throttle = 0;
+      this.input.brake = 0.4;
+      this.input.steer = 0;
+      this.input.boost = false;
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
       return;
     }
 

@@ -422,11 +422,24 @@ export class PoliceManager {
      */
     const slow = player.speed < cfg.slowPlayerSpeed;
     const slots = cfg.slots.slice(0, cfg.maxAssigned);
+    /*
+     * Late-game discipline: pure side stations fill FIRST (rank 0), then the
+     * forward arc, then the rear. The pack stops being a mob that shoves from
+     * behind and becomes two flankers pinning the lanes with a governor ahead
+     * - a formation, which is a thing a driver can out-drive.
+     */
+    const lateRank = (sl: { x: number; z: number }) => {
+      if (Math.abs(sl.x) >= 6.8 && Math.abs(sl.z) < 3) return 0;
+      if (sl.z > 0) return 1;
+      return 2;
+    };
     const order = slow
       ? [...slots].sort((s1, s2) => s2.z - s1.z).slice(0, cfg.slowFrontPriority).concat(
           [...slots].sort((s1, s2) => s2.z - s1.z).slice(cfg.slowFrontPriority),
         )
-      : slots;
+      : this.sectionNow >= cfg.lateSidesFirst
+        ? [...slots].sort((s1, s2) => lateRank(s1) - lateRank(s2))
+        : slots;
 
     const taken = new Set<PoliceCar>();
     for (const slot of order) {

@@ -120,15 +120,30 @@ export class PoliceCar {
   private rigPost: NavNode | null = null;
   private rigTimer = 0;
   private rigScore = Infinity;
+  private rigLateral = 0;
+  private rigAlong = 0;
+  private rigYaw: number | null = null;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
 
   /** Park a rig on the spot it was placed at, so it holds rather than scouting anew. */
-  parkAt(node: NavNode): void {
+  parkAt(node: NavNode, lateral = 0, along = 0, yaw: number | null = null): void {
     this.rigPost = node;
+    this.rigLateral = lateral;
+    this.rigAlong = along;
+    this.rigYaw = yaw;
     this.rigScore = -Infinity;
     this.rigTimer = Infinity;
+  }
+
+  /** The manager reads these to form two-rig walls beside a standing block. */
+  get parkedPost(): NavNode | null {
+    return this.rigPost;
+  }
+
+  get parkedLateral(): number {
+    return this.rigLateral;
   }
 
   /** Drop the unit onto a route node and wake it up. */
@@ -226,6 +241,9 @@ export class PoliceCar {
     this.exitClock = 0;
     this.spent = false;
     this.rigPost = null;
+    this.rigLateral = 0;
+    this.rigAlong = 0;
+    this.rigYaw = null;
     this.rigTimer = 0;
     this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
@@ -1205,7 +1223,7 @@ export class PoliceCar {
       goal = { kind: "direct", x: ctx.player.x + ctx.player.vx * 0.3, z: ctx.player.z + ctx.player.vz * 0.3 };
     } else if (this.role === "rig") {
       this.updateRigPost(dt, ctx);
-      goal = rigGoal(ctx, this.rigPost);
+      goal = rigGoal(ctx, this.rigPost, this.rigLateral, this.rigAlong);
     } else if (this.boxSlot) {
       // On a station: hold it, then close it.
       const box = CONFIG.police.shared.box;
@@ -1638,8 +1656,10 @@ export class PoliceCar {
   private parkBroadside(dt: number, ctx: PursuitContext): void {
     const v = this.vehicle;
     const seg = ctx.terrain.sample(v.x, v.z).segment;
-    // Either perpendicular will do; take whichever is the shorter swing from here.
-    const across = seg.heading + Math.PI / 2;
+    // The placement may have chosen a jackknife angle (narrow roads: an angled
+    // trailer's across-road footprint is what keeps the opening alive). Swing to
+    // that if set; plain perpendicular otherwise. Either end-on works.
+    const across = this.rigYaw ?? seg.heading + Math.PI / 2;
     const a = wrapAngle(across - v.heading);
     const b = wrapAngle(across + Math.PI - v.heading);
     const err = Math.abs(a) < Math.abs(b) ? a : b;

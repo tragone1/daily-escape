@@ -901,17 +901,28 @@ export const CONFIG = {
       /** Stood down once the player is this far past it. */
       retirePast: 70,
       /**
-       * How much of your lateral offset it matches while holding, and how far inside the
-       * kerb it stays.
-       *
-       * Partial on purpose. At 1.0 it mirrors you exactly, the gap never opens, and the
-       * block is unbeatable rather than difficult. At 0.55, committing to a side early
-       * lets it shuffle across to meet you and a late move beats it — which is the
-       * decision the roadblock is supposed to be. The inset stops a nine-metre transport
-       * creeping off the tarmac it is there to block.
+       * The block is STATIC. It used to track the player's lateral line at 0.55,
+       * which read as the rig driving forward in arcs (a truck cannot strafe) and
+       * could slide it back over the opening it was parked to leave. The one hard
+       * rule of the class now: the opening chosen at placement survives. `minGap`
+       * is that opening - the rig only parks where its broadside still leaves at
+       * least this much drivable width, always whole on one side, never split.
        */
-      holdTracking: 0.55,
-      holdInset: 3.5,
+      minGap: 3.8,
+      /**
+       * Same spawn honesty as every other class: a spot must be beyond this
+       * euclidean distance OR out of the player's line of sight (and never under
+       * 120 regardless). Progress distance alone lies at switchbacks, which is
+       * how rigs were popping in thirty units from the player's nose.
+       */
+      minSpawnDist: 165,
+      /**
+       * Two-rig wall: from this section (0-indexed; 14 = round 15) a second rig
+       * may partner a standing block in a band wide enough for both broadsides
+       * AND the gap, staggered along-track so it reads as a formed wall.
+       */
+      wallFromSection: 14,
+      wallMaxActive: 2,
       /** Settles this close to its tracked point, rather than at `parkRadius`. */
       holdStopWithin: 2.0,
       /** Distance from its chosen spot at which it stops driving and turns broadside. */

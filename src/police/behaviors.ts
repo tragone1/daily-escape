@@ -99,29 +99,27 @@ export function boxGoal(ctx: PursuitContext, slot: BoxSlot, press: number): Goal
  * It does not pursue. `postX`/`postZ` are chosen by the driving layer, which is where the
  * road-width scouting lives; this only says "go there and stop".
  */
-export function rigGoal(ctx: PursuitContext, post: NavNode | null): Goal {
+export function rigGoal(
+  ctx: PursuitContext,
+  post: NavNode | null,
+  lateral = 0,
+  along = 0,
+): Goal {
   if (!post) return nodeGoal(ctx.nav, ctx.player.x, ctx.player.z);
 
   /*
-   * Slide across the road to cover the gap you are aiming for.
-   *
-   * A rig parked dead on the centreline is a fixed puzzle: pick a side, take it, done.
-   * Tracking the player's line across the carriageway turns it into a decision that has
-   * to be made late — commit early and it shuffles over to meet you. It only ever creeps,
-   * because the whole point is that it is holding a position rather than chasing one, and
-   * it is clamped inside the tarmac so it can never wander off the road it is blocking.
+   * The rig HOLDS. It parks at the offset the manager chose - hugging one kerb,
+   * opening guaranteed on the other side - and stays there. Tracking the player's
+   * line was removed twice over: a truck cannot strafe, so the slide read as the
+   * roadblock driving forward in arcs, and a slider can end up recentred over the
+   * very opening the placement rules exist to protect.
    */
-  const cfg = CONFIG.police.rig;
   const seg = ctx.terrain.sample(post.x, post.z).segment;
-  const across =
-    (ctx.player.x - post.x) * seg.dz - (ctx.player.z - post.z) * seg.dx;
-  const reach = Math.max(0, seg.halfWidth - cfg.holdInset);
-  const lateral = clamp(across * cfg.holdTracking, -reach, reach);
   return {
     kind: "park",
     nodeId: post.id,
-    x: post.x + seg.dz * lateral,
-    z: post.z - seg.dx * lateral,
+    x: post.x + seg.dx * along + seg.dz * lateral,
+    z: post.z + seg.dz * along - seg.dx * lateral,
   };
 }
 

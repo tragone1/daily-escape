@@ -22,7 +22,7 @@
 import type { Renderer } from "../gfx/renderer";
 import type { CollisionWorld } from "../physics/collisionWorld";
 import { CONFIG, type PoliceRole } from "../config";
-import { forwardOf, headingOf, rightOf } from "../math";
+import { dist, forwardOf, headingOf, rightOf } from "../math";
 import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import type { Terrain } from "../world/terrain";
@@ -153,7 +153,10 @@ export class PoliceManager {
    * over whatever is unlocked, biased hard toward the heavier classes as the run goes on.
    * Units that fall hopelessly behind are recycled forward rather than left to trail.
    */
+  private sectionNow = 0;
+
   private director(ctx: PursuitContext, playerProgress: number, section: number): void {
+    this.sectionNow = section;
     const esc = CONFIG.police.escalation;
     const pacing = CONFIG.police.pacing;
 
@@ -456,8 +459,96 @@ export class PoliceManager {
    */
   private placeRig(unit: PoliceCar, ctx: PursuitContext, playerProgress: number): boolean {
     const cfg = CONFIG.police.rig;
+    // Broadside, the rig spans two half-LENGTHS across the road.
+    const span = cfg.vehicle.halfLength;
+
+    /*
+     * The widest laterally clear run across the road, same probe idea as the
+     * hazard field: props standing near the kerb are walls as far as a car is
+     * concerned, so the band that matters is the drivable one, not the tarmac.
+     */
+    const bandAt = (x: number, z: number, seg: { dx: number; dz: number }, road: number) => {
+      const PROBES = 25;
+      let bestLo = 0;
+      let bestHi = 0;
+      let runLo: number | null = null;
+      for (let i = 0; i < PROBES; i++) {
+        const lat = -road + (2 * road * i) / (PROBES - 1);
+        if (ctx.world.isClear(x + seg.dz * lat, z - seg.dx * lat, 0.95)) {
+          if (runLo === null) runLo = lat;
+          if (lat - runLo > bestHi - bestLo) {
+            bestLo = runLo;
+            bestHi = lat;
+          }
+        } else {
+          runLo = null;
+        }
+      }
+      return { lo: bestLo, hi: bestHi };
+    };
+
+    /*
+     * Spawn honesty, same terms as everyone else: far enough that appearing is
+     * indistinguishable from having driven in, or hidden - and never close,
+     * full stop. Progress distance alone lies at switchbacks, which is how a
+     * rig could satisfy scoutMin and still pop in thirty units from the nose.
+     */
+    const honest = (x: number, z: number) => {
+      const pd = dist(x, z, ctx.player.x, ctx.player.z);
+      if (pd < 120) return false;
+      if (pd >= cfg.minSpawnDist) return true;
+      return !ctx.world.lineOfSight(ctx.player.x, ctx.player.z, x, z);
+    };
+
+    /*
+     * Two-rig wall: partner a standing block when the band takes both
+     * broadsides AND the gap. Staggered along-track so it reads as a formed
+     * wall, covering the opposite side - the opening stays whole, in the
+     * middle, and is still the class's one unbreakable promise.
+     */
+    if (this.sectionNow >= cfg.wallFromSection) {
+      for (const other of this.units) {
+        if (other === unit || other.role !== "rig" || !other.active || other.destroyed) continue;
+        const post = other.parkedPost;
+        if (!post) continue;
+        if (post.progress - playerProgress < 150) continue;
+        /*
+         * The staggered row is computed from the post's own segment - nav nodes
+         * sit ~43 apart, so nodeAtProgress(post+14) snaps back to the partner's
+         * OWN node and the occupancy check rejects the wall every time.
+         */
+        const segO = this.terrain.sample(post.x, post.z).segment;
+        const bx = post.x + segO.dx * 14;
+        const bz = post.z + segO.dz * 14;
+        if (!honest(bx, bz)) continue;
+        if (this.occupied(bx, bz)) continue;
+        const segN = this.terrain.sample(bx, bz).segment;
+        const bandN = bandAt(bx, bz, segN, segN.halfWidth);
+        /*
+         * ECHELON, not side-by-side: the widest clear band on a course is ~22,
+         * and two broadsides plus a gap need 29 - a true double row cannot
+         * exist here. Staggered opposite-side hugs form the wall instead: each
+         * row keeps its own whole opening, and getting through is an S-turn
+         * rather than a straight line. Wide-ish bands only, so the weave is a
+         * fight and not a scrape.
+         */
+        if (bandN.hi - bandN.lo < 2 * span + cfg.minGap + 3) continue;
+        const lateral = other.parkedLateral > 0 ? bandN.lo + span : bandN.hi - span;
+        unit.placeAt(
+          bx + segN.dz * lateral,
+          bz - segN.dx * lateral,
+          segN.heading + Math.PI / 2,
+          post.y,
+        );
+        unit.parkAt(post, lateral, 14, segN.heading + Math.PI / 2);
+        return true;
+      }
+    }
+
     let best: NavNode | null = null;
     let bestScore = Infinity;
+    let bestLateral = 0;
+    let bestTheta = Math.PI / 2;
 
     for (let d = cfg.scoutMin; d <= cfg.scoutMax; d += 16) {
       const node = ctx.nav.nodeAtProgress(playerProgress + d);
@@ -465,17 +556,51 @@ export class PoliceManager {
       const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
       if (width < cfg.minBlockWidth) continue;
       if (this.occupied(node.x, node.z)) continue;
+      if (!honest(node.x, node.z)) continue;
+      const band = bandAt(node.x, node.z, seg, seg.halfWidth);
+      const bw = band.hi - band.lo;
+      /*
+       * THE rule: block plus a whole opening the player fits through, or no
+       * block here. Perpendicular when the band takes it; on narrower roads
+       * the rig JACKKNIFES - angling the trailer down to 40 degrees shrinks
+       * its across-road footprint until the opening survives, and a slewed
+       * trailer is what a hasty roadblock looks like anyway. Roads too narrow
+       * even for that get no rig, full stop - that is what made the canyon
+       * unpassable.
+       */
+      const hw = cfg.vehicle.halfWidth;
+      let theta: number | null = null;
+      let proj = 0;
+      for (let deg = 90; deg >= 40; deg -= 5) {
+        const t = (deg * Math.PI) / 180;
+        const p2 = span * Math.sin(t) + hw * Math.cos(t);
+        if (bw - 2 * p2 >= cfg.minGap) {
+          theta = t;
+          proj = p2;
+          break;
+        }
+      }
+      if (theta === null) continue;
       const score = width * 2 + d * 0.04 + (width < cfg.preferredWidth ? -25 : 0);
       if (score < bestScore) {
         bestScore = score;
         best = node;
+        bestTheta = theta;
+        // Hug one kerb - which one varies by spot - so the opening is single and whole.
+        bestLateral = (node.id & 1) === 0 ? band.hi - proj : band.lo + proj;
       }
     }
     if (!best) return false;
 
     const seg = this.terrain.sample(best.x, best.z).segment;
-    unit.placeAt(best.x, best.z, seg.heading + Math.PI / 2, best.y);
-    unit.parkAt(best);
+    const yaw = seg.heading + bestTheta;
+    unit.placeAt(
+      best.x + seg.dz * bestLateral,
+      best.z - seg.dx * bestLateral,
+      yaw,
+      best.y,
+    );
+    unit.parkAt(best, bestLateral, 0, yaw);
     return true;
   }
 
@@ -497,7 +622,11 @@ export class PoliceManager {
       if (section > (esc.retire[unit.role] ?? 999)) continue;
       // One roadblock at a time. Three of them stacked in the same pinch is not a
       // roadblock, it is a wall with no play in it.
-      if (unit.role === "rig" && this.activeRigs >= CONFIG.police.rig.maxActive) continue;
+      if (unit.role === "rig") {
+        const rc = CONFIG.police.rig;
+        const rigCap = section >= rc.wallFromSection ? rc.wallMaxActive : rc.maxActive;
+        if (this.activeRigs >= rigCap) continue;
+      }
       const weight = esc.weight[unit.role] ?? 1;
       candidates.push({ unit, weight });
       total += weight;

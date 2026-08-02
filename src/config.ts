@@ -1376,9 +1376,9 @@ export const CONFIG = {
       /**
        * From the tenth section (index 9) the cap lifts to this and the 1.4/section
        * base ramp simply resumes - rounds 10+ had stopped escalating in bodies at
-       * all, per playtest. 26, not the old 30 that clogged the road.
+       * all, per playtest. Raised to 30 at the player's request after 26 shipped.
        */
-      lateMaxActive: 26,
+      lateMaxActive: 30,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,

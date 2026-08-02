@@ -1586,9 +1586,10 @@ export const CONFIG = {
         blocker: 3,
         heavy: 4,
         elite: 6,
-        // Returned from the bench at round sixteen, detuned: half strike
-        // speed and a deliberate 20% muff rate (see ambush.muffChance).
-        juggernaut: 15,
+        // BENCHED again at the player's request - 'the game is fine without
+        // it.' All mechanics intact; restore by setting this to an unlock
+        // section and openRoad.roles back to ["juggernaut"].
+        juggernaut: 999,
         rig: 5,
       } as Record<PoliceRole, number>,
       /**
@@ -1626,7 +1627,7 @@ export const CONFIG = {
        * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
       openRoad: {
-        roles: ["juggernaut"] as PoliceRole[],
+        roles: [] as PoliceRole[],
         /**
          * How many may be lying in wait at once, counted apart from the main fleet.
          *

@@ -134,6 +134,7 @@ export class PoliceCar {
   private slideLane = 0;
   private slideFinal = 0;
   private slideDir = 1;
+  private slideHoldSpent = 0;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
@@ -314,6 +315,7 @@ export class PoliceCar {
     this.stunCooldown = 0;
     this.slideTimer = 0;
     this.slideHold = 0;
+    this.slideHoldSpent = 0;
     this.slideAim = 0;
     this.vehicle.contactBoost = this.baseContactBoost;
     this.rigTimer = 0;
@@ -533,28 +535,40 @@ export class PoliceCar {
     }
     if (this.slideHold > 0) {
       this.slideHold -= dt;
+      this.slideHoldSpent += dt;
       /*
-       * The wall BLOCKS: while the player is still inbound, shuffle broadside
-       * along our own axis to stay on their line - the same door-closing creep
-       * the rig runs. Brake-at-standstill reverses in this model, which is
-       * exactly how a broadside car shuffles the other way.
+       * THE WALL PLAYS THE GAME. While the player is inbound it mirrors their
+       * lane in small broadside shuffles - a feint right eases it right, a cut
+       * left rolls it forward to meet you. Three rules keep it a duel and not
+       * a glitch: the target is clamped INSIDE the road (it was observed
+       * reversing clear to the kerb), the shuffle is slow with a crisp stop at
+       * the deadband, and the pose holds while the player is still coming (to
+       * a hard cap) instead of expiring mid-standoff.
        */
       const pdH = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-      const pvx = ctx.player.vx;
-      const pvz = ctx.player.vz;
-      const inbound = (v.x - ctx.player.x) * pvx + (v.z - ctx.player.z) * pvz > 0;
+      const inbound =
+        (v.x - ctx.player.x) * ctx.player.vx + (v.z - ctx.player.z) * ctx.player.vz > 0;
+      if (inbound && pdH < 90 && this.slideHoldSpent < 3.4) {
+        this.slideHold = Math.max(this.slideHold, 0.35);
+      }
       let driveH = 0;
-      if (pdH > 10 && pdH < 90 && inbound) {
-        const prxH = Math.cos(ctx.player.heading);
-        const przH = -Math.sin(ctx.player.heading);
-        const errH = (v.x - ctx.player.x) * prxH + (v.z - ctx.player.z) * przH - this.slideLane;
-        if (Math.abs(errH) > 1.2 && v.speed < 7) {
-          const fwdLatH = Math.sin(v.heading) * prxH + Math.cos(v.heading) * przH;
-          driveH = -Math.sign(errH) * Math.sign(fwdLatH || 1);
+      if (pdH > 9 && pdH < 90 && inbound) {
+        const segH = ctx.terrain.sample(v.x, v.z).segment;
+        const ownAcrossH = (v.x - segH.ax) * segH.dz - (v.z - segH.az) * segH.dx;
+        const playerAcrossH =
+          (ctx.player.x - segH.ax) * segH.dz - (ctx.player.z - segH.az) * segH.dx;
+        const targetAcrossH = Math.max(
+          -(segH.halfWidth - 1.8),
+          Math.min(segH.halfWidth - 1.8, playerAcrossH + this.slideFinal),
+        );
+        const errH = targetAcrossH - ownAcrossH;
+        if (Math.abs(errH) > 1.0 && v.speed < 3.5) {
+          const fwdAcrossH = Math.sin(v.heading) * segH.dz - Math.cos(v.heading) * segH.dx;
+          driveH = Math.sign(errH) * Math.sign(fwdAcrossH || 1);
         }
       }
-      this.input.throttle = driveH > 0 ? 0.4 : 0;
-      this.input.brake = driveH < 0 ? 0.5 : v.speed > 1 ? 1 : 0;
+      this.input.throttle = driveH > 0 ? 0.3 : 0;
+      this.input.brake = driveH < 0 ? 0.45 : v.speed > 0.8 ? 1 : 0;
       this.input.steer = 0;
       this.input.boost = false;
       v.drive = 1;

@@ -174,6 +174,30 @@ export class PoliceManager {
         candidates.push(u);
         if (candidates.length >= 2) break;
       }
+      /*
+       * A strict window rarely holds two cars at the same instant, which is
+       * why the coordinated wall almost never fired. The PARTNER search is
+       * looser: same roles, roughly oncoming, in the long window - close
+       * enough that the line-up phase makes up the rest.
+       */
+      if (candidates.length === 1 && section >= sb.doubleFromSection) {
+        for (const u of this.units) {
+          if (u === candidates[0] || !u.active || u.destroyed || u.disabled) continue;
+          if (!(sb.roles as readonly string[]).includes(u.role)) continue;
+          if (u.ambushAt) continue;
+          const v2 = u.vehicle;
+          if (v2.speed < 10) continue;
+          const rx = v2.x - player.x;
+          const rz = v2.z - player.z;
+          const along = rx * fwd.x + rz * fwd.z;
+          if (along < sb.window.near - 8 || along > 200) continue;
+          if (Math.abs(rx * right.x + rz * right.z) > 18) continue;
+          const spd = v2.speed || 1;
+          if ((v2.vx * fwd.x + v2.vz * fwd.z) / spd > -0.2) continue;
+          candidates.push(u);
+          break;
+        }
+      }
       if (candidates.length > 0 && Math.random() < chance) {
         // Stage on the OPEN side of the road relative to the player, so the
         // carve crosses their line instead of running out of tarmac.

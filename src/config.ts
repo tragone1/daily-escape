@@ -569,7 +569,7 @@ export const CONFIG = {
       slideBlock: {
         /** In the arsenal from the first section; skill grows per section. */
         fromSection: 0,
-        roles: ["interceptor", "elite"] as const,
+        roles: ["interceptor", "elite", "heavy"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
         intervalBase: 9,
         intervalPerSection: 0.5,
@@ -603,7 +603,7 @@ export const CONFIG = {
          * complementary lanes - a formed two-car wall, arriving sideways.
          */
         doubleFromSection: 10,
-        doubleChance: 0.5,
+        doubleChance: 0.75,
         doubleLaneOffset: 2.0,
         /** Head-on window, in the player's frame. */
         window: { near: 28, far: 130, lat: 12 },
@@ -1701,11 +1701,11 @@ export const CONFIG = {
        */
       retire: {
         patrol: 10,
-        rammer: 12,
-        blocker: 14,
-        interceptor: 17,
+        rammer: 11,
+        blocker: 12,
+        interceptor: 13,
         heavy: 999,
-        elite: 999,
+        elite: 13,
         juggernaut: 999,
         rig: 999,
       } as Record<PoliceRole, number>,

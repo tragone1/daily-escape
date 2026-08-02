@@ -167,16 +167,25 @@ export class PoliceManager {
         if (candidates.length >= 2) break;
       }
       if (candidates.length > 0 && Math.random() < chance) {
+        // Stage on the OPEN side of the road relative to the player, so the
+        // carve crosses their line instead of running out of tarmac.
+        const segP = ctx.terrain.sample(player.x, player.z).segment;
+        const playerAcross =
+          (player.x - segP.ax) * segP.dz - (player.z - segP.az) * segP.dx;
+        const stageSign = playerAcross >= 0 ? -1 : 1;
+        // A stage lane the road cannot hold is a cop grinding the wall: clamp
+        // the offset to the tarmac actually available.
+        const stage = stageSign * Math.min(sb.stageOffset, Math.max(2.2, segP.halfWidth - 2.6));
         const wantDouble =
           section >= sb.doubleFromSection &&
           candidates.length >= 2 &&
           Math.random() < sb.doubleChance;
         if (wantDouble) {
-          // Complementary lanes, mirrored rotation: a formed two-car wall.
-          candidates[0].startSlideBlock(1, -sb.doubleLaneOffset, lineup);
-          candidates[1].startSlideBlock(-1, sb.doubleLaneOffset, lineup);
+          // Mirrored stages, split kill lanes: a formed two-car wall.
+          candidates[0].startSlideBlock(1, stage, lineup, -sb.doubleLaneOffset);
+          candidates[1].startSlideBlock(-1, -stage, lineup, sb.doubleLaneOffset);
         } else {
-          candidates[0].startSlideBlock(Math.random() < 0.5 ? -1 : 1, 0, lineup);
+          candidates[0].startSlideBlock(1, stage, lineup, 0);
         }
         this.slideTimer =
           Math.max(sb.intervalMin, sb.intervalBase - section * sb.intervalPerSection) *

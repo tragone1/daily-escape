@@ -132,6 +132,7 @@ export class PoliceCar {
   private slideHeading = 0;
   private slideAim = 0;
   private slideLane = 0;
+  private slideFinal = 0;
   private slideDir = 1;
 
   /** Units stay dormant until the director wakes them. */
@@ -174,11 +175,12 @@ export class PoliceCar {
    * player's predicted lane (offset by `lane` when part of a double), and only
    * then snap sideways - the broadside lands where the player is going.
    */
-  startSlideBlock(dir: number, lane = 0, lineup = 0.5): void {
+  startSlideBlock(dir: number, stageLane = 0, lineup = 0.5, finalLane = 0): void {
     if (this.slideTimer > 0 || this.slideHold > 0 || this.slideAim > 0) return;
     if (this.stunTimer > 0 || this.charging) return;
     this.slideDir = dir >= 0 ? 1 : -1;
-    this.slideLane = lane;
+    this.slideLane = stageLane;
+    this.slideFinal = finalLane;
     this.slideAim = lineup;
   }
 
@@ -189,6 +191,9 @@ export class PoliceCar {
     const travel = v.speed > 4 ? Math.atan2(v.vx, v.vz) : v.heading;
     this.slideHeading = travel + this.slideDir * (Math.PI / 2);
     this.slideAim = 0;
+    // Retarget from the staging lane to the KILL lane: the mid-slide carve
+    // pulls the sliding wall onto the player's actual line.
+    this.slideLane = this.slideFinal;
     this.slideTimer = cfg.slideTime;
     v.contactBoost = cfg.contactBoost;
   }
@@ -446,9 +451,16 @@ export class PoliceCar {
       const rz = v.z - ctx.player.z;
       const along = rx * pfx + rz * pfz;
       const latErr = rx * prx + rz * prz - this.slideLane;
-      if (along < 6 || Math.abs(latErr) > 12) {
+      // Meet-time from combined closing speed: the pro snaps on TIMING, not
+      // on having reached some lane - the staging lane is never converged to.
+      const closing = Math.max(10, Math.hypot(ctx.player.vx, ctx.player.vz) + v.speed);
+      const tMeet = along / closing;
+      // Carve INTO the player's lane: spin whichever way sweeps the nose
+      // from the staging side across their line.
+      this.slideDir = this.slideLane - this.slideFinal > 0 ? -1 : 1;
+      if (along < 6 || Math.abs(latErr) > 16) {
         this.slideAim = 0; // read is dead; rejoin the chase
-      } else if (Math.abs(latErr) < cfg.lineupDone || along < 14 || this.slideAim <= 0) {
+      } else if (tMeet < cfg.snapMeetTime || along < 14 || this.slideAim <= 0) {
         this.snapSlide();
       } else {
         const tx2 = ctx.player.x + pfx * along * 0.55 + prx * this.slideLane;
@@ -481,7 +493,7 @@ export class PoliceCar {
       // Expert car control: keep drifting the wall onto the player's lane while
       // sliding. Cuts off once they are close - no magnetism at contact range.
       const pdS = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-      if (pdS > 12) {
+      if (pdS > 7) {
         const prxS = Math.cos(ctx.player.heading);
         const przS = -Math.sin(ctx.player.heading);
         const latErrS =

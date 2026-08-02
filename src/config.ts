@@ -573,22 +573,30 @@ export const CONFIG = {
         /** Assignment cadence: base seconds, tightening per section to a floor. */
         intervalBase: 11,
         intervalPerSection: 0.5,
-        intervalMin: 4,
+        intervalMin: 3.5,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
         chanceBase: 0.5,
         chancePerSection: 0.04,
-        chanceMax: 0.92,
+        chanceMax: 0.95,
         /**
          * The LINE-UP: before snapping sideways the unit steers to converge on
          * the player's predicted lane, so the broadside lands where the player
          * is GOING, not wherever the cop happened to be. More seconds of
          * line-up allowance = more expert placement; grows per section.
          */
-        lineupBase: 0.7,
-        lineupPerSection: 0.04,
-        lineupMax: 1.4,
-        /** Snap early once converged this close to the target lane. */
-        lineupDone: 1.4,
+        lineupBase: 1.2,
+        lineupPerSection: 0.05,
+        lineupMax: 2.2,
+        /**
+         * THE J-HOOK. A mid-road cop that turns to slide carries itself off the
+         * player's line with its own turning arc - the broadside lands beside
+         * them, already passed. So the approach STAGES first: drive to a lane
+         * OFFSET from the player's, then carve back so the arc sweeps the
+         * broadside INTO their lane as it snaps, timed by meet-time.
+         */
+        stageOffset: 5.5,
+        /** Snap when the predicted meeting is this many seconds away. */
+        snapMeetTime: 1.2,
         /**
          * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
          * eligible units in the same window slide together, offset to cover
@@ -596,16 +604,16 @@ export const CONFIG = {
          */
         doubleFromSection: 10,
         doubleChance: 0.5,
-        doubleLaneOffset: 2.6,
+        doubleLaneOffset: 2.0,
         /** Head-on window, in the player's frame. */
-        window: { near: 28, far: 85, lat: 10 },
+        window: { near: 28, far: 130, lat: 12 },
         minSpeed: 16,
         /**
          * Expert car control DURING the slide: a lateral correction toward the
          * player's lane, so the wall drifts onto the line even after the snap.
          * Off once the player is close - no magnetism at contact range.
          */
-        slideSteer: 70,
+        slideSteer: 150,
         /** Hits on a sliding/holding blocker land harder than pack rubbing. */
         contactBoost: 2.2,
         /** Yaw authority during the slide, rad/s toward perpendicular. */

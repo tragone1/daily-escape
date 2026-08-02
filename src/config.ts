@@ -595,9 +595,14 @@ export const CONFIG = {
          * broadside INTO their lane as it snaps, timed by meet-time.
          */
         stageOffset: 5.5,
-        /** Snap when the predicted meeting is this many seconds away - early
-         *  enough that the wall stands fully perpendicular before arrival. */
-        snapMeetTime: 1.9,
+        /**
+         * Each assignment rolls its own snap moment in this band - uniform
+         * timing read as synchronized choreography, and a wall that always
+         * forms maximally early is a wall the player has maximal time to plan
+         * around. Some stand early, some snap almost in the player's face.
+         */
+        snapMeetMin: 0.85,
+        snapMeetMax: 1.9,
         /**
          * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
          * eligible units in the same window slide together, offset to cover
@@ -631,8 +636,10 @@ export const CONFIG = {
         brake: 0.7,
         slideTime: 1.25,
         holdTime: 1.6,
-        slideAssist: 70,
-        holdAssist: 45,
+        slideAssist: 110,
+        holdAssist: 130,
+        /** Seconds of player lateral motion the standoff tracking leads by. */
+        trackLead: 0.35,
       },
       pileup: {
         /** Relative impact speed below which nothing happens. */

@@ -136,6 +136,7 @@ export class PoliceCar {
   private slideLane = 0;
   private slideFinal = 0;
   private slideHoldSpent = 0;
+  private slideSnapMeet = 1.2;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
@@ -183,6 +184,8 @@ export class PoliceCar {
     this.slideLane = stageLane;
     this.slideFinal = finalLane;
     this.slideAim = lineup;
+    const sb = CONFIG.police.shared.slideBlock;
+    this.slideSnapMeet = sb.snapMeetMin + Math.random() * (sb.snapMeetMax - sb.snapMeetMin);
     // The pro SAVED their boost for this. Scheduling, not physics: the burn
     // itself is the same boost with the same accel, duration and cooldown.
     this.vehicle.boostCooldown = 0;
@@ -471,7 +474,7 @@ export class PoliceCar {
       // from the staging side across their line.
       if (along < 6 || Math.abs(latErr) > 16) {
         this.slideAim = 0; // read is dead; rejoin the chase
-      } else if (tMeet < cfg.snapMeetTime || along < 14 || this.slideAim <= 0) {
+      } else if (tMeet < this.slideSnapMeet || along < 14 || this.slideAim <= 0) {
         this.snapSlide(ctx.player.heading);
       } else {
         /*
@@ -480,7 +483,7 @@ export class PoliceCar {
          * player's line and burn boost for the run-in. The visible flame is
          * the telegraph; the physics are the same physics as any other chase.
          */
-        const committed = tMeet < cfg.snapMeetTime + cfg.commitLead;
+        const committed = tMeet < this.slideSnapMeet + cfg.commitLead;
         const laneT = committed ? this.slideFinal : this.slideLane;
         /*
          * Predict along the ROAD, not the chord. At late-game closing speeds
@@ -578,14 +581,22 @@ export class PoliceCar {
       if (pdH > 9 && pdH < 90 && inbound) {
         const segH = ctx.terrain.sample(v.x, v.z).segment;
         const ownAcrossH = (v.x - segH.ax) * segH.dz - (v.z - segH.az) * segH.dx;
+        // PREDICTIVE: track where the swerve is TAKING them, not where they
+        // are - a wall that mirrors current position is dodged by any
+        // last-moment cut.
+        const cfgT = CONFIG.police.shared.slideBlock;
+        const playerAcrossVelH =
+          ctx.player.vx * segH.dz - ctx.player.vz * segH.dx;
         const playerAcrossH =
-          (ctx.player.x - segH.ax) * segH.dz - (ctx.player.z - segH.az) * segH.dx;
+          (ctx.player.x - segH.ax) * segH.dz -
+          (ctx.player.z - segH.az) * segH.dx +
+          playerAcrossVelH * cfgT.trackLead;
         const targetAcrossH = Math.max(
           -(segH.halfWidth - 1.8),
           Math.min(segH.halfWidth - 1.8, playerAcrossH + this.slideFinal),
         );
         const errH = targetAcrossH - ownAcrossH;
-        if (Math.abs(errH) > 1.0 && v.speed < 5) {
+        if (Math.abs(errH) > 1.0 && v.speed < 8) {
           const fwdAcrossH = Math.sin(v.heading) * segH.dz - Math.cos(v.heading) * segH.dx;
           driveH = Math.sign(errH) * Math.sign(fwdAcrossH || 1);
         }
@@ -598,8 +609,8 @@ export class PoliceCar {
           v.applyImpulse(Math.sign(errH) * rH.x * magH * dt, Math.sign(errH) * rH.z * magH * dt);
         }
       }
-      this.input.throttle = driveH > 0 ? 0.45 : 0;
-      this.input.brake = driveH < 0 ? 0.5 : v.speed > 0.8 ? 1 : 0;
+      this.input.throttle = driveH > 0 ? 0.65 : 0;
+      this.input.brake = driveH < 0 ? 0.65 : v.speed > 0.8 ? 1 : 0;
       this.input.steer = 0;
       this.input.boost = false;
       v.drive = 1;

@@ -164,7 +164,7 @@ export class PoliceManager {
         const closing2 = Math.hypot(player.vx, player.vz) + v2.speed;
         const farNeed = Math.max(
           sb.window.far,
-          closing2 * (sb.snapMeetTime + sb.commitLead + 0.6),
+          closing2 * (sb.snapMeetMax + sb.commitLead + 0.6),
         );
         if (along < sb.window.near || along > farNeed) continue;
         if (Math.abs(lat) > sb.window.lat) continue;

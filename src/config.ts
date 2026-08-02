@@ -1373,6 +1373,12 @@ export const CONFIG = {
        * faster - rather than raw headcount.
        */
       maxActive: 20,
+      /**
+       * From the tenth section (index 9) the cap lifts to this and the 1.4/section
+       * base ramp simply resumes - rounds 10+ had stopped escalating in bodies at
+       * all, per playtest. 26, not the old 30 that clogged the road.
+       */
+      lateMaxActive: 26,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1581,7 +1587,13 @@ export const CONFIG = {
 
       /** Extra top speed added to every unit per section, u/s, and its cap. */
       speedPerSection: 0.35,
-      maxSpeedBonus: 16,
+      /**
+       * Extra top speed per section from the tenth section (index 9) on, on top
+       * of the flat climb - the late game was reading as no harder than the mid
+       * game once the player's own pace ramp kicked in.
+       */
+      lateSpeedPerSection: 0.55,
+      maxSpeedBonus: 18,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the

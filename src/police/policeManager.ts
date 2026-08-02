@@ -167,7 +167,7 @@ export class PoliceManager {
      * road a car.
      */
     const target = Math.min(
-      esc.maxActive,
+      section >= 9 ? esc.lateMaxActive : esc.maxActive,
       section === 0 ? esc.openingActive : Math.round(esc.baseActive + section * esc.activePerSection),
     );
     const ambushTarget = Math.min(
@@ -515,7 +515,10 @@ export class PoliceManager {
   /** Everything gets a little faster as the run goes on, capped so it stays driveable. */
   private applySectionSpeed(section: number): void {
     const esc = CONFIG.police.escalation;
-    const bonus = Math.min(esc.maxSpeedBonus, section * esc.speedPerSection);
+    const bonus = Math.min(
+      esc.maxSpeedBonus,
+      section * esc.speedPerSection + Math.max(0, section - 8) * esc.lateSpeedPerSection,
+    );
     const aggro = Math.min(esc.aggroMax, Math.max(0, (section - 9) * esc.aggroPerSection));
     if (bonus === this.speedBonus && aggro === this.aggro) return;
     this.speedBonus = bonus;

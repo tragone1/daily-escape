@@ -42,7 +42,7 @@ export class Input {
     ) {
       this.onDrive?.();
     }
-    if (code === "KeyQ") this.onRestart?.();
+    if (code === "KeyP") this.onRestart?.();
     if (code === "KeyC") this.onResetCamera?.();
   };
 

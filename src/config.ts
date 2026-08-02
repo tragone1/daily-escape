@@ -609,15 +609,16 @@ export const CONFIG = {
         window: { near: 28, far: 130, lat: 12 },
         minSpeed: 16,
         /**
-         * Expert car control DURING the slide: a lateral correction toward the
-         * player's lane, so the wall drifts onto the line even after the snap.
-         * Off once the player is close - no magnetism at contact range.
+         * The COMMIT: this long before the snap, the approach stops holding its
+         * staging lane and drives straight at the kill point - on boost. All
+         * the placement skill lives in the approach now; from the snap on it
+         * is pure momentum and the handbrake, no phantom forces.
          */
-        slideSteer: 150,
+        commitLead: 0.55,
         /** Hits on a sliding/holding blocker land harder than pack rubbing. */
         contactBoost: 2.2,
         /** Yaw authority during the slide, rad/s toward perpendicular. */
-        spinRate: 5.5,
+        spinRate: 4.6,
         brake: 0.55,
         slideTime: 1.4,
         holdTime: 1.2,

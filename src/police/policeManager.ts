@@ -158,7 +158,15 @@ export class PoliceManager {
         const rz = v2.z - player.z;
         const along = rx * fwd.x + rz * fwd.z;
         const lat = rx * right.x + rz * right.z;
-        if (along < sb.window.near || along > sb.window.far) continue;
+        // The spotting window scales with closing speed: late-game closing
+        // tops 120/s, and a fixed window meant assignment landed already
+        // inside snap time - no staging, an instant mid-road snap, the whiff.
+        const closing2 = Math.hypot(player.vx, player.vz) + v2.speed;
+        const farNeed = Math.max(
+          sb.window.far,
+          closing2 * (sb.snapMeetTime + sb.commitLead + 0.6),
+        );
+        if (along < sb.window.near || along > farNeed) continue;
         if (Math.abs(lat) > sb.window.lat) continue;
         // Head-on: their travel opposes the player's heading.
         const spd = v2.speed || 1;

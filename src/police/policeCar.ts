@@ -463,8 +463,19 @@ export class PoliceCar {
       } else if (tMeet < cfg.snapMeetTime || along < 14 || this.slideAim <= 0) {
         this.snapSlide();
       } else {
-        const tx2 = ctx.player.x + pfx * along * 0.55 + prx * this.slideLane;
-        const tz2 = ctx.player.z + pfz * along * 0.55 + prz * this.slideLane;
+        /*
+         * Two-phase approach, all honest driving: hold the STAGING lane while
+         * distant, then COMMIT - re-aim straight at the kill point on the
+         * player's line and burn boost for the run-in. The visible flame is
+         * the telegraph; the physics are the same physics as any other chase.
+         */
+        const committed = tMeet < cfg.snapMeetTime + cfg.commitLead;
+        const laneT = committed ? this.slideFinal : this.slideLane;
+        const leadT2 = committed ? Math.min(tMeet * 0.8, 1) : 0;
+        const tx2 =
+          ctx.player.x + ctx.player.vx * leadT2 + pfx * (committed ? 0 : along * 0.55) + prx * laneT;
+        const tz2 =
+          ctx.player.z + ctx.player.vz * leadT2 + pfz * (committed ? 0 : along * 0.55) + prz * laneT;
         this.input.throttle = 1;
         this.input.brake = 0;
         this.input.steer = clamp(
@@ -473,7 +484,7 @@ export class PoliceCar {
           -1,
           1,
         );
-        this.input.boost = false;
+        this.input.boost = committed;
         v.drive = 1;
         v.update(this.input, dt, ctx.terrain);
         return;
@@ -490,17 +501,6 @@ export class PoliceCar {
       this.slideTimer -= dt;
       const err = wrapAngle(this.slideHeading - v.heading);
       v.applySpin(clamp(err, -1, 1) * cfg.spinRate * dt);
-      // Expert car control: keep drifting the wall onto the player's lane while
-      // sliding. Cuts off once they are close - no magnetism at contact range.
-      const pdS = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-      if (pdS > 7) {
-        const prxS = Math.cos(ctx.player.heading);
-        const przS = -Math.sin(ctx.player.heading);
-        const latErrS =
-          (v.x - ctx.player.x) * prxS + (v.z - ctx.player.z) * przS - this.slideLane;
-        const magS = Math.min(1, Math.abs(latErrS) / 3) * cfg.slideSteer;
-        v.applyImpulse(-Math.sign(latErrS) * prxS * magS * dt, -Math.sign(latErrS) * przS * magS * dt);
-      }
       this.input.throttle = 0;
       this.input.brake = cfg.brake;
       this.input.steer = clamp(err / 0.5, -1, 1);

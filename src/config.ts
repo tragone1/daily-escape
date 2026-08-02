@@ -638,6 +638,15 @@ export const CONFIG = {
         holdTime: 1.6,
         slideAssist: 110,
         holdAssist: 130,
+        /**
+         * THE DRIFT SLAM - the whole point of the move, per the player: the
+         * car snaps near-perpendicular and KEEPS COMING, sliding sideways on
+         * its tires with the gas on, arriving broadside-first at speed. This
+         * impulse holds the closing speed along the locked travel line against
+         * grip scrub while the body rides sideways. A miss decays into the
+         * standing wall standoff.
+         */
+        driftPush: 260,
         /** Seconds of player lateral motion the standoff tracking leads by. */
         trackLead: 0.35,
       },

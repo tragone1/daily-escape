@@ -79,21 +79,25 @@ export class CarView {
        * The angled wings looked like a claw and behaved like a glitch; a clean
        * wall of steel is honest to the one-box physics.
        */
+      /*
+       * The blade sits FLUSH with the collider face - nothing protrudes past
+       * halfLength. The old slab was centered 0.5 BEYOND the face, so a player
+       * correctly seated at the physics box had it slicing a unit deep through
+       * their fender on every single pin. What you see is where physics stops.
+       */
       const steel: Rgb = [0.2, 0.22, 0.26];
       const blade = panel(
-        r.createMesh({ kind: "box", width: 6.6, height: 2.0, depth: 0.9 }, { color: [...steel], emissive: 0.22 }),
+        r.createMesh({ kind: "box", width: 6.6, height: 2.0, depth: 1.0 }, { color: [...steel], emissive: 0.22 }),
         steel,
       );
       blade.parent = this.body;
-      blade.position.set(0, 0.95, halfLength + 0.5);
-      blade.rotation.x = -0.2;
+      blade.position.set(0, 0.95, halfLength - 0.5);
       const stripe = panel(
-        r.createMesh({ kind: "box", width: 6.7, height: 0.3, depth: 0.92 }, { color: [0.85, 0.4, 0.1], emissive: 0.5 }),
+        r.createMesh({ kind: "box", width: 6.7, height: 0.3, depth: 0.98 }, { color: [0.85, 0.4, 0.1], emissive: 0.5 }),
         [0.85, 0.4, 0.1] as Rgb,
       );
       stripe.parent = this.body;
-      stripe.position.set(0, 1.75, halfLength + 0.52);
-      stripe.rotation.x = -0.2;
+      stripe.position.set(0, 1.75, halfLength - 0.5);
     }
     const chassis = r.createMesh(
       { kind: "box", width: wid, height: 0.85, depth: len },
@@ -175,11 +179,13 @@ export class CarView {
 
     if (style.heavy) {
       // Bull bar and roof rack: reads as "heavier than you" from the chase camera.
+      // Flush with the collider face like every other panel - the old +0.2
+      // center put the bar half a unit through whatever the truck was pinning.
       const bar = r.createMesh(
         { kind: "box", width: wid * 1.06, height: 1.3, depth: 0.7 },
         { color: [...style.accent], emissive: 0.25 },
       );
-      bar.position.set(0, 1.0, halfLength + 0.2);
+      bar.position.set(0, 1.0, halfLength - 0.37);
       bar.parent = this.body;
       panel(bar, style.accent);
 
@@ -188,7 +194,7 @@ export class CarView {
           { kind: "box", width: 0.28, height: 1.5, depth: 0.28 },
           { color: [...style.accent], emissive: 0.25 },
         );
-        post.position.set(side * wid * 0.36, 1.5, halfLength + 0.2);
+        post.position.set(side * wid * 0.36, 1.5, halfLength - 0.2);
         post.parent = this.body;
         panel(post, style.accent);
       }

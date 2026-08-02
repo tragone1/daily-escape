@@ -168,6 +168,17 @@ export class PoliceCar {
     this.baseContactBoost = this.vehicle.contactBoost;
     this.vehicle.isPolice = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
+    /*
+     * The juggernaut is DRAWN at its strike-collider width (one big box), not
+     * its resting width. Every other car's visual matches the box that hits
+     * you; drawing this one narrow while it catches with the wide strike box
+     * meant side latches gripped visibly empty air. The physics params are
+     * untouched - this is purely what the mesh looks like.
+     */
+    const viewHalfWidth =
+      role === "juggernaut"
+        ? CONFIG.police.escalation.openRoad.ambush.bladeHalfWidth
+        : params.halfWidth;
     this.view = new CarView(
       r,
       policeStyle(
@@ -175,7 +186,7 @@ export class PoliceCar {
         role === "juggernaut" || role === "rig",
       ),
       params.halfLength,
-      params.halfWidth,
+      viewHalfWidth,
       role === "juggernaut",
     );
   }

@@ -571,24 +571,24 @@ export const CONFIG = {
         fromSection: 0,
         roles: ["interceptor", "elite"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
-        intervalBase: 15,
-        intervalPerSection: 0.55,
-        intervalMin: 5,
+        intervalBase: 11,
+        intervalPerSection: 0.5,
+        intervalMin: 4,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
-        chanceBase: 0.35,
-        chancePerSection: 0.03,
-        chanceMax: 0.9,
+        chanceBase: 0.5,
+        chancePerSection: 0.04,
+        chanceMax: 0.92,
         /**
          * The LINE-UP: before snapping sideways the unit steers to converge on
          * the player's predicted lane, so the broadside lands where the player
          * is GOING, not wherever the cop happened to be. More seconds of
          * line-up allowance = more expert placement; grows per section.
          */
-        lineupBase: 0.45,
-        lineupPerSection: 0.03,
-        lineupMax: 0.95,
+        lineupBase: 0.7,
+        lineupPerSection: 0.04,
+        lineupMax: 1.4,
         /** Snap early once converged this close to the target lane. */
-        lineupDone: 2.0,
+        lineupDone: 1.4,
         /**
          * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
          * eligible units in the same window slide together, offset to cover
@@ -598,8 +598,16 @@ export const CONFIG = {
         doubleChance: 0.5,
         doubleLaneOffset: 2.6,
         /** Head-on window, in the player's frame. */
-        window: { near: 28, far: 68, lat: 8 },
+        window: { near: 28, far: 85, lat: 10 },
         minSpeed: 16,
+        /**
+         * Expert car control DURING the slide: a lateral correction toward the
+         * player's lane, so the wall drifts onto the line even after the snap.
+         * Off once the player is close - no magnetism at contact range.
+         */
+        slideSteer: 70,
+        /** Hits on a sliding/holding blocker land harder than pack rubbing. */
+        contactBoost: 2.2,
         /** Yaw authority during the slide, rad/s toward perpendicular. */
         spinRate: 5.5,
         brake: 0.55,

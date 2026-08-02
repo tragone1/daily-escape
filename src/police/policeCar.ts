@@ -190,6 +190,7 @@ export class PoliceCar {
     this.slideHeading = travel + this.slideDir * (Math.PI / 2);
     this.slideAim = 0;
     this.slideTimer = cfg.slideTime;
+    v.contactBoost = cfg.contactBoost;
   }
 
   spinOut(impact: number): void {
@@ -306,6 +307,7 @@ export class PoliceCar {
     this.slideTimer = 0;
     this.slideHold = 0;
     this.slideAim = 0;
+    this.vehicle.contactBoost = this.baseContactBoost;
     this.rigTimer = 0;
     this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
@@ -476,6 +478,17 @@ export class PoliceCar {
       this.slideTimer -= dt;
       const err = wrapAngle(this.slideHeading - v.heading);
       v.applySpin(clamp(err, -1, 1) * cfg.spinRate * dt);
+      // Expert car control: keep drifting the wall onto the player's lane while
+      // sliding. Cuts off once they are close - no magnetism at contact range.
+      const pdS = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      if (pdS > 12) {
+        const prxS = Math.cos(ctx.player.heading);
+        const przS = -Math.sin(ctx.player.heading);
+        const latErrS =
+          (v.x - ctx.player.x) * prxS + (v.z - ctx.player.z) * przS - this.slideLane;
+        const magS = Math.min(1, Math.abs(latErrS) / 3) * cfg.slideSteer;
+        v.applyImpulse(-Math.sign(latErrS) * prxS * magS * dt, -Math.sign(latErrS) * przS * magS * dt);
+      }
       this.input.throttle = 0;
       this.input.brake = cfg.brake;
       this.input.steer = clamp(err / 0.5, -1, 1);
@@ -487,12 +500,33 @@ export class PoliceCar {
     }
     if (this.slideHold > 0) {
       this.slideHold -= dt;
-      this.input.throttle = 0;
-      this.input.brake = v.speed > 1 ? 1 : 0;
+      /*
+       * The wall BLOCKS: while the player is still inbound, shuffle broadside
+       * along our own axis to stay on their line - the same door-closing creep
+       * the rig runs. Brake-at-standstill reverses in this model, which is
+       * exactly how a broadside car shuffles the other way.
+       */
+      const pdH = dist(v.x, v.z, ctx.player.x, ctx.player.z);
+      const pvx = ctx.player.vx;
+      const pvz = ctx.player.vz;
+      const inbound = (v.x - ctx.player.x) * pvx + (v.z - ctx.player.z) * pvz > 0;
+      let driveH = 0;
+      if (pdH > 10 && pdH < 90 && inbound) {
+        const prxH = Math.cos(ctx.player.heading);
+        const przH = -Math.sin(ctx.player.heading);
+        const errH = (v.x - ctx.player.x) * prxH + (v.z - ctx.player.z) * przH - this.slideLane;
+        if (Math.abs(errH) > 1.2 && v.speed < 7) {
+          const fwdLatH = Math.sin(v.heading) * prxH + Math.cos(v.heading) * przH;
+          driveH = -Math.sign(errH) * Math.sign(fwdLatH || 1);
+        }
+      }
+      this.input.throttle = driveH > 0 ? 0.4 : 0;
+      this.input.brake = driveH < 0 ? 0.5 : v.speed > 1 ? 1 : 0;
       this.input.steer = 0;
       this.input.boost = false;
       v.drive = 1;
       v.update(this.input, dt, ctx.terrain);
+      if (this.slideHold <= 0) v.contactBoost = this.baseContactBoost;
       return;
     }
 

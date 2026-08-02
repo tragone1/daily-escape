@@ -37,6 +37,9 @@ interface Hazard {
   life: number;
   /** Span across the road, clamped so a gap always remains. */
   halfWidth: number;
+  /** Who laid it - immune for a beat so a unit does not spike itself driving off. */
+  owner: PoliceCar | null;
+  ownerImmuneUntil: number;
   root: Node3D;
   glow: Mesh;
 }
@@ -47,6 +50,8 @@ export class HazardField {
   private lastUsed = new WeakMap<PoliceCar, number>();
   private clock = 0;
   private effect: { kind: HazardKind; timer: number } | null = null;
+  /** Per-unit debuffs: the squad's own weapons work on the squad. */
+  private unitEffects = new Map<PoliceCar, { kind: HazardKind; timer: number }>();
 
   constructor(
     r: Renderer,
@@ -68,6 +73,8 @@ export class HazardField {
           arm: 0,
           life: 0,
           halfWidth: 1,
+          owner: null,
+          ownerImmuneUntil: 0,
           ...built,
         });
       }
@@ -88,6 +95,11 @@ export class HazardField {
     this.cooldown = 0;
     this.effect = null;
     this.lastUsed = new WeakMap();
+    for (const [unit] of this.unitEffects) {
+      unit.vehicle.tireGrip = 1;
+      unit.vehicle.tireSpeed = 1;
+    }
+    this.unitEffects.clear();
   }
 
   /**
@@ -121,7 +133,51 @@ export class HazardField {
     }
 
     this.deploy(playerProgress, section, units);
+    this.testUnits(dt, units);
     return this.testPlayer(player);
+  }
+
+  /*
+   * The squad is not immune to its own road furniture. Same rect test as the
+   * player, with two deliberate differences: a cop hit never CONSUMES a spike
+   * strip (the trap stays down and keeps working on the player - their shredded
+   * tyres should never clean the road for you), and the unit that laid a hazard
+   * gets a short grace window so it does not spike itself driving off its own
+   * strip. Vehicle.reset() clears the tyre fields, so recycled units spawn clean.
+   */
+  private testUnits(dt: number, units: PoliceCar[]): void {
+    for (const [unit, eff] of this.unitEffects) {
+      eff.timer -= dt;
+      if (eff.timer <= 0 || !unit.active || unit.destroyed) {
+        unit.vehicle.tireGrip = 1;
+        unit.vehicle.tireSpeed = 1;
+        this.unitEffects.delete(unit);
+        continue;
+      }
+      const k = CONFIG.police.hazards[eff.kind];
+      const t = clamp(eff.timer / k.duration, 0, 1);
+      unit.vehicle.tireGrip = 1 + (k.gripScale - 1) * t;
+      unit.vehicle.tireSpeed = 1 + (k.speedScale - 1) * t;
+    }
+    for (const h of this.items) {
+      if (!h.live || h.arm > 0) continue;
+      const k = CONFIG.police.hazards[h.kind];
+      const cos = Math.cos(h.heading);
+      const sin = Math.sin(h.heading);
+      for (const unit of units) {
+        if (!unit.active || unit.destroyed) continue;
+        if (h.owner === unit && this.clock < h.ownerImmuneUntil) continue;
+        const v = unit.vehicle;
+        if (v.y - h.y > 2.0) continue;
+        const dx = v.x - h.x;
+        const dz = v.z - h.z;
+        const along = dx * sin + dz * cos;
+        const across = dx * cos - dz * sin;
+        if (Math.abs(along) > k.halfLength + v.params.halfLength * 0.6) continue;
+        if (Math.abs(across) > h.halfWidth + v.params.halfWidth) continue;
+        this.unitEffects.set(unit, { kind: h.kind, timer: k.duration });
+      }
+    }
   }
 
   /** Blend the tyre penalty out as the effect wears off, so recovery is felt, not flipped. */
@@ -234,6 +290,8 @@ export class HazardField {
 
       slot.halfWidth = halfWidth;
       slot.live = true;
+      slot.owner = unit;
+      slot.ownerImmuneUntil = this.clock + 2.5;
       slot.x = px;
       slot.z = pz;
       slot.heading = heading;

@@ -1726,14 +1726,21 @@ export const CONFIG = {
        * game once the player's own pace ramp kicked in.
        */
       lateSpeedPerSection: 1.45,
-      maxSpeedBonus: 20,
+      /**
+       * 26, reached around round twenty-three. At 20 the cops stopped gaining
+       * at round nineteen while the player's own ramp ran to round thirty -
+       * the deep game was quietly getting EASIER for eleven straight rounds.
+       * A capped heavy runs 70; the player's full-ramp boost peaks 73.5, so
+       * the boost escape stays alive by design.
+       */
+      maxSpeedBonus: 26,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the
        * player is reformed more often. The cap keeps deep-run charge spam readable.
        */
       aggroPerSection: 0.07,
-      aggroMax: 0.65,
+      aggroMax: 0.8,
     },
 
     /**

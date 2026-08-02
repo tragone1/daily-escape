@@ -571,11 +571,11 @@ export const CONFIG = {
         fromSection: 0,
         roles: ["interceptor", "elite"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
-        intervalBase: 11,
+        intervalBase: 9,
         intervalPerSection: 0.5,
-        intervalMin: 3.5,
+        intervalMin: 3,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
-        chanceBase: 0.5,
+        chanceBase: 0.6,
         chancePerSection: 0.04,
         chanceMax: 0.95,
         /**
@@ -584,7 +584,7 @@ export const CONFIG = {
          * is GOING, not wherever the cop happened to be. More seconds of
          * line-up allowance = more expert placement; grows per section.
          */
-        lineupBase: 1.2,
+        lineupBase: 1.4,
         lineupPerSection: 0.05,
         lineupMax: 2.2,
         /**
@@ -596,7 +596,7 @@ export const CONFIG = {
          */
         stageOffset: 5.5,
         /** Snap when the predicted meeting is this many seconds away. */
-        snapMeetTime: 1.2,
+        snapMeetTime: 1.35,
         /**
          * The DOUBLE: from this section (0-indexed; 10 = round eleven) two
          * eligible units in the same window slide together, offset to cover
@@ -614,13 +614,13 @@ export const CONFIG = {
          * the placement skill lives in the approach now; from the snap on it
          * is pure momentum and the handbrake, no phantom forces.
          */
-        commitLead: 0.55,
+        commitLead: 0.85,
         /** Hits on a sliding/holding blocker land harder than pack rubbing. */
         contactBoost: 2.2,
         /** Yaw authority during the slide, rad/s toward perpendicular. */
         spinRate: 4.6,
         brake: 0.55,
-        slideTime: 1.4,
+        slideTime: 1.65,
         holdTime: 1.2,
       },
       pileup: {
@@ -1493,11 +1493,12 @@ export const CONFIG = {
        */
       maxActive: 20,
       /**
-       * From the tenth section (index 9) the cap lifts to this and the 1.4/section
-       * base ramp simply resumes - rounds 10+ had stopped escalating in bodies at
-       * all, per playtest. Raised to 30 at the player's request after 26 shipped.
+       * The body count PLATEAUS at 22, which the 1.4/section base ramp reaches
+       * naturally at round twelve - by design the game gets harder after that
+       * through class upgrades, aggro, and technique, never through more cars:
+       * 'you should never lose because there is a pile of cars and no rocket.'
        */
-      lateMaxActive: 30,
+      lateMaxActive: 22,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1693,11 +1694,16 @@ export const CONFIG = {
        * different section from "twenty cars" meaning eight patrols and some rammers.
        * Before this, nothing whatsoever changed after section 13.
        */
+      /**
+       * Aggressive fleet turnover: with the body count flat from round twelve,
+       * the mix IS the difficulty curve - light classes muster out early and
+       * the deep game is heavies, elites and rigs almost exclusively.
+       */
       retire: {
         patrol: 10,
-        rammer: 15,
-        blocker: 18,
-        interceptor: 22,
+        rammer: 12,
+        blocker: 14,
+        interceptor: 17,
         heavy: 999,
         elite: 999,
         juggernaut: 999,
@@ -1718,8 +1724,8 @@ export const CONFIG = {
        * capped: charges wind up faster and repeat sooner, and the box around the
        * player is reformed more often. The cap keeps deep-run charge spam readable.
        */
-      aggroPerSection: 0.05,
-      aggroMax: 0.5,
+      aggroPerSection: 0.07,
+      aggroMax: 0.65,
     },
 
     /**

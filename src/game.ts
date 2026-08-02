@@ -193,6 +193,14 @@ export class Game {
     }
     this.lastOnCourse = { x: node.x, z: node.z, y: node.y, heading: this.player.heading };
     this.offCourseTimer = 0;
+    /*
+     * Sync the tracked state IMMEDIATELY. The police director reads
+     * state.section, which otherwise still says 0 for the first tick after a
+     * jump - long enough for it to dispatch classes that retired sections ago.
+     * A debug-only seam, but it contaminated every jumped measurement run.
+     */
+    this.state.progress = start + 25;
+    this.state.section = idx;
   }
 
   begin(): void {

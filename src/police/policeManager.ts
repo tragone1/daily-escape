@@ -769,6 +769,13 @@ export class PoliceManager {
    * entirely — their own walls do the hiding.
    */
   private spawnUnit(unit: PoliceCar, ctx: PursuitContext, playerProgress: number): boolean {
+    /*
+     * Retirement is ABSOLUTE. The picker filters mustered-out classes, but the
+     * recycle and rear-guarantee paths reuse whatever unit they are handed - a
+     * patrol was observed being re-dispatched at section nineteen through one
+     * of them. Every dispatch flows through here; no retired class gets out.
+     */
+    if (this.sectionNow > (CONFIG.police.escalation.retire[unit.role] ?? 999)) return false;
     // A rig is placed where it is going to block, already broadside, well out of sight.
     // It never chases and never overtakes - it is simply there when you arrive.
     if (unit.role === "rig") return this.placeRig(unit, ctx, playerProgress);

@@ -182,6 +182,9 @@ export class PoliceCar {
     this.slideLane = stageLane;
     this.slideFinal = finalLane;
     this.slideAim = lineup;
+    // The pro SAVED their boost for this. Scheduling, not physics: the burn
+    // itself is the same boost with the same accel, duration and cooldown.
+    this.vehicle.boostCooldown = 0;
   }
 
   /** Convert line-up into the actual slide off the current travel direction. */
@@ -471,11 +474,25 @@ export class PoliceCar {
          */
         const committed = tMeet < cfg.snapMeetTime + cfg.commitLead;
         const laneT = committed ? this.slideFinal : this.slideLane;
-        const leadT2 = committed ? Math.min(tMeet * 0.8, 1) : 0;
-        const tx2 =
-          ctx.player.x + ctx.player.vx * leadT2 + pfx * (committed ? 0 : along * 0.55) + prx * laneT;
-        const tz2 =
-          ctx.player.z + ctx.player.vz * leadT2 + pfz * (committed ? 0 : along * 0.55) + prz * laneT;
+        /*
+         * Predict along the ROAD, not the chord. At late-game closing speeds
+         * the commit begins 150+ units out, and a straight-line guess at the
+         * player's lane is meaningless across that much curvature - the pro
+         * aims at where the ROUTE puts them, offset into the chosen lane.
+         */
+        const pSpdA = Math.hypot(ctx.player.vx, ctx.player.vz);
+        const aheadT = committed ? Math.min(tMeet * 0.85, 1.4) : Math.min(tMeet * 0.5, 1.6);
+        const pProgA = ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+        const nodeA = ctx.nav.nodeAtProgress(pProgA + Math.max(10, pSpdA * aheadT));
+        const segA = ctx.terrain.sample(nodeA.x, nodeA.z).segment;
+        const playerLatA =
+          (ctx.player.x - segA.ax) * segA.dz - (ctx.player.z - segA.az) * segA.dx;
+        const laneRoad = Math.max(
+          -(segA.halfWidth - 1.4),
+          Math.min(segA.halfWidth - 1.4, playerLatA + laneT),
+        );
+        const tx2 = nodeA.x + segA.dz * laneRoad;
+        const tz2 = nodeA.z - segA.dx * laneRoad;
         this.input.throttle = 1;
         this.input.brake = 0;
         this.input.steer = clamp(
@@ -484,7 +501,11 @@ export class PoliceCar {
           -1,
           1,
         );
-        this.input.boost = committed;
+        // Committed: burn boost flat out. Staging: FEATHER it - quick on/off
+        // pulses to close distance without overshooting the staging lane. Real
+        // boost, real cooldowns; it reads as a pro working the throttle.
+        this.input.boost =
+          committed || (along > 45 && Math.sin(this.slideAim * 11) > 0.25);
         v.drive = 1;
         v.update(this.input, dt, ctx.terrain);
         return;

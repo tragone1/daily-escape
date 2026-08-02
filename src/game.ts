@@ -504,6 +504,33 @@ export class Game {
    * that it can never be the faster option.
    */
   private enforceCourse(dt: number, progress: number, ground: TerrainSample): void {
+    /*
+     * The vertical net. The tow system is 2D: under the floor at valid x/z it
+     * reads as happily on course and never fires - which is how a hard slam
+     * (late-game closing speeds now exceed 100) left the player under the
+     * world, driving on nothing, permanently stuck. Below-the-world or
+     * corrupted positions are never legitimate: tow instantly, no grace, no
+     * speed exemption.
+     */
+    const p = this.player;
+    if (
+      !Number.isFinite(p.x) ||
+      !Number.isFinite(p.z) ||
+      !Number.isFinite(p.y) ||
+      p.y < ground.height - 6
+    ) {
+      const node = this.world.nav.nodeAtProgress(progress);
+      const back =
+        this.lastOnCourse.x !== 0 || this.lastOnCourse.z !== 0
+          ? this.lastOnCourse
+          : { x: node.x, z: node.z, y: node.y, heading: p.heading };
+      p.reset(back.x, back.z, back.heading, back.y);
+      this.camera.reset(p);
+      this.offCourseTimer = 0;
+      this.hud.announce("TOWED BACK", false);
+      return;
+    }
+
     if (!ground.onCourse) this.pushBackOnCourse(dt, ground);
 
     if (ground.onCourse) {

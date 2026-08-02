@@ -557,6 +557,30 @@ export const CONFIG = {
        * into each other MANUFACTURES an opening in the pack. Threshold keeps
        * ordinary pack-rubbing free; rigs and welded units shrug it off.
        */
+      /**
+       * THE SLIDE-BLOCK, round 10+. An oncoming unit, instead of whiffing past
+       * head-on at speed, snaps sideways and hauls the brakes - momentum
+       * carries it into a broadside drift across the player's path, ending as
+       * a two-second wall you either dodge or eat. Deliberately rationed: one
+       * assignment at a time on a cadence that tightens with aggro, a coin
+       * flip per opportunity, fast classes only. It should read as a move some
+       * cops know, not a script every car runs.
+       */
+      slideBlock: {
+        fromSection: 9,
+        roles: ["interceptor", "elite"] as const,
+        /** Seconds between assignments at zero aggro; scaled down by aggro. */
+        interval: 12,
+        chance: 0.6,
+        /** Head-on window, in the player's frame. */
+        window: { near: 28, far: 68, lat: 8 },
+        minSpeed: 16,
+        /** Yaw authority during the slide, rad/s toward perpendicular. */
+        spinRate: 5.5,
+        brake: 0.55,
+        slideTime: 1.4,
+        holdTime: 1.2,
+      },
       pileup: {
         /** Relative impact speed below which nothing happens. */
         minImpact: 30,
@@ -944,7 +968,7 @@ export const CONFIG = {
        * is that opening - the rig only parks where its broadside still leaves at
        * least this much drivable width, always whole on one side, never split.
        */
-      minGap: 3.8,
+      minGap: 4.6,
       /**
        * Same spawn honesty as every other class: a spot must be beyond this
        * euclidean distance OR out of the player's line of sight (and never under
@@ -952,6 +976,12 @@ export const CONFIG = {
        * how rigs were popping in thirty units from the player's nose.
        */
       minSpawnDist: 165,
+      /**
+       * No rigs at all in the three narrowest themes (canyon 7.5, final 8,
+       * downtown 9-with-no-shoulder base half-widths): even a legal opening
+       * there reads as a wall at speed, per playtest.
+       */
+      bannedThemes: ["canyon", "downtown", "final"] as const,
       /**
        * Two-rig wall: from this section (0-indexed; 14 = round 15) a second rig
        * may partner a standing block in a band wide enough for both broadsides

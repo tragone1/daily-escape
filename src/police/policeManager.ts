@@ -23,7 +23,7 @@ import type { Renderer } from "../gfx/renderer";
 import type { CollisionWorld } from "../physics/collisionWorld";
 import { CONFIG, type PoliceRole } from "../config";
 import { dist, forwardOf, headingOf, rightOf } from "../math";
-import { POLICE_LOOKAHEAD, SPURS, type SpurDef } from "../world/course";
+import { POLICE_LOOKAHEAD, SECTION_THEMES, SPURS, sectionIndexAt, type SpurDef } from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import type { Terrain } from "../world/terrain";
 import type { PursuitContext } from "./behaviors";
@@ -134,6 +134,39 @@ export class PoliceManager {
       this.director(ctx, playerProgress, section);
     }
 
+    /*
+     * Ration the slide-block: one assignment per cadence, cadence tightening
+     * with aggro, coin flip per opportunity. "Some cars know the move."
+     */
+    this.slideTimer -= dt;
+    const sb = CONFIG.police.shared.slideBlock;
+    if (section >= sb.fromSection && this.slideTimer <= 0) {
+      this.slideTimer = 0.5;
+      const player = ctx.player;
+      const fwd = forwardOf(player.heading);
+      const right = rightOf(player.heading);
+      for (const u of this.units) {
+        if (!u.active || u.destroyed || u.disabled) continue;
+        if (!(sb.roles as readonly string[]).includes(u.role)) continue;
+        if (u.ambushAt) continue;
+        const v2 = u.vehicle;
+        if (v2.speed < sb.minSpeed) continue;
+        const rx = v2.x - player.x;
+        const rz = v2.z - player.z;
+        const along = rx * fwd.x + rz * fwd.z;
+        const lat = rx * right.x + rz * right.z;
+        if (along < sb.window.near || along > sb.window.far) continue;
+        if (Math.abs(lat) > sb.window.lat) continue;
+        // Head-on: their travel opposes the player's heading.
+        const spd = v2.speed || 1;
+        if ((v2.vx * fwd.x + v2.vz * fwd.z) / spd > -0.45) continue;
+        if (Math.random() > sb.chance) continue;
+        u.startSlideBlock(Math.random() < 0.5 ? -1 : 1);
+        this.slideTimer = sb.interval * (1 - this.aggro);
+        break;
+      }
+    }
+
     this.boxTimer -= dt;
     if (this.boxTimer <= 0) {
       // Aggro reforms the box faster: the trap keeps up with a faster player.
@@ -154,6 +187,7 @@ export class PoliceManager {
    * Units that fall hopelessly behind are recycled forward rather than left to trail.
    */
   private sectionNow = 0;
+  private slideTimer = 0;
 
   private director(ctx: PursuitContext, playerProgress: number, section: number): void {
     this.sectionNow = section;
@@ -500,6 +534,11 @@ export class PoliceManager {
       return { lo: bestLo, hi: bestHi };
     };
 
+    const themeOk = (progress: number) => {
+      const theme = SECTION_THEMES[sectionIndexAt(progress)];
+      return !(cfg.bannedThemes as readonly string[]).includes(theme);
+    };
+
     /*
      * Spawn honesty, same terms as everyone else: far enough that appearing is
      * indistinguishable from having driven in, or hidden - and never close,
@@ -525,6 +564,7 @@ export class PoliceManager {
         const post = other.parkedPost;
         if (!post) continue;
         if (post.progress - playerProgress < 150) continue;
+        if (!themeOk(post.progress + 14)) continue;
         /*
          * The staggered row is computed from the post's own segment - nav nodes
          * sit ~43 apart, so nodeAtProgress(post+14) snaps back to the partner's
@@ -553,7 +593,14 @@ export class PoliceManager {
           segN.heading + Math.PI / 2,
           post.y,
         );
-        unit.parkAt(post, lateral, 14, segN.heading + Math.PI / 2);
+        unit.parkAt(
+          post,
+          lateral,
+          14,
+          segN.heading + Math.PI / 2,
+          bandN.lo + span,
+          bandN.hi - span,
+        );
         return true;
       }
     }
@@ -562,9 +609,12 @@ export class PoliceManager {
     let bestScore = Infinity;
     let bestLateral = 0;
     let bestTheta = Math.PI / 2;
+    let bestClampLo = -Infinity;
+    let bestClampHi = Infinity;
 
     for (let d = cfg.scoutMin; d <= cfg.scoutMax; d += 16) {
       const node = ctx.nav.nodeAtProgress(playerProgress + d);
+      if (!themeOk(node.progress)) continue;
       const seg = this.terrain.sample(node.x, node.z).segment;
       const width = ctx.world.freeWidth(node.x, node.z, seg.heading);
       if (width < cfg.minBlockWidth) continue;
@@ -601,6 +651,8 @@ export class PoliceManager {
         bestTheta = theta;
         // Hug one kerb - which one varies by spot - so the opening is single and whole.
         bestLateral = (node.id & 1) === 0 ? band.hi - proj : band.lo + proj;
+        bestClampLo = band.lo + proj;
+        bestClampHi = band.hi - proj;
       }
     }
     if (!best) return false;
@@ -613,7 +665,7 @@ export class PoliceManager {
       yaw,
       best.y,
     );
-    unit.parkAt(best, bestLateral, 0, yaw);
+    unit.parkAt(best, bestLateral, 0, yaw, bestClampLo, bestClampHi);
     return true;
   }
 

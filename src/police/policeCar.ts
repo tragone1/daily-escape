@@ -125,16 +125,30 @@ export class PoliceCar {
   private rigYaw: number | null = null;
   private stunTimer = 0;
   private stunCooldown = 0;
+  private rigClampLo = -Infinity;
+  private rigClampHi = Infinity;
+  private slideTimer = 0;
+  private slideHold = 0;
+  private slideHeading = 0;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
 
   /** Park a rig on the spot it was placed at, so it holds rather than scouting anew. */
-  parkAt(node: NavNode, lateral = 0, along = 0, yaw: number | null = null): void {
+  parkAt(
+    node: NavNode,
+    lateral = 0,
+    along = 0,
+    yaw: number | null = null,
+    clampLo = -Infinity,
+    clampHi = Infinity,
+  ): void {
     this.rigPost = node;
     this.rigLateral = lateral;
     this.rigAlong = along;
     this.rigYaw = yaw;
+    this.rigClampLo = clampLo;
+    this.rigClampHi = clampHi;
     this.rigScore = -Infinity;
     this.rigTimer = Infinity;
   }
@@ -152,6 +166,16 @@ export class PoliceCar {
    * Hard cop-on-cop impact: lose the car for a beat. The player juking two
    * chasers into each other MAKES an opening - the chaos is the reward.
    */
+  /** Begin the slide-block: snap sideways off the current travel line. */
+  startSlideBlock(dir: number): void {
+    if (this.slideTimer > 0 || this.slideHold > 0 || this.stunTimer > 0 || this.charging) return;
+    const cfg = CONFIG.police.shared.slideBlock;
+    const v = this.vehicle;
+    const travel = v.speed > 4 ? Math.atan2(v.vx, v.vz) : v.heading;
+    this.slideHeading = travel + (dir >= 0 ? 1 : -1) * (Math.PI / 2);
+    this.slideTimer = cfg.slideTime;
+  }
+
   spinOut(impact: number): void {
     if (this.role === "rig" || this.welded || this.destroyed || this.wrecked) return;
     if (this.stunTimer > 0 || this.stunCooldown > 0) return;
@@ -259,8 +283,12 @@ export class PoliceCar {
     this.rigLateral = 0;
     this.rigAlong = 0;
     this.rigYaw = null;
+    this.rigClampLo = -Infinity;
+    this.rigClampHi = Infinity;
     this.stunTimer = 0;
     this.stunCooldown = 0;
+    this.slideTimer = 0;
+    this.slideHold = 0;
     this.rigTimer = 0;
     this.rigScore = Infinity;
     this.vehicle.contactBoost = this.baseContactBoost;
@@ -372,7 +400,82 @@ export class PoliceCar {
     if (this.stunTimer > 0) {
       this.stunTimer -= dt;
       this.input.throttle = 0;
-      this.input.brake = 0.4;
+      // brake at standstill means REVERSE in this vehicle model - only brake
+      // while actually moving, then stand on nothing.
+      this.input.brake = v.speed > 1 ? 0.4 : 0;
+      this.input.steer = 0;
+      this.input.boost = false;
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
+      return;
+    }
+
+    /*
+     * THE SLIDE-BLOCK. Yaw hauled toward perpendicular while braking; momentum
+     * does the rest - the car arrives across the player's line sideways, holds
+     * the pose for a beat as a wall, then rejoins the chase.
+     */
+    if (this.slideTimer > 0) {
+      const cfg = CONFIG.police.shared.slideBlock;
+      this.slideTimer -= dt;
+      const err = wrapAngle(this.slideHeading - v.heading);
+      v.applySpin(clamp(err, -1, 1) * cfg.spinRate * dt);
+      this.input.throttle = 0;
+      this.input.brake = cfg.brake;
+      this.input.steer = clamp(err / 0.5, -1, 1);
+      this.input.boost = false;
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
+      if (this.slideTimer <= 0) this.slideHold = cfg.holdTime;
+      return;
+    }
+    if (this.slideHold > 0) {
+      this.slideHold -= dt;
+      this.input.throttle = 0;
+      this.input.brake = v.speed > 1 ? 1 : 0;
+      this.input.steer = 0;
+      this.input.boost = false;
+      v.drive = 1;
+      v.update(this.input, dt, ctx.terrain);
+      return;
+    }
+
+    /*
+     * A PARKED RIG. It was placed exactly where it stands, already broadside -
+     * it has been waiting for you all along, and it does exactly one thing:
+     * when you commit to the opening, it creeps across to close it. Partial on
+     * purpose (0.55), so a late switch beats it. No goals, no pathing, no
+     * repositioning - the "still getting into position" look was the goal
+     * system replanning routes to a post it was already standing on.
+     */
+    if (this.role === "rig" && this.rigPost) {
+      const post = this.rigPost;
+      const seg = ctx.terrain.sample(post.x, post.z).segment;
+      this.parkBroadside(dt, ctx);
+      const pdx = ctx.player.x - v.x;
+      const pdz = ctx.player.z - v.z;
+      const playerDist = Math.hypot(pdx, pdz);
+      const approaching = pdx * ctx.player.vx + pdz * ctx.player.vz < 0;
+      let drive = 0;
+      if (playerDist < 100 && approaching) {
+        const playerAcross =
+          (ctx.player.x - seg.ax) * seg.dz - (ctx.player.z - seg.az) * seg.dx;
+        const ownAcross = (v.x - seg.ax) * seg.dz - (v.z - seg.az) * seg.dx;
+        const targetAcross = Math.max(
+          this.rigClampLo,
+          Math.min(this.rigClampHi, this.rigLateral + (playerAcross - this.rigLateral) * 0.55),
+        );
+        const err = targetAcross - ownAcross;
+        if (Math.abs(err) > 0.6 && v.speed < 6) {
+          // Broadside means our nose points across the road: creeping toward
+          // the gap is plain forward or reverse along our own heading.
+          const fwdAcross =
+            Math.sin(v.heading) * seg.dz - Math.cos(v.heading) * seg.dx;
+          drive = Math.sign(err) * Math.sign(fwdAcross || 1);
+        }
+      }
+      this.input.throttle = drive > 0 ? 0.35 : 0;
+      this.input.brake = drive < 0 ? 0.5 : v.speed > 1 ? 1 : 0;
       this.input.steer = 0;
       this.input.boost = false;
       v.drive = 1;

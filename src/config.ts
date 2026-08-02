@@ -572,7 +572,7 @@ export const CONFIG = {
         roles: ["interceptor", "elite", "heavy"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
         intervalBase: 9,
-        intervalPerSection: 0.5,
+        intervalPerSection: 0.7,
         intervalMin: 3,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
         chanceBase: 0.6,
@@ -655,7 +655,7 @@ export const CONFIG = {
          * crews nail it. The wall stand only recovers 60% of a botched pose.
          */
         execErrMax: 1.5,
-        execErrPerSection: 0.06,
+        execErrPerSection: 0.1,
         execErrMin: 0.25,
         /** Seconds of player lateral motion the standoff tracking leads by. */
         trackLead: 0.35,
@@ -703,8 +703,8 @@ export const CONFIG = {
          * reassignment tightens, and front-seekers burn boost to cut the
          * player off. Solid from round one; frightening deep.
          */
-        convertSpeedPerSection: 0.4,
-        convertSpeedMax: 18,
+        convertSpeedPerSection: 0.65,
+        convertSpeedMax: 22,
         convertIntervalMin: 0.12,
         /**
          * From this section (0-indexed; 9 = round ten) the box fills its pure
@@ -1175,7 +1175,7 @@ export const CONFIG = {
        * ahead of you is being carpeted, which is what "until it is absolutely ridiculous"
        * has to actually mean once there is no room for more cars.
        */
-      cooldownPerSection: 0.035,
+      cooldownPerSection: 0.05,
       minCooldownScale: 0.16,
       /** Deployable only from this far ahead of the player, in course units... */
       minLead: 45,
@@ -1800,7 +1800,7 @@ export const CONFIG = {
        * of the flat climb - the late game was reading as no harder than the mid
        * game once the player's own pace ramp kicked in.
        */
-      lateSpeedPerSection: 1.45,
+      lateSpeedPerSection: 1.8,
       /**
        * 26, reached around round twenty-three. At 20 the cops stopped gaining
        * at round nineteen while the player's own ramp ran to round thirty -
@@ -1808,14 +1808,14 @@ export const CONFIG = {
        * A capped heavy runs 70; the player's full-ramp boost peaks 73.5, so
        * the boost escape stays alive by design.
        */
-      maxSpeedBonus: 26,
+      maxSpeedBonus: 30,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the
        * player is reformed more often. The cap keeps deep-run charge spam readable.
        */
-      aggroPerSection: 0.07,
-      aggroMax: 0.8,
+      aggroPerSection: 0.085,
+      aggroMax: 1.0,
     },
 
     /**

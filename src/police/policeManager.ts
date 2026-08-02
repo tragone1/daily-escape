@@ -533,6 +533,20 @@ export class PoliceManager {
         ? [...slots].sort((s1, s2) => lateRank(s1) - lateRank(s2))
         : slots;
 
+    /*
+     * THE DEADLY FORMATION, from round fifteen: the deep fleet is elites and
+     * heavies, and each goes where its body works - elites (fast, agile) take
+     * the forward arc for brake-checks and slide-blocks, heavies (wide,
+     * shove-proof) take the flanks and rear as the wall. Distance breaks ties;
+     * any unit still beats an empty station.
+     */
+    const roleFit = (u: PoliceCar, slot: { x: number; z: number }): number => {
+      if (this.sectionNow < 14) return 0;
+      const front = slot.z > 0;
+      if (u.role === "elite") return front ? -34 : 20;
+      if (u.role === "heavy") return front ? 20 : -34;
+      return 8;
+    };
     const taken = new Set<PoliceCar>();
     for (const slot of order) {
       const wx = player.x + right.x * slot.x + fwd.x * slot.z;
@@ -542,7 +556,7 @@ export class PoliceManager {
       let bestD = Infinity;
       for (const u of available) {
         if (taken.has(u)) continue;
-        const d = Math.hypot(u.vehicle.x - wx, u.vehicle.z - wz);
+        const d = Math.hypot(u.vehicle.x - wx, u.vehicle.z - wz) + roleFit(u, slot);
         if (d < bestD) {
           bestD = d;
           best = u;
@@ -796,7 +810,10 @@ export class PoliceManager {
     this.aggro = aggro;
     for (const unit of this.units) {
       const base = CONFIG.police[unit.role].vehicle.maxSpeed;
-      unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + bonus };
+      // The returned juggernaut is deliberately detuned to half pace - the
+      // escalation bonus would quietly hand most of it back.
+      const b = unit.role === "juggernaut" ? 0 : bonus;
+      unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + b };
       unit.aggro = aggro;
     }
   }
@@ -952,7 +969,7 @@ export class PoliceManager {
        */
       const len = Math.hypot(dx - mx, dz - mz);
       const isArmoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
-      const t = isArmoured ? Math.min(0.85, 20 / Math.max(1, len)) : pacing.ambushDepth;
+      const t = isArmoured ? Math.min(0.85, 12 / Math.max(1, len)) : pacing.ambushDepth;
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;
       if (Math.hypot(x - mx, z - mz) < 5) continue;
@@ -969,6 +986,13 @@ export class PoliceManager {
       unit.ambushAt = { x: mx, z: mz };
       const ol = Math.hypot(mx - x, mz - z) || 1;
       unit.ambushOut = { x: (mx - x) / ol, z: (mz - z) / ol };
+      if (isArmoured) {
+        const amb = CONFIG.police.escalation.openRoad.ambush;
+        unit.strikeMuff =
+          Math.random() < amb.muffChance
+            ? (Math.random() < 0.5 ? -1 : 1) * amb.muffLead
+            : 0;
+      }
       return true;
     }
     return false;

@@ -820,7 +820,7 @@ export const CONFIG = {
      */
     juggernaut: {
       vehicle: policeVehicle({
-        maxSpeed: 43,
+        maxSpeed: 30,
         accel: 31,
         steerRateMax: 1.95,
         gripNormal: 9.2,
@@ -1515,10 +1515,9 @@ export const CONFIG = {
         blocker: 3,
         heavy: 4,
         elite: 6,
-        // TEMPORARILY BENCHED (999 = never unlocks): the player wants the
-        // juggernaut out for now. Restore by setting this back to 7 and
-        // openRoad.roles back to ["juggernaut"] - all mechanics are intact.
-        juggernaut: 999,
+        // Returned from the bench at round sixteen, detuned: half strike
+        // speed and a deliberate 20% muff rate (see ambush.muffChance).
+        juggernaut: 15,
         rig: 5,
       } as Record<PoliceRole, number>,
       /**
@@ -1530,8 +1529,8 @@ export const CONFIG = {
         rammer: 1.8,
         interceptor: 1.6,
         blocker: 1.0,
-        heavy: 2.4,
-        elite: 3.0,
+        heavy: 2.8,
+        elite: 2.8,
         /*
          * The two armoured classes are deliberately scarce now, down from 3.4 and 2.2.
          *
@@ -1556,8 +1555,7 @@ export const CONFIG = {
        * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
       openRoad: {
-        // TEMPORARILY BENCHED - restore to ["juggernaut"] to bring it back.
-        roles: [] as PoliceRole[],
+        roles: ["juggernaut"] as PoliceRole[],
         /**
          * How many may be lying in wait at once, counted apart from the main fleet.
          *
@@ -1583,7 +1581,15 @@ export const CONFIG = {
            * called it: uncalibrated. +0.22 fires that much earlier, centring the
            * error; the homing absorbs both tails.
            */
-          leadTime: -0.458,
+          /**
+         * Was -0.458, rail-calibrated for the full-speed truck. At half pace
+         * the truck fires EARLY instead (+0.5) and the closed-loop exit does
+         * the timing: hold at the lip while early, lunge when the schedule
+         * says. Slow piston, same trap.
+         */
+        leadTime: 0.5,
+        muffChance: 0.2,
+        muffLead: 0.5,
           /** Assumed fraction of top speed out of the spur. */
           launchSpeedFactor: 0.95,
           /** Reads your pace from further out, so the commitment is better informed. */
@@ -1599,7 +1605,7 @@ export const CONFIG = {
           /** Aim this far past the intercept, so the contact is across them, not alongside. */
           strikeDepth: 15,
           /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 1.3,
+          launchSpeedBonus: 0.6,
           /**
            * The pin. Contact during the strike converts the run into a hold: the unit
            * keeps its nose in the player and grinds them into whatever is behind for
@@ -1713,7 +1719,7 @@ export const CONFIG = {
         blocker: 12,
         interceptor: 13,
         heavy: 999,
-        elite: 13,
+        elite: 999,
         juggernaut: 999,
         rig: 999,
       } as Record<PoliceRole, number>,

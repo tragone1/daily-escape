@@ -125,6 +125,8 @@ export class PoliceCar {
   private rigYaw: number | null = null;
   private stunTimer = 0;
   private stunCooldown = 0;
+  /** Deliberate fallibility: a muffed strike fires off-time with no burn. */
+  strikeMuff = 0;
   private rigClampLo = -Infinity;
   private rigClampHi = Infinity;
   private slideTimer = 0;
@@ -313,6 +315,7 @@ export class PoliceCar {
     this.rigClampHi = Infinity;
     this.stunTimer = 0;
     this.stunCooldown = 0;
+    this.strikeMuff = 0;
     this.slideTimer = 0;
     this.slideHold = 0;
     this.slideHoldSpent = 0;
@@ -1128,7 +1131,7 @@ export class PoliceCar {
             // early - without this taper the truck crosses car-lengths ahead.
             exThrottle = Math.max(0.3, 1 - (schedE - 0.35) * 1.4);
             this.exitClock = Math.max(this.exitClock, 0.2);
-          } else if (lateE < -0.04 && v.speed < 46 && (approachingE || pdE < 25)) {
+          } else if (lateE < -0.04 && v.speed < 46 && this.strikeMuff === 0 && (approachingE || pdE < 25)) {
             // Honest lateness picks WHEN to burn; how hard gears off how much the
             // player has outrun the speed the launch was solved for. A punctual
             // pass burns mildly, a boosting one gets the full afterburner.
@@ -1462,6 +1465,7 @@ export class PoliceCar {
           strikeLate < -0.04 &&
           tl > 6 &&
           v.speed < 46 &&
+          this.strikeMuff === 0 &&
           (strikeApproaching || tl < 25)
         ) {
           const pSpdB = Math.hypot(ctx.player.vx, ctx.player.vz);
@@ -1763,8 +1767,19 @@ export class PoliceCar {
         0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
       // A shot that is already stale at first sight lands behind the player every
       // time - hold instead; a no-show is invisible, a tail-graze is a complaint.
-      if (theirEtaE < ourEtaE + cfg.leadTime - 0.6) return false;
-      return theirEtaE <= ourEtaE + cfg.leadTime;
+      if (cfg.leadTime > 0) {
+      /*
+       * Slow-piston mode (positive lead = the detuned truck): fire EARLY on
+       * principle and let the closed-loop exit hold at the lip and time the
+       * lunge. The old stale guard compared against a fast truck's ETA and
+       * refused nearly every honest approach at half pace. Refuse only a
+       * player already on the mouth.
+       */
+      if (theirEtaE < 0.35 + Math.max(0, this.strikeMuff)) return false;
+      return theirEtaE <= ourEtaE + cfg.leadTime + this.strikeMuff;
+    }
+    if (theirEtaE < ourEtaE + cfg.leadTime + this.strikeMuff - 0.6) return false;
+      return theirEtaE <= ourEtaE + cfg.leadTime + this.strikeMuff;
     }
     const lead =
       ctx.terrain.progressAt(mouth.x, mouth.z) -

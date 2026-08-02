@@ -1381,7 +1381,10 @@ export const CONFIG = {
         blocker: 3,
         heavy: 4,
         elite: 6,
-        juggernaut: 7,
+        // TEMPORARILY BENCHED (999 = never unlocks): the player wants the
+        // juggernaut out for now. Restore by setting this back to 7 and
+        // openRoad.roles back to ["juggernaut"] - all mechanics are intact.
+        juggernaut: 999,
         rig: 5,
       } as Record<PoliceRole, number>,
       /**
@@ -1419,7 +1422,8 @@ export const CONFIG = {
        * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
       openRoad: {
-        roles: ["juggernaut"] as PoliceRole[],
+        // TEMPORARILY BENCHED - restore to ["juggernaut"] to bring it back.
+        roles: [] as PoliceRole[],
         /**
          * How many may be lying in wait at once, counted apart from the main fleet.
          *

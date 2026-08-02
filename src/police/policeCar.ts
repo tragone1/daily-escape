@@ -1767,7 +1767,7 @@ export class PoliceCar {
         0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
       // A shot that is already stale at first sight lands behind the player every
       // time - hold instead; a no-show is invisible, a tail-graze is a complaint.
-      if (cfg.leadTime > 0) {
+      if ((cfg as { pistonMode?: boolean }).pistonMode) {
       /*
        * Slow-piston mode (positive lead = the detuned truck): fire EARLY on
        * principle and let the closed-loop exit hold at the lip and time the

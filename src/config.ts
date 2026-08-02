@@ -820,7 +820,7 @@ export const CONFIG = {
      */
     juggernaut: {
       vehicle: policeVehicle({
-        maxSpeed: 30,
+        maxSpeed: 36,
         accel: 31,
         steerRateMax: 1.95,
         gripNormal: 9.2,
@@ -1587,8 +1587,10 @@ export const CONFIG = {
          * the timing: hold at the lip while early, lunge when the schedule
          * says. Slow piston, same trap.
          */
-        leadTime: 0.5,
-        muffChance: 0.2,
+        leadTime: 0,
+        /** Fire-early-and-hold mode for a crippled truck; off = ETA-matched. */
+        pistonMode: false,
+        muffChance: 0.1,
         muffLead: 0.5,
           /** Assumed fraction of top speed out of the spur. */
           launchSpeedFactor: 0.95,
@@ -1605,7 +1607,7 @@ export const CONFIG = {
           /** Aim this far past the intercept, so the contact is across them, not alongside. */
           strikeDepth: 15,
           /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 0.6,
+          launchSpeedBonus: 0.95,
           /**
            * The pin. Contact during the strike converts the run into a hold: the unit
            * keeps its nose in the player and grinds them into whatever is behind for

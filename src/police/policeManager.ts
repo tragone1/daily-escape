@@ -969,7 +969,7 @@ export class PoliceManager {
        */
       const len = Math.hypot(dx - mx, dz - mz);
       const isArmoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
-      const t = isArmoured ? Math.min(0.85, 12 / Math.max(1, len)) : pacing.ambushDepth;
+      const t = isArmoured ? Math.min(0.85, 16 / Math.max(1, len)) : pacing.ambushDepth;
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;
       if (Math.hypot(x - mx, z - mz) < 5) continue;

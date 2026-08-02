@@ -145,6 +145,14 @@ export class Terrain {
     let bestAlong = 0;
     let bestInApron = false;
 
+    // Runner-up at the SAME priority, for height blending near ownership flips.
+    let second: CourseSegment | null = null;
+    let secondMargin = -Infinity;
+    let secondAlong = 0;
+    let secondGeo = -Infinity;
+    let bestNominal = -1;
+    let bestGeo = -Infinity;
+
     let nearest: CourseSegment = this.segments[0];
     let nearestDist = Infinity;
     let nearestAlong = 0;
@@ -201,21 +209,49 @@ export class Terrain {
             ? Math.min(insideAcross, 0.05)
             : Math.min(insideAcross, insideAlong + ROAD_PRIORITY);
       // Priority first: a narrow rut laid over a wide mud lane must win, even though the
-      // point sits far more deeply inside the lane beneath it.
+      // point sits far more deeply inside the lane beneath it. Within a priority
+      // tier, MAIN segments outrank branch spurs: an alley whose tip pokes under
+      // an elevated road must never drag the road's ground down to alley level -
+      // that was the section-twelve trench that swallowed whole squads.
+      const effPrio = seg.priority * 2 + (seg.branch ? 0 : 1);
       const inside = margin >= 0;
+      // Smooth depth for HEIGHT blending: distance to the true outer boundary,
+      // free of the road-priority bonus (whose +1000 cliff at the sealed edge
+      // would snap blend weights and put a half-height step right there).
+      const geo = Math.min(seg.halfWidth + seg.shoulder - acrossAbs, insideAlong);
       const better =
         inside && bestPriority >= 0
-          ? seg.priority > bestPriority ||
-            (seg.priority === bestPriority && margin > bestMargin)
+          ? effPrio > bestPriority ||
+            (effPrio === bestPriority && margin > bestMargin)
           : inside
             ? true
             : bestPriority < 0 && margin > bestMargin;
       if (better) {
+        if (inside && best !== null && bestNominal === seg.priority) {
+          // The displaced owner becomes the blend partner - including across the
+          // main/branch rank, so an alley floor RAMPS up to the road crossing
+          // over it rather than stepping.
+          second = best;
+          secondMargin = bestMargin;
+          secondGeo = bestGeo;
+          secondAlong = bestAlong;
+        } else {
+          second = null;
+          secondMargin = -Infinity;
+          secondGeo = -Infinity;
+        }
         bestMargin = margin;
-        bestPriority = inside ? seg.priority : -1;
+        bestPriority = inside ? effPrio : -1;
+        bestNominal = inside ? seg.priority : -1;
+        bestGeo = geo;
         best = seg;
         bestAlong = clamped;
         bestInApron = inApron;
+      } else if (inside && seg.priority === bestNominal && margin > secondMargin) {
+        second = seg;
+        secondMargin = margin;
+        secondGeo = geo;
+        secondAlong = clamped;
       }
 
       // Distance to the segment's centre line, for the off-course fallback.
@@ -236,12 +272,39 @@ export class Terrain {
     const acrossHere = Math.abs(this.local(seg, x, z).across);
     const onShoulder = seg.shoulder > 0 && acrossHere > seg.halfWidth;
 
+    /*
+     * CONTINUOUS HEIGHT ACROSS OWNERSHIP FLIPS. The winner-take-all pick is
+     * right for surface and priority, but where two same-priority segments
+     * overlap - the elbow of a sharp bend on a crest - their linear height
+     * profiles can disagree by car-heights at the flip line, which put a
+     * vertical step in the ROAD: a physics pothole, and a torn ribbon right
+     * above it, since the mesh reads the same sampler. Near the flip line
+     * (margins within BLEND of each other) the two heights are mixed, 50/50
+     * exactly at the line, pure owner a few units inside - so the seam that
+     * swallowed section twelve cannot exist at any bend on any seed.
+     */
+    let height = seg.ay + seg.grade * along;
+    let gradX = seg.grade * seg.dx;
+    let gradZ = seg.grade * seg.dz;
+    if (onCourse && second !== null && secondGeo > 0 && second !== seg) {
+      const BLEND = 9;
+      const FADE = 4;
+      const w = Math.max(0, Math.min(1, (bestGeo - secondGeo) / BLEND));
+      // The partner's pull fades to zero at its own boundary, so blending never
+      // switches off with a step - it dissolves.
+      const fade = Math.max(0, Math.min(1, secondGeo / FADE));
+      const influence = (0.5 - 0.5 * w) * fade;
+      height = height * (1 - influence) + (second.ay + second.grade * secondAlong) * influence;
+      gradX = gradX * (1 - influence) + second.grade * second.dx * influence;
+      gradZ = gradZ * (1 - influence) + second.grade * second.dz * influence;
+    }
+
     return {
-      height: seg.ay + seg.grade * along,
+      height,
       // An apron is grass whatever the road surface was: it is the corner's run-off.
       surface: onShoulder || bestInApron ? "grass" : seg.surface,
-      gradX: seg.grade * seg.dx,
-      gradZ: seg.grade * seg.dz,
+      gradX,
+      gradZ,
       onCourse,
       segment: seg,
     };

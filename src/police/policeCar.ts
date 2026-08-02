@@ -1592,6 +1592,16 @@ export class PoliceCar {
       const rate = box.pressRate * (1 + slow * 1.5);
       const ceiling = box.pressMax + slow * box.slowPressBonus;
       this.boxPress = clamp(this.boxPress + (atStation ? rate : -rate) * dt, 0, Math.min(0.92, ceiling));
+      /*
+       * CONVERTING A STOP: hold the line, don't dive in. The capture meter
+       * counts a blocker anywhere within its 15-unit ring, so a front-liner
+       * pressing deep into the 20-car scrum gains nothing and gets chewed up
+       * and spat out the BACK by pile physics - which is how a stopped player
+       * kept finding every lane ahead open again.
+       */
+      if (ctx.player.speed < CONFIG.police.shared.box.convertSpeed) {
+        this.boxPress = Math.min(this.boxPress, 0.35);
+      }
       goal = boxGoal(ctx, this.boxSlot, this.boxPress);
 
       /*
@@ -1927,6 +1937,9 @@ export class PoliceCar {
 
     const player = ctx.player;
     const d = this.distanceToPlayer(player);
+    // A stopped player needs enveloping, not another shove from behind:
+    // while the pack converts, no NEW charges are thrown at all.
+    if (player.speed < CONFIG.police.shared.box.convertSpeed) return;
     if (d < cfg.minRange || d > cfg.maxRange) return;
     const err = Math.abs(wrapAngle(headingOf(player.x - v.x, player.z - v.z) - v.heading));
     if (err > cfg.maxHeadingError) return;

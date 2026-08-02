@@ -152,6 +152,11 @@ export class Terrain {
     let secondGeo = -Infinity;
     let bestNominal = -1;
     let bestGeo = -Infinity;
+    // Nearest MAIN segment this point sits just OUTSIDE of - drives the
+    // branch-to-main approach ramp.
+    let nearMain: CourseSegment | null = null;
+    let nearMainGeo = -Infinity;
+    let nearMainAlong = 0;
 
     let nearest: CourseSegment = this.segments[0];
     let nearestDist = Infinity;
@@ -226,11 +231,23 @@ export class Terrain {
           : inside
             ? true
             : bestPriority < 0 && margin > bestMargin;
+      // Track the nearest main lying just outside this point, for the
+      // branch approach ramp (bonus-free geometry; RAMP window of 10).
+      if (!seg.branch && !inside && geo > -10 && geo > nearMainGeo) {
+        nearMain = seg;
+        nearMainGeo = geo;
+        nearMainAlong = clamped;
+      }
       if (better) {
-        if (inside && best !== null && bestNominal === seg.priority) {
-          // The displaced owner becomes the blend partner - including across the
-          // main/branch rank, so an alley floor RAMPS up to the road crossing
-          // over it rather than stepping.
+        if (
+          inside &&
+          best !== null &&
+          bestNominal === seg.priority &&
+          best.branch === seg.branch
+        ) {
+          // The displaced owner becomes the blend partner - SAME RANK ONLY.
+          // Cross-rank blending was the section-twelve sag: it dragged the
+          // sovereign road down toward the alley beneath it.
           second = best;
           secondMargin = bestMargin;
           secondGeo = bestGeo;
@@ -247,7 +264,13 @@ export class Terrain {
         best = seg;
         bestAlong = clamped;
         bestInApron = inApron;
-      } else if (inside && seg.priority === bestNominal && margin > secondMargin) {
+      } else if (
+        inside &&
+        seg.priority === bestNominal &&
+        best !== null &&
+        seg.branch === best.branch &&
+        margin > secondMargin
+      ) {
         second = seg;
         secondMargin = margin;
         secondGeo = geo;
@@ -289,6 +312,14 @@ export class Terrain {
     if (onCourse && second !== null && secondGeo > 0 && second !== seg) {
       const BLEND = 9;
       const FADE = 4;
+      // Blending heals ownership seams between CONTINUOUS surfaces. Two
+      // same-rank roads apart in height are separate DECKS of a switchback
+      // brushing shoulders - averaging them sagged the upper road below
+      // grade. Decks keep their own ground.
+      const deckGap = Math.abs(
+        height - (second.ay + second.grade * secondAlong),
+      );
+      if (deckGap < 2.5) {
       const w = Math.max(0, Math.min(1, (bestGeo - secondGeo) / BLEND));
       // The partner's pull fades to zero at its own boundary, so blending never
       // switches off with a step - it dissolves.
@@ -297,6 +328,21 @@ export class Terrain {
       height = height * (1 - influence) + (second.ay + second.grade * secondAlong) * influence;
       gradX = gradX * (1 - influence) + second.grade * second.dx * influence;
       gradZ = gradZ * (1 - influence) + second.grade * second.dz * influence;
+      }
+    }
+    /*
+     * A branch point APPROACHING a main's footprint ramps up to the main's
+     * height, reaching it exactly at the boundary - inside, the main owns the
+     * ground outright (mains outrank branches). The road never dips; the
+     * alley climbs. This killed the section-twelve sag AND its trench.
+     */
+    if (onCourse && seg.branch && nearMain !== null) {
+      const RAMP = 10;
+      const wM = Math.max(0, Math.min(1, 1 + nearMainGeo / RAMP));
+      const hM = nearMain.ay + nearMain.grade * nearMainAlong;
+      height = height * (1 - wM) + hM * wM;
+      gradX = gradX * (1 - wM) + nearMain.grade * nearMain.dx * wM;
+      gradZ = gradZ * (1 - wM) + nearMain.grade * nearMain.dz * wM;
     }
 
     return {

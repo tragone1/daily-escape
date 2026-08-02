@@ -539,6 +539,36 @@ export class Game {
       return;
     }
 
+    /*
+     * DECK-MISMATCH TOW. Off the course AND at the wrong height for this part
+     * of the route means the player is stranded behind walls on ground that
+     * belongs to some other stretch of road (a slam over a crest barrier puts
+     * them there) - the 2D tow never fires because there IS ground underfoot,
+     * and the still-driving exemption strands them forever. Wrong deck is
+     * never legitimate: tow at once, any speed, any seed.
+     */
+    if (!ground.onCourse) {
+      const routeNode = this.world.nav.nodeAtProgress(progress);
+      // Compare against where they LAST legitimately drove - the nearest-road
+      // reference is circular (a stranded player's nearest road IS the wrong
+      // deck they are standing on, so it always reads as fine).
+      const refY =
+        this.lastOnCourse.x !== 0 || this.lastOnCourse.z !== 0
+          ? this.lastOnCourse.y
+          : routeNode.y;
+      if (refY - p.y > 2.8) {
+        const back =
+          this.lastOnCourse.x !== 0 || this.lastOnCourse.z !== 0
+            ? this.lastOnCourse
+            : { x: routeNode.x, z: routeNode.z, y: routeNode.y, heading: p.heading };
+        p.reset(back.x, back.z, back.heading, back.y);
+        this.camera.reset(p);
+        this.offCourseTimer = 0;
+        this.hud.announce("TOWED BACK", false);
+        return;
+      }
+    }
+
     if (!ground.onCourse) this.pushBackOnCourse(dt, ground);
 
     if (ground.onCourse) {

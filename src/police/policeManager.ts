@@ -226,9 +226,14 @@ export class PoliceManager {
     }
 
     this.boxTimer -= dt;
+    const boxCfg = CONFIG.police.shared.box;
+    // Converting a stop: reassign continuously so the seal tracks the scrum.
+    if (ctx.player.speed < boxCfg.convertSpeed) {
+      this.boxTimer = Math.min(this.boxTimer, boxCfg.convertInterval);
+    }
     if (this.boxTimer <= 0) {
       // Aggro reforms the box faster: the trap keeps up with a faster player.
-      this.boxTimer = CONFIG.police.shared.box.interval * (1 - this.aggro * 0.6);
+      this.boxTimer = boxCfg.interval * (1 - this.aggro * 0.6);
       this.assignBox(ctx);
     }
 
@@ -513,7 +518,9 @@ export class PoliceManager {
      * as help rather than as an arrest.
      */
     const slow = player.speed < cfg.slowPlayerSpeed;
-    const slots = cfg.slots.slice(0, cfg.maxAssigned);
+    // Converting: open the outer ring - every free chaser gets a station.
+    const converting = player.speed < cfg.convertSpeed;
+    const slots = cfg.slots.slice(0, converting ? cfg.slots.length : cfg.maxAssigned);
     /*
      * Late-game discipline: pure side stations fill FIRST (rank 0), then the
      * forward arc, then the rear. The pack stops being a mob that shoves from

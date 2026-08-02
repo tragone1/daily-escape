@@ -688,6 +688,16 @@ export const CONFIG = {
         /** How many stations are handed out at once — one per direction. */
         maxAssigned: 8,
         /**
+         * THE CONVERT. Below this player speed the pack switches from chasing
+         * to ARRESTING: every free chaser takes a station (the outer ring
+         * opens), assignment re-runs continuously, and fresh rear charges are
+         * suppressed - a stopped player needs enveloping, not another shove
+         * from behind. This is what turns a successful drift-stop into a box
+         * instead of an escape.
+         */
+        convertSpeed: 12,
+        convertInterval: 0.25,
+        /**
          * From this section (0-indexed; 9 = round ten) the box fills its pure
          * SIDE stations first: two chasers ride level with the player pinning
          * the lanes before anyone takes a rear station. Fewer cars shoving from
@@ -715,6 +725,15 @@ export const CONFIG = {
           { x: -6, z: -6.5 },
           { x: 6, z: -6.5 },
           { x: 0, z: -8 },
+          // THE OUTER RING - manned only while converting a stop into an
+          // arrest: a second seal across the escape lanes ahead, wider
+          // flanks, a deep back-stop. See convertSpeed below.
+          { x: -3.4, z: 12 },
+          { x: 3.4, z: 12 },
+          { x: 0, z: 15 },
+          { x: -8.5, z: 4 },
+          { x: 8.5, z: 4 },
+          { x: 0, z: -12 },
         ],
         /**
          * Pace held while on station, as a multiple of the player's own speed. Ahead of

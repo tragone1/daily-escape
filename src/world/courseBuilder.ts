@@ -197,6 +197,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   buildSpineRibbons(r, spineSlices);
   buildSpineDecor(r, spineSlices, colliders, segments);
   buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
+  cliffRailPass(r, spineSlices, colliders, terrain);
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
@@ -370,7 +371,23 @@ function onOtherRoad(
     const along = rx * other.dx + rz * other.dz;
     const across = rx * other.dz - rz * other.dx;
     if (along < -margin || along > other.length + margin) continue;
-    if (Math.abs(across) <= other.halfWidth + margin) return true;
+    if (Math.abs(across) <= other.halfWidth + margin) {
+      /*
+       * HEIGHT-AWARE: a road three car-heights BELOW is not a road this one
+       * connects to - it is a deck of the switchback passing underneath.
+       * The 2D veto was deleting every rail along elevated bends that
+       * crossed above lower roads or alley tips, leaving an unguarded
+       * cliff edge the player sailed off ('through the floor, around the
+       * bend'). Grade-separated neighbours keep their walls.
+       */
+      const hOther =
+        other.ay + other.grade * Math.max(0, Math.min(other.length, along));
+      const sx = x - self.ax;
+      const sz = z - self.az;
+      const selfAlong = Math.max(0, Math.min(self.length, sx * self.dx + sz * self.dz));
+      const hSelf = self.ay + self.grade * selfAlong;
+      if (Math.abs(hOther - hSelf) <= 2.2) return true;
+    }
   }
   return false;
 }
@@ -841,6 +858,74 @@ function buildSpineWallLines(
       }
     }
     flushRun();
+  }
+}
+
+/*
+ * THE CLIFF-RAIL PASS - the last line of wall building, on every seed.
+ *
+ * Whatever the themed wall rules decided, no drivable edge may stand open
+ * above a drop: theme exemptions, junction vetoes and stub-chain seams have
+ * each been caught deleting the rail off an elevated bend, and a player
+ * carrying speed around one sailed off into the void ('through the floor,
+ * around the bend'). This pass re-walks every spine slice, probes just past
+ * the run-off on each side, and where the ground falls away with no collider
+ * standing there, it plants a plain guard rail. Belt, braces, every seed.
+ */
+function cliffRailPass(
+  r: Renderer,
+  slices: CourseSegment[],
+  colliders: StaticCollider[],
+  terrain?: Terrain,
+): void {
+  if (!terrain) return;
+  const style = WALL_STYLE.rail;
+  const placed: { x: number; z: number }[] = [];
+  for (const seg of slices) {
+    if (seg.length < 2) continue;
+    const midX = (seg.ax + seg.bx) / 2;
+    const midZ = (seg.az + seg.bz) / 2;
+    const midY = (seg.ay + seg.by) / 2;
+    for (let side = -1; side <= 1; side += 2) {
+      const off = seg.halfWidth + (seg.shoulder || 0) + 1.6;
+      const wx = midX + seg.dz * off * side;
+      const wz = midZ - seg.dx * off * side;
+      // The drop test, just beyond where a wall would stand.
+      const drop = midY - terrain.heightAt(wx + seg.dz * 4 * side, wz - seg.dx * 4 * side);
+      if (drop < 2.5) continue;
+      // Any collider already guarding this edge?
+      let guarded = false;
+      for (const c of colliders) {
+        const dx = c.obb.x - wx;
+        const dz = c.obb.z - wz;
+        if (dx * dx + dz * dz < 49) {
+          guarded = true;
+          break;
+        }
+      }
+      if (!guarded) {
+        for (const q of placed) {
+          const dx = q.x - wx;
+          const dz = q.z - wz;
+          if (dx * dx + dz * dz < 25) {
+            guarded = true;
+            break;
+          }
+        }
+      }
+      if (guarded) continue;
+      const span = Math.max(seg.length + 2, 8);
+      const heading = Math.atan2(seg.dx, seg.dz);
+      const h = style.minHeight;
+      const mesh = r.createMesh(
+        { kind: "box", width: style.thickness, height: h, depth: span },
+        { color: [...style.color], emissive: 0.24, isStatic: true },
+      );
+      mesh.position.set(wx, midY + h / 2, wz);
+      mesh.rotation.y = heading;
+      addCollider(colliders, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY + h);
+      placed.push({ x: wx, z: wz });
+    }
   }
 }
 

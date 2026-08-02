@@ -1565,8 +1565,10 @@ export const CONFIG = {
          * addition to the squad rather than a substitution for part of it.
          */
         maxActive: 3,
-        secondAt: 12,
-        thirdAt: 26,
+        // Staged for the round-16 return: one trap at unlock, a second from
+        // round 19, a third from round 23 - the count grows as sections pass.
+        secondAt: 18,
+        thirdAt: 22,
         ambush: {
           /**
            * Slack on the unit's own timing estimate, seconds.

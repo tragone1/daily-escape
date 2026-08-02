@@ -698,6 +698,15 @@ export const CONFIG = {
         convertSpeed: 12,
         convertInterval: 0.25,
         /**
+         * The MENACING UPTICK, from section ten on: the arrest reflex fires at
+         * higher and higher speeds (a mere slowdown becomes an opportunity),
+         * reassignment tightens, and front-seekers burn boost to cut the
+         * player off. Solid from round one; frightening deep.
+         */
+        convertSpeedPerSection: 0.4,
+        convertSpeedMax: 18,
+        convertIntervalMin: 0.12,
+        /**
          * From this section (0-indexed; 9 = round ten) the box fills its pure
          * SIDE stations first: two chasers ride level with the player pinning
          * the lanes before anyone takes a rear station. Fewer cars shoving from

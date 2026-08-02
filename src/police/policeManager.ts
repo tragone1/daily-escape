@@ -228,9 +228,27 @@ export class PoliceManager {
     this.boxTimer -= dt;
     const boxCfg = CONFIG.police.shared.box;
     // Converting a stop: reassign continuously so the seal tracks the scrum.
-    if (ctx.player.speed < boxCfg.convertSpeed) {
-      this.boxTimer = Math.min(this.boxTimer, boxCfg.convertInterval);
+    // Both the trigger speed and the cadence sharpen with the sections.
+    const convSpeed = Math.min(
+      boxCfg.convertSpeedMax,
+      boxCfg.convertSpeed + Math.max(0, this.sectionNow - 9) * boxCfg.convertSpeedPerSection,
+    );
+    const convInterval = Math.max(
+      boxCfg.convertIntervalMin,
+      boxCfg.convertInterval - Math.max(0, this.sectionNow - 9) * 0.01,
+    );
+    if (ctx.player.speed < convSpeed) {
+      this.boxTimer = Math.min(this.boxTimer, convInterval);
     }
+    // Parked rigs are VEHICLES: invisible to the squad's static-world feelers.
+    // Publish them each tick so colleagues can steer around instead of piling
+    // into the back of their own roadblock in a queue.
+    const rigObs: { x: number; z: number; r: number }[] = [];
+    for (const u of this.units) {
+      if (u.role !== "rig" || !u.active || u.destroyed) continue;
+      if (u.parkedPost) rigObs.push({ x: u.vehicle.x, z: u.vehicle.z, r: 6.6 });
+    }
+    for (const u of this.units) u.rigObstacles = rigObs;
     if (this.boxTimer <= 0) {
       // Aggro reforms the box faster: the trap keeps up with a faster player.
       this.boxTimer = boxCfg.interval * (1 - this.aggro * 0.6);
@@ -519,7 +537,12 @@ export class PoliceManager {
      */
     const slow = player.speed < cfg.slowPlayerSpeed;
     // Converting: open the outer ring - every free chaser gets a station.
-    const converting = player.speed < cfg.convertSpeed;
+    const converting =
+      player.speed <
+      Math.min(
+        cfg.convertSpeedMax,
+        cfg.convertSpeed + Math.max(0, this.sectionNow - 9) * cfg.convertSpeedPerSection,
+      );
     const slots = cfg.slots.slice(0, converting ? cfg.slots.length : cfg.maxAssigned);
     /*
      * Late-game discipline: pure side stations fill FIRST (rank 0), then the

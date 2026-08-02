@@ -140,6 +140,8 @@ export class PoliceCar {
   private slideExecErr = 0;
   /** Set by the director so per-unit skill can scale with the run. */
   sectionKnown = 0;
+  /** Parked rigs, published by the director - vehicles the feelers cannot see. */
+  rigObstacles: { x: number; z: number; r: number }[] = [];
   private slideTravelX = 0;
   private slideTravelZ = 1;
   private slideSpeed = 0;
@@ -164,6 +166,15 @@ export class PoliceCar {
     this.rigClampHi = clampHi;
     this.rigScore = -Infinity;
     this.rigTimer = Infinity;
+  }
+
+  /** Convert threshold, sharpened by the run's progress (see box config). */
+  private convertSpeedNow(): number {
+    const b = CONFIG.police.shared.box;
+    return Math.min(
+      b.convertSpeedMax,
+      b.convertSpeed + Math.max(0, this.sectionKnown - 9) * b.convertSpeedPerSection,
+    );
   }
 
   /** The manager reads these to form two-rig walls beside a standing block. */
@@ -1599,7 +1610,7 @@ export class PoliceCar {
        * and spat out the BACK by pile physics - which is how a stopped player
        * kept finding every lane ahead open again.
        */
-      if (ctx.player.speed < CONFIG.police.shared.box.convertSpeed) {
+      if (ctx.player.speed < this.convertSpeedNow()) {
         this.boxPress = Math.min(this.boxPress, 0.35);
       }
       goal = boxGoal(ctx, this.boxSlot, this.boxPress);
@@ -1939,7 +1950,7 @@ export class PoliceCar {
     const d = this.distanceToPlayer(player);
     // A stopped player needs enveloping, not another shove from behind:
     // while the pack converts, no NEW charges are thrown at all.
-    if (player.speed < CONFIG.police.shared.box.convertSpeed) return;
+    if (player.speed < this.convertSpeedNow()) return;
     if (d < cfg.minRange || d > cfg.maxRange) return;
     const err = Math.abs(wrapAngle(headingOf(player.x - v.x, player.z - v.z) - v.heading));
     if (err > cfg.maxHeadingError) return;
@@ -2205,6 +2216,24 @@ export class PoliceCar {
     this.input.brake = brake;
     this.input.steer = steer;
     this.input.boost = this.wantsBoost(absErr, speed, parkDistance, ctx);
+    /*
+     * THE MENACING UPTICK: from section ten, a front-station seeker in a
+     * convert burns its boost to get AHEAD of a slowed player - the normal
+     * boost rules refuse near a slow target, which is exactly backwards
+     * when the job is cutting off their restart.
+     */
+    if (
+      this.sectionKnown >= 9 &&
+      this.boxSlot !== null &&
+      this.boxSlot.z > 0 &&
+      ctx.player.speed < this.convertSpeedNow() &&
+      absErr < 0.5
+    ) {
+      const fB = forwardOf(ctx.player.heading);
+      const leadB =
+        (this.vehicle.x - ctx.player.x) * fB.x + (this.vehicle.z - ctx.player.z) * fB.z;
+      if (leadB < this.boxSlot.z * 0.6) this.input.boost = true;
+    }
   }
 
   /**
@@ -2245,7 +2274,20 @@ export class PoliceCar {
 
     const probe = (offset: number): number => {
       const a = v.heading + offset;
-      return ctx.world.raycastDistance(v.x, v.z, Math.sin(a), Math.cos(a), reach) / reach;
+      const dx = Math.sin(a);
+      const dz = Math.cos(a);
+      let d = ctx.world.raycastDistance(v.x, v.z, dx, dz, reach);
+      // Parked rigs are vehicles - the static raycast is blind to them, which
+      // had whole packs queueing nose-to-tail behind their own roadblock.
+      for (const rig of this.rigObstacles) {
+        const rx = rig.x - v.x;
+        const rz = rig.z - v.z;
+        const t = rx * dx + rz * dz;
+        if (t < 0 || t > reach + rig.r) continue;
+        const perp = Math.abs(rx * dz - rz * dx);
+        if (perp < rig.r) d = Math.min(d, Math.max(0, t - rig.r));
+      }
+      return d / reach;
     };
 
     const left = probe(-cfg.avoidAngle);

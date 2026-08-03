@@ -45,6 +45,7 @@ import { WorldStream } from "./world/worldStream";
  */
 const STREAM_OPENING_SECTIONS = 8;
 import { PickupSystem } from "./world/pickups";
+import { count } from "./telemetry";
 
 
 export class Game {
@@ -277,6 +278,7 @@ export class Game {
   }
 
   begin(): void {
+    if (!this.started) count("run_started");
     this.started = true;
     this.audio.resumeLoops();
     const hint = document.getElementById("focusHint");
@@ -293,6 +295,7 @@ export class Game {
   }
 
   restart(): void {
+    count("restart_used");
     this.state.reset();
     this.player.reset(COURSE_START.x, COURSE_START.z, START_HEADING, COURSE_START.y);
     this.police.reset(this.world.nav);

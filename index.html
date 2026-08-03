@@ -788,6 +788,23 @@
       #muteBtn[aria-pressed="true"] #muteIcon { text-decoration: line-through; }
       body.touch-mode #muteBtn { width: 44px; height: 44px; }
 
+      /*
+       * Safe-area insets.
+       *
+       * `viewport-fit=cover` is set, which is what lets the game fill an
+       * iPhone screen - and also what puts the corners of the interface under
+       * the notch, the rounded corners and the home indicator. These are the
+       * only elements pinned to an edge, so these are the ones that need to
+       * know about it. Zero on every device without insets, so nothing else
+       * moves.
+       */
+      #hud { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+      #restartBtn, #muteBtn { top: calc(14px + env(safe-area-inset-top)); }
+      #focusHint, #overlay, #boardOverlay {
+        padding-top: calc(12px + env(safe-area-inset-top));
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      }
+
       #restartBtn {
         position: absolute;
         top: 16px;

@@ -10,6 +10,7 @@ import { setChildren } from "../compat";
 import { dayKey, dayLabel, dayNumber, msUntilRollover } from "../daily";
 import { challengeFromUrl } from "./share";
 import { BUILD_ID } from "../version";
+import { count } from "../telemetry";
 import {
   fetchBoard,
   fetchDays,
@@ -179,6 +180,7 @@ export class DailyUi {
     }
     setPlayerName(name);
 
+    count("submit_attempted");
     this.submitBtn.disabled = true;
     this.submitBtn.textContent = "SENDING...";
     this.note("Sending...", "");
@@ -193,7 +195,9 @@ export class DailyUi {
         "good",
       );
       clearPending();
+      count("submit_succeeded");
     } catch (err) {
+      count("submit_failed");
       this.submitBtn.disabled = false;
       const message = err instanceof Error ? err.message : "Could not reach the leaderboard.";
       if (err instanceof NetworkError) {

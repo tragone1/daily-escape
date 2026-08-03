@@ -6,6 +6,7 @@
 import { CONFIG } from "../config";
 import type { Surface } from "../world/course";
 import { shareRun } from "./share";
+import { count } from "../telemetry";
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -112,6 +113,7 @@ export class Hud {
     if (!run) return;
     const name = (document.getElementById("nameInput") as HTMLInputElement | null)?.value;
     this.shareBtn.disabled = true;
+    count("share_used");
     const outcome = await shareRun(
       { score: run.score, section: run.section, distance: run.distance },
       name,
@@ -227,6 +229,7 @@ export class Hud {
   }
 
   showResult(summary: RunSummary): void {
+    count("run_ended");
     this.lastRun = summary;
     this.shareBtn.textContent = "SHARE SCORE";
     this.shareBtn.classList.remove("done");

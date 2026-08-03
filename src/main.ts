@@ -3,6 +3,7 @@ import { CONFIG } from "./config";
 import { webgl2Problem } from "./compat";
 import { Game } from "./game";
 import { DEBUG_HOOKS } from "./debugFlag";
+import { count, installErrorReporting, reportError } from "./telemetry";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
 if (!canvas) throw new Error("#renderCanvas not found");
@@ -21,8 +22,12 @@ const report = (message: string): void => {
   else console.error(message);
 };
 
+installErrorReporting();
+count("page_loaded");
+
 const problem = webgl2Problem(canvas);
 if (problem) {
+  reportError("webgl_unsupported", problem);
   report(problem);
 } else {
   try {
@@ -45,6 +50,7 @@ if (problem) {
       (window as unknown as { __cfg: typeof CONFIG }).__cfg = CONFIG;
     }
   } catch (err) {
+    reportError("boot_failed", err);
     report(err instanceof Error ? `${err.message}` : String(err));
   }
 }

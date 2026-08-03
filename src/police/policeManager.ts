@@ -895,13 +895,7 @@ export class PoliceManager {
     // Try the preferred placement first, then fall through the rest: a spur may be out of
     // range, and a walled section has no run-off to sit in, but *something* has to spawn.
     const first = this.pickSpawnMode();
-    // A zero-weight mode is DISABLED, not merely unpreferred: it used to stay
-    // in the fall-through order, so alley ambushes kept happening for every
-    // spawn whose first choice was refused.
-    const weights = CONFIG.police.pacing.spawnWeights;
-    const order: SpawnMode[] = [first, ...SPAWN_MODES.filter((m) => m !== first)].filter(
-      (m) => weights[m] > 0,
-    );
+    const order: SpawnMode[] = [first, ...SPAWN_MODES.filter((m) => m !== first)];
 
     for (const mode of order) {
       if (mode === "ambush" && this.spawnInSpur(unit, ctx, playerProgress)) return true;
@@ -1238,17 +1232,6 @@ export class PoliceManager {
    * Live units within `radius` of the player — drives both the HUD and the capture check.
    * Wrecks and dormant units are excluded: a burnt-out hulk must not be able to arrest you.
    */
-  /** Distance to the closest live unit, for the arrest meter's drain gate. */
-  nearestDistance(x: number, z: number): number {
-    let best = Infinity;
-    for (const u of this.units) {
-      if (!u.active || u.destroyed) continue;
-      const d = Math.hypot(u.vehicle.x - x, u.vehicle.z - z);
-      if (d < best) best = d;
-    }
-    return best;
-  }
-
   countNear(x: number, z: number, radius: number): number {
     let n = 0;
     const r2 = radius * radius;

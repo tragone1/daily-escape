@@ -577,13 +577,13 @@ export const CONFIG = {
         fromSection: 0,
         roles: ["interceptor", "elite", "heavy"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
-        intervalBase: 12,
-        intervalPerSection: 0.5,
-        intervalMin: 5,
+        intervalBase: 9,
+        intervalPerSection: 0.7,
+        intervalMin: 3,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
-        chanceBase: 0.45,
-        chancePerSection: 0.03,
-        chanceMax: 0.8,
+        chanceBase: 0.6,
+        chancePerSection: 0.04,
+        chanceMax: 0.95,
         /**
          * The LINE-UP: before snapping sideways the unit steers to converge on
          * the player's predicted lane, so the broadside lands where the player
@@ -638,11 +638,12 @@ export const CONFIG = {
          * about half the strength of the old objectionable carve, and with
          * the fast pivot they read as drift control.
          */
-        /** Yaw authority through the slide: a hard but human handbrake turn. */
-        spinRate: 5.2,
+        spinRate: 11,
         brake: 0.7,
         slideTime: 1.25,
         holdTime: 1.6,
+        slideAssist: 110,
+        holdAssist: 130,
         /**
          * THE DRIFT SLAM - the whole point of the move, per the player: the
          * car snaps near-perpendicular and KEEPS COMING, sliding sideways on
@@ -651,6 +652,7 @@ export const CONFIG = {
          * grip scrub while the body rides sideways. A miss decays into the
          * standing wall standoff.
          */
+        driftPush: 260,
         /**
          * EXECUTION PERSONALITY. Each slide rolls a pose error off perfect
          * square - quadratic, so small slop is common and the occasional
@@ -730,18 +732,14 @@ export const CONFIG = {
          * expensive.
          */
         slots: [
-          // THE STANDOFF: stations sit a car-length further out than they did.
-          // The pack escorts menacingly instead of grinding paint - ambient
-          // contact was the 'maze of cars' mush, and every hit that remains
-          // is a deliberate, telegraphed attack.
-          { x: 0, z: 12 },
-          { x: -9, z: 8.5 },
-          { x: 9, z: 8.5 },
-          { x: -9.5, z: 0 },
-          { x: 9.5, z: 0 },
-          { x: -8.5, z: -8 },
-          { x: 8.5, z: -8 },
-          { x: 0, z: -11 },
+          { x: 0, z: 9 },
+          { x: -6.5, z: 6.5 },
+          { x: 6.5, z: 6.5 },
+          { x: -7, z: 0 },
+          { x: 7, z: 0 },
+          { x: -6, z: -6.5 },
+          { x: 6, z: -6.5 },
+          { x: 0, z: -8 },
           // THE OUTER RING - manned only while converting a stop into an
           // arrest: a second seal across the escape lanes ahead, wider
           // flanks, a deep back-stop. See convertSpeed below.
@@ -757,11 +755,8 @@ export const CONFIG = {
          * you they run slower and let you close — that is the brake-check; behind you they
          * run faster and push.
          */
-        leadPace: 0.94,
-        // Was 1.12 - rear stations literally drove FASTER than the player, so
-        // the back of the box rode your bumper permanently. Matching pace
-        // keeps them looming without the constant shove.
-        chasePace: 1.0,
+        leadPace: 0.9,
+        chasePace: 1.12,
         /**
          * Pace floor while holding station — but capped to just above the player's own
          * speed.
@@ -1162,24 +1157,17 @@ export const CONFIG = {
        */
       maxRoadShare: 0.62,
       /**
-       * The lane a strip must leave. Raised with the flow model: a hazard is
-       * a dodge test, and the answer has to be comfortably drivable at
-       * speed, not threaded.
+       * Drivable width a strip must always leave. A hazard is a line to pick,
+       * not a wall: at 5.5 the gap existed but could not be taken at speed.
        */
       minGap: 7.5,
       /**
-       * No second hazard within this far of a live one, along the road.
-       * Two strips a few lengths apart is not two dodges, it is a trap with
-       * no line through it - you commit to the gap in the first and the
-       * second is already on you.
+       * Minimum spacing between two hazards of the SAME kind, along the course.
+       * A strip you dodge into a second strip is not a test of skill, it is a
+       * corridor with no line through it.
        */
       minSeparation: 150,
-      /**
-       * A different hazard may sit closer than a twin, but not close enough
-       * to make dodging one mean eating the other. (Applying the full
-       * same-kind spacing across kinds starved spikes out entirely: the
-       * fleet's oil is everywhere.)
-       */
+      /** The same, between hazards of different kinds - oil right after spikes. */
       minSeparationCross: 65,
 
       /** Live hazards allowed on the course at once, per kind. */
@@ -1220,12 +1208,7 @@ export const CONFIG = {
       spike: {
         /** First section it can appear in. */
         unlockSection: 3,
-        /**
-         * Classes that carry it: the ones that get in front of you on
-         * purpose. The ELITE joins them for the deep game - interceptor and
-         * blocker both retire in the early teens, which left the late fleet
-         * with no deployables at all and nothing but ramming.
-         */
+        /** Classes that carry it: the ones that get in front of you on purpose. */
         roles: ["interceptor", "blocker", "elite"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
@@ -1357,13 +1340,7 @@ export const CONFIG = {
        */
       // Every class ambushes from alleys - that is the design. The juggernaut is
       // simply the one class that arrives no other way.
-      /**
-       * FLOW-MODEL TEST: alley ambushes disabled (was 9). They spring from
-       * concealment at point-blank range, which under the impact-driven
-       * meter is a near-unavoidable third of the bar - too effective to
-       * read and dodge. Restore the 9 to bring them back.
-       */
-      spawnWeights: { ambush: 1.2, side: 1.5, behind: 2.5, ahead: 3.0 },
+      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 3.0 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.
@@ -1380,15 +1357,8 @@ export const CONFIG = {
       /** Ambush spurs are only used within this window ahead of the player. */
       ambushLeadMin: 85,
       ambushLeadMax: 340,
-      /**
-       * How far down the spur the unit waits, as a fraction of its length.
-       *
-       * Shallow, because it is not hiding. A side street is another way onto the
-       * road, and a car that pulls out of one is only worth the surprise it is
-       * not: seated near the mouth it can be out and straight before the player
-       * is on top of it.
-       */
-      ambushDepth: 0.4,
+      /** How far down the spur the unit waits, as a fraction of its length. */
+      ambushDepth: 0.72,
       /**
        * The ambush is a *timed* release, and that is the whole mechanic.
        *
@@ -1447,41 +1417,6 @@ export const CONFIG = {
         launchSpeedBonus: 0.75,
         /** Once the player is past, come out anyway and join the chase from behind. */
         releaseBehindRange: 90,
-        /**
-         * The fleet's alley is an ENTRANCE, not a trap.
-         *
-         * Timed to arrive with the player it was a broadside out of a blind spot,
-         * which is not a chase - it is a wall you could not have seen. So a fleet
-         * car pulls out with a head start: it reaches the road this many seconds
-         * before the player gets there, straightens up, and is rolling by the time
-         * they arrive. Everything after that is the ordinary chase - the same
-         * gliding alongside and sliding across that any other car does.
-         */
-        emergeHeadStart: 2.6,
-        /**
-         * Below this much road left between the mouth and the player, there is no
-         * longer room to get out in front. It waits for them to go past and joins
-         * in behind rather than pulling across their nose.
-         */
-        emergeMinLead: 70,
-        /**
-         * After clearing the mouth, run down-course for this long before the
-         * ordinary chase takes the wheel.
-         *
-         * A car leaves a side street pointing across the road, and its target is
-         * behind it - handed straight to the chase it stood on the brakes and
-         * swung round to face the player, which is a car stopped broadside in
-         * the road, not a police car joining a pursuit. Merging first means it
-         * is up to speed and pointing the right way when they arrive, and then
-         * it is just another car in front of you.
-         */
-        mergeTime: 3.0,
-        /** Speed it comes up to the kerb line at, before turning onto the road. */
-        mergeApproachSpeed: 13,
-        /** Allowance for swinging out of the mouth and onto the road, seconds. */
-        mergeTurnTime: 1.2,
-        /** How far down-course it aims while merging. */
-        mergeLead: 45,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
         maxWait: 24,
         // Pin fields exist for type unity with the openRoad ambush block; only the
@@ -1624,8 +1559,8 @@ export const CONFIG = {
        * The stopped-player swarm does not live here - it lives in wake persistence,
        * pool depth and the relaxed slow-player spawn floor, which are untouched.
        */
-      baseActive: 6,
-      activePerSection: 0.85,
+      baseActive: 7,
+      activePerSection: 1.4,
       /**
        * Section one only, and it equals the opening set exactly: two wave cars, three
        * chasers, two alley ambushers. No wake-fill pack at all - the first fresh face
@@ -1648,14 +1583,14 @@ export const CONFIG = {
        * and aggro - speed to +16, charges quicker and more frequent, boxes reformed
        * faster - rather than raw headcount.
        */
-      maxActive: 14,
+      maxActive: 20,
       /**
        * The body count PLATEAUS at 22, which the 1.4/section base ramp reaches
        * naturally at round twelve - by design the game gets harder after that
        * through class upgrades, aggro, and technique, never through more cars:
        * 'you should never lose because there is a pile of cars and no rocket.'
        */
-      lateMaxActive: 14,
+      lateMaxActive: 22,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1668,11 +1603,7 @@ export const CONFIG = {
         // it.' All mechanics intact; restore by setting this to an unlock
         // section and openRoad.roles back to ["juggernaut"].
         juggernaut: 999,
-        // FLOW-MODEL TEST: the rig is out. A parked roadblock is the
-        // opposite of flow - it forces a slow thread through its gap, and
-        // the pack piles on while you do. Restore this to 5 to bring it
-        // back; all rig machinery is intact.
-        rig: 999,
+        rig: 5,
       } as Record<PoliceRole, number>,
       /**
        * Once unlocked, how strongly a class is favoured when waking the next unit.
@@ -1889,7 +1820,7 @@ export const CONFIG = {
        * of the flat climb - the late game was reading as no harder than the mid
        * game once the player's own pace ramp kicked in.
        */
-      lateSpeedPerSection: 1.1,
+      lateSpeedPerSection: 1.8,
       /**
        * 26, reached around round twenty-three. At 20 the cops stopped gaining
        * at round nineteen while the player's own ramp ran to round thirty -
@@ -1897,7 +1828,7 @@ export const CONFIG = {
        * A capped heavy runs 70; the player's full-ramp boost peaks 73.5, so
        * the boost escape stays alive by design.
        */
-      maxSpeedBonus: 20,
+      maxSpeedBonus: 30,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the
@@ -1950,28 +1881,20 @@ export const CONFIG = {
      * on through a corner, not a thing that stops you dead on a seam.
      */
     wallFrictionGrazing: 0.995,
-    /**
-     * SLIDE ASSIST. A car pinned against geometry at low speed used to sit
-     * there with the throttle buried - nose into an edge block, no way off it
-     * but reverse. This nudges a stalled contact ALONG the surface, in
-     * whichever direction the car is already pointing, so walls and blocks
-     * deflect you instead of catching you. Scales to nothing by `assistSpeed`,
-     * so it never pushes a car that is genuinely driving.
-     */
+    /** Nudge along the wall when a car has been stopped dead by one. */
     wallSlideAssist: 0.62,
+    /** Below this speed the slide assist applies, fading in as speed drops. */
     wallSlideAssistSpeed: 18,
     /**
-     * Contact-normal spread (radians) below which the surface counts as one
-     * flat wall rather than a corner. ~40 degrees: a mitred joint or a gentle
-     * bend stays 'flat' and frees a caught car; driving into a real corner
-     * fans the normals well past this and holds you there.
+     * Spread between contact normals above which this is a real CORNER rather
+     * than a flat wall. A car wedged in a genuine corner stays there; one
+     * caught on a flat run does not.
      */
     wallCornerAngle: 0.7,
     /**
-     * Seconds the wall slide assist stays disabled after a car-to-car touch.
-     * Long enough that a squad leaning on you against a barrier keeps you
-     * there through the jostling, short enough that it returns the moment
-     * they are actually off you.
+     * Seconds after a car-on-car shove during which the wall assists stand
+     * down. Being held against a barrier by the police is an arrest, not the
+     * geometry catching you, and the assist must never undo it.
      */
     wallAssistHoldOff: 0.6,
     /** Fraction of speed lost on a solid building hit. */
@@ -2104,7 +2027,7 @@ export const CONFIG = {
      * closes in 2.6. Was 1.8 flat-out; playtesting read that as "two seconds and I
      * lost" arriving before the meter could even be noticed, let alone fought.
      */
-    captureDuration: 6.0,
+    captureDuration: 2.47,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -2214,32 +2137,7 @@ export const CONFIG = {
      * wipes out four seconds of being buried. 1.6: fighting out of a half-built box
      * should visibly rewind the meter, or the fight never feels worth having.
      */
-    captureRecovery: 0.85,
-    /**
-     * THE FLOW MODEL - impact-driven arrest.
-     *
-     * The old meter only moved while you were enclosed AND slow, and drained
-     * fast, so the loop was: get swarmed, get slowed, wriggle out, repeat -
-     * never caught, never fast, a maze of cars. Now a real HIT is the thing
-     * that arrests you: every impact past `hitFloor` severity banks a chunk
-     * of the meter, scaled by how hard it was and how deep the run is. Clean
-     * driving stays clean forever; a handful of genuine mistakes ends you.
-     */
-    hitFloor: 0.38,
-    /**
-     * FLAT by design: impact severity is already speed-scaled, and cars get
-     * faster every section, so late hits land harder without any per-section
-     * multiplier on top. A solid hit costs about a third of the meter.
-     */
-    hitChunk: 0.34,
-    /**
-     * One mistake, one chunk. Without this a single error that bounces you
-     * between three cars banked four chunks in a second - the flow model has
-     * to price the MISTAKE, not the pinball that follows it.
-     */
-    hitGrace: 1.1,
-    /** No drain at all while a cop is this close - escapes must be real. */
-    holdRange: 16,
+    captureRecovery: 1.6,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

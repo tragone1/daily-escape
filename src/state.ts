@@ -22,8 +22,6 @@ export class GameState {
   elapsed = 0;
   /** 0..1 — how close the police are to boxing you in. */
   captureProgress = 0;
-  /** Run-clock stamp of the last banked hit, for the one-mistake-one-chunk grace. */
-  private lastHitAt = -99;
   /** Current distance along the course spine. */
   progress = 0;
   /** Furthest point reached; this and only this drives the score. */
@@ -76,7 +74,6 @@ export class GameState {
     this.status = "running";
     this.elapsed = 0;
     this.captureProgress = 0;
-    this.lastHitAt = -99;
     this.progress = 0;
     this.maxProgress = 0;
     this.section = 0;
@@ -89,36 +86,12 @@ export class GameState {
    * closely surrounded for a sustained period — a single hard hit never ends a run,
    * and breaking free drains the meter faster than it fills.
    */
-  /**
-   * A hit landed: bank arrest progress proportional to how hard it was.
-   * This is the flow model's core - mistakes cost, proximity does not.
-   */
-  registerImpact(severity: number): void {
-    const run = CONFIG.run;
-    if (severity < run.hitFloor) return;
-    if (this.elapsed - this.lastHitAt < run.hitGrace) return;
-    this.lastHitAt = this.elapsed;
-    const span = Math.max(0.01, 1 - run.hitFloor);
-    const bite = ((severity - run.hitFloor) / span) * run.hitChunk;
-    this.captureProgress = clamp(this.captureProgress + bite, 0, 1);
-    this.worstCapture = Math.max(this.worstCapture, this.captureProgress);
-    if (this.captureProgress >= 1) {
-      this.status = "captured";
-      if (this.score > this.best) {
-        this.best = this.score;
-        this.saveBest(this.best);
-      }
-    }
-  }
-
   update(
     dt: number,
     playerSpeed: number,
     sectors: number,
     progress: number,
     onCourse: boolean,
-    /** Distance to the closest live unit - gates the meter's drain. */
-    nearestCop = Infinity,
   ): void {
     if (this.over) return;
 
@@ -186,15 +159,8 @@ export class GameState {
      */
     const deep = 1 + Math.max(0, this.section - 9) * 0.05;
     const rate = deep / run.captureDuration;
-    /*
-     * Escapes must be REAL: no drain while anyone is still on top of you, so
-     * shoving through three cars no longer resets the danger. Break into
-     * clean air and the meter falls away.
-     */
-    const contested = sectors > 0 && nearestCop < run.holdRange;
-    const drain = contested ? 0 : rate * run.captureRecovery;
     this.captureProgress = clamp(
-      this.captureProgress + (pinned ? rate * crowd : -drain) * dt,
+      this.captureProgress + (pinned ? rate * crowd : -rate * run.captureRecovery) * dt,
       0,
       1,
     );

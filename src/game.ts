@@ -445,14 +445,6 @@ export class Game {
         }
         this.player.recoveryTimer = Math.max(this.player.recoveryTimer, rec.boostTime);
       }
-      /*
-       * THE FLOW MODEL: the hit itself is what arrests you - but only a hit
-       * from the POLICE. Clipping a wall or a prop is the player's own
-       * mistake and already costs them speed; the law does not get credit
-       * for scenery, and boosting into a barrier should never read as being
-       * caught.
-       */
-      if (strongest.kind === "car") this.state.registerImpact(severity);
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
       // Barely a flicker. Contact is now near-constant by design, and at the old weight
       // the screen sat under a permanent white veil for the whole back half of a run.
@@ -467,14 +459,7 @@ export class Game {
     // --- Run state ---------------------------------------------------------
     // Directions blocked, not cars counted: the arrest is about having nowhere to go.
     const boxedIn = this.police.enclosure(this.player.x, this.player.z, this.collision);
-    this.state.update(
-      dt,
-      this.player.speed,
-      boxedIn,
-      progress,
-      ground.onCourse,
-      this.police.nearestDistance(this.player.x, this.player.z),
-    );
+    this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
     const pace = CONFIG.player.lateSpeed;

@@ -1604,6 +1604,15 @@ function buildSpineWallLines(
         if (span < 0.8) continue;
         const heading = Math.atan2(P1.x - P0.x, P1.z - P0.z);
         const seg = P0.seg;
+        /*
+         * The blocks are the visible wall, and they were the one pass left
+         * unscoped: the collider rail beside them was already limited to this
+         * window, but every window was rebuilding the whole course's wall
+         * meshes. Four resident windows therefore held four copies of the
+         * scenery, which is how a streamed world ended up carrying twice the
+         * geometry of the fixed one it replaced.
+         */
+        if (!scope.wants(seg)) continue;
         // Junction and spur mouths stay open: never wall across a connecting road.
         if (
           onOtherRoad(segments, seg, cx, cz, JUNCTION_CLEARANCE, terrain) ||

@@ -32,8 +32,16 @@ import { buildWorld, emitSections } from "./courseBuilder";
 import { NavGraph } from "./navGraph";
 import type { Terrain } from "./terrain";
 
-/** Sections built in one go. Each costs about 15ms, so this is a frame budget. */
-const WINDOW = 4;
+/**
+ * Sections built in one go.
+ *
+ * This is a frame budget, and four was too many: a window build measured 168ms
+ * in the long-run test, which is a visible stutter roughly every thirteen
+ * seconds of play. Two halves the hitch for twice the frequency, which is the
+ * better trade - a small regular cost is far less noticeable than an
+ * occasional large one, and the work per section is the same either way.
+ */
+const WINDOW = 2;
 /**
  * How far ahead of the player the road must already exist.
  *

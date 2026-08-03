@@ -156,6 +156,32 @@ const WALL_STYLE: Record<
  * world and the road has to keep them; a block on the carriageway is a
  * decoration, and a decoration does not get to close the road.
  */
+/**
+ * Which sections a build pass may emit geometry for.
+ *
+ * A streamed world builds a few sections at a time, but a section cannot be
+ * built in isolation: a wall has to know about the road crossing it from the
+ * section next door, and the racing-line check has to see the blocks either
+ * side of a seam. So every pass takes the WHOLE course to consult and this to
+ * decide what it is allowed to produce - consult everything, emit a window.
+ *
+ * Seams are exactly where the chokepoint bugs came from, so the distinction is
+ * the important one: a pass that filtered its input instead would build each
+ * window as though the rest of the world did not exist.
+ */
+export interface EmitScope {
+  /** True when this segment's geometry belongs to the range being built. */
+  wants(seg: CourseSegment): boolean;
+}
+
+/** Everything, for a one-shot build of the whole course. */
+export const EMIT_ALL: EmitScope = { wants: () => true };
+
+/** Only these sections, by their index in the course. */
+export function emitSections(from: number, to: number): EmitScope {
+  return { wants: (seg) => seg.sectionIndex >= from && seg.sectionIndex < to };
+}
+
 interface PlacedProp {
   mesh: { dispose(): void };
   collider: StaticCollider;
@@ -207,6 +233,7 @@ function enforceRacingLine(
   segments: CourseSegment[],
   colliders: StaticCollider[],
   props: PlacedProp[],
+  scope: EmitScope,
 ): number {
   const CAR = 1.05;
   const MIN_LANE = MIN_LANE_WIDTH;
@@ -249,6 +276,13 @@ function enforceRacingLine(
   let withdrawn = 0;
   for (const seg of segments) {
     if (seg.branch || seg.overlay) continue;
+    /*
+     * Only this window's stations are checked, but against every collider
+     * present - a block just over a seam narrows the lane exactly as much as
+     * one beside it, and checking a window in isolation is how a seam becomes
+     * the one place nobody measured.
+     */
+    if (!scope.wants(seg)) continue;
     const px = seg.dz;
     const pz = -seg.dx;
     for (let a = 0; a <= seg.length; a += STATION) {
@@ -361,10 +395,23 @@ function bakeInChunks(r: Renderer, segments: CourseSegment[]): void {
   r.bakeGrouped(chunkOf, chunkCount);
 }
 
-export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
+export function buildWorld(
+  r: Renderer,
+  course: Course = DAILY,
+  scope: EmitScope = EMIT_ALL,
+  /**
+   * Colliders already standing, for a window to consult and add to.
+   *
+   * The vetoes and the racing-line check read this list, so a window handed an
+   * empty one decides as though the sections beside it were bare ground - and
+   * the seam is precisely where those decisions matter. A streamed world passes
+   * its resident set; a one-shot build passes nothing and starts empty.
+   */
+  into?: StaticCollider[],
+): BuiltWorld {
   const { segments } = buildCourseSegments(course);
   const terrain = new Terrain(segments);
-  const colliders: StaticCollider[] = [];
+  const colliders: StaticCollider[] = into ?? [];
   /** Every withdrawable block, for the racing-line check once the world is whole. */
   const props: PlacedProp[] = [];
 
@@ -417,14 +464,15 @@ export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
 
   // --- The spine: continuous ribbon ground + decor ------------------------
   const spineSlices = segments.filter((sg) => !sg.branch && !sg.overlay);
-  buildSpineRibbons(r, spineSlices);
-  buildSpineDecor(r, spineSlices, colliders, segments, props);
-  buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
-  cliffRailPass(r, spineSlices, colliders, terrain);
+  buildSpineRibbons(r, spineSlices, scope);
+  buildSpineDecor(r, spineSlices, colliders, segments, props, scope);
+  buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, scope, terrain);
+  cliffRailPass(r, spineSlices, colliders, scope, terrain);
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
     if (!seg.branch && !seg.overlay) continue;
+    if (!scope.wants(seg)) continue;
     const midX = (seg.ax + seg.bx) / 2;
     const midZ = (seg.az + seg.bz) / 2;
     const midY = (seg.ay + seg.by) / 2;
@@ -673,13 +721,13 @@ export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
     buildProps(r, seg, colliders, segments, props);
   }
 
-  sealBoundary(r, segments, colliders, wallShades, terrain);
+  sealBoundary(r, segments, colliders, wallShades, terrain, scope);
 
   /*
    * Last, once every wall, cap and block exists: prove the road is drivable end
    * to end, and withdraw whatever is not.
    */
-  const withdrawn = enforceRacingLine(segments, colliders, props);
+  const withdrawn = enforceRacingLine(segments, colliders, props, scope);
 
   // No gate: endless mode has no finish to build.
 
@@ -1044,7 +1092,7 @@ function pushQuad(
   idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
 }
 
-function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
+function buildSpineRibbons(r: Renderer, spine: CourseSegment[], scope: EmitScope): void {
   if (spine.length === 0) return;
 
   interface Row { x: number; z: number; y: number; px: number; pz: number; w: number; s: number }
@@ -1152,8 +1200,15 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
     if (
       i < spine.length &&
       runLength < RIBBON_BLOCK &&
+      scope.wants(spine[i]) === scope.wants(spine[runStart]) &&
       sameColor(colorOf(spine[i]), colorOf(spine[runStart]))
     ) {
+      continue;
+    }
+    // Rows are built from the whole spine so the ribbon lines up across a seam;
+    // only the runs this window owns are actually emitted.
+    if (!scope.wants(spine[runStart])) {
+      runStart = i;
       continue;
     }
     const pos: number[] = [];
@@ -1197,6 +1252,7 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
         block = 0;
       }
       if (r0.s < 0.08 && r1.s < 0.08) continue;
+      if (!scope.wants(spine[k])) continue;
       for (const side of [-1, 1]) {
         quad(pos, norm, idx,
           [r0.x + r0.px * r0.w * side, r0.y - 0.06, r0.z + r0.pz * r0.w * side],
@@ -1231,6 +1287,7 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
         idx = [];
         block = 0;
       }
+      if (!scope.wants(spine[k])) continue;
       for (const side of [-1, 1]) {
         quad(pos, norm, idx,
           [r0.x + r0.px * (r0.w + r0.s) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s) * side],
@@ -1261,6 +1318,7 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
         idx = [];
         block = 0;
       }
+      if (!scope.wants(spine[k])) continue;
       for (const side of [-1, 1]) {
         vquad(pos, norm, idx,
           [r0.x + r0.px * (r0.w + r0.s + 2.6) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s + 2.6) * side],
@@ -1283,6 +1341,7 @@ function buildSpineDecor(
   colliders: StaticCollider[],
   segments: CourseSegment[],
   props: PlacedProp[],
+  scope: EmitScope,
 ): void {
   const onBranchRoad = (x: number, z: number, margin: number): boolean => {
     for (const other of segments) {
@@ -1301,6 +1360,8 @@ function buildSpineDecor(
   let nextProp = 40;
   let stationCount = 0;
   for (const seg of spine) {
+    // Consulted for arc bookkeeping either way; only emitted for this window.
+    if (!scope.wants(seg)) continue;
     // Ramp lip marker, exactly as before.
     if (seg.ramp > 0) {
       const lip = r.createMesh(
@@ -1435,6 +1496,7 @@ function buildSpineWallLines(
   colliders: StaticCollider[],
   wallShades: Record<string, Rgb[]>,
   segments: CourseSegment[],
+  scope: EmitScope,
   terrain?: Terrain,
 ): void {
   if (slices.length === 0) return;
@@ -1465,6 +1527,7 @@ function buildSpineWallLines(
         const span = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
         if (span < 0.2) continue;
         const heading = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+        if (!scope.wants(pts[i].seg)) continue;
         if (
           wallFootprintOnRoad(
             segments,
@@ -1594,6 +1657,12 @@ function buildSpineWallLines(
       const styleName = wall as Exclude<WallStyle, "none">;
       const offset = seg.halfWidth + seg.shoulder + WALL_STYLE[styleName].thickness / 2;
       if (runStyle === null) runStyle = styleName;
+      /*
+       * The run is accumulated from every slice so the wall line is mitred
+       * across a seam exactly as it would be in a single build; each point
+       * remembers its slice, and only the pieces belonging to this window are
+       * emitted when the run is flushed.
+       */
       run.push({ x: seg.ax + px * offset * side, z: seg.az + pz * offset * side, seg });
       // Close the final joint of the course with the last slice's own perp.
       if (i === slices.length - 1) {
@@ -1624,6 +1693,7 @@ function cliffRailPass(
   r: Renderer,
   slices: CourseSegment[],
   colliders: StaticCollider[],
+  scope: EmitScope,
   terrain?: Terrain,
 ): void {
   if (!terrain) return;
@@ -1631,6 +1701,7 @@ function cliffRailPass(
   const placed: { x: number; z: number }[] = [];
   for (const seg of slices) {
     if (seg.length < 2) continue;
+    if (!scope.wants(seg)) continue;
     const midX = (seg.ax + seg.bx) / 2;
     const midZ = (seg.az + seg.bz) / 2;
     const midY = (seg.ay + seg.by) / 2;
@@ -1795,6 +1866,7 @@ function sealBoundary(
   colliders: StaticCollider[],
   wallShades: Record<string, Rgb[]>,
   terrain: Terrain,
+  scope: EmitScope,
 ): void {
   /*
    * Coarse hash of existing wall-height colliders. Height is measured above the local
@@ -1977,7 +2049,8 @@ function sealBoundary(
    */
   {
     const head = segments.find((s) => !s.branch && !s.overlay);
-    if (head) {
+    // The start barrier belongs to the opening section, not to every window.
+    if (head && scope.wants(head)) {
       const styleName = (head.wall in WALL_STYLE ? head.wall : "fence") as Exclude<WallStyle, "none">;
       const style = WALL_STYLE[styleName];
       const width = (head.halfWidth + head.shoulder) * 2 + 8;
@@ -1997,6 +2070,10 @@ function sealBoundary(
 
   for (const seg of segments) {
     if (seg.overlay) continue;
+    // Guard boxes above are gathered from EVERY collider, so a seam is sealed
+    // against the walls of the section next door; only this window's own
+    // patches are laid.
+    if (!scope.wants(seg)) continue;
     /*
      * March at 1.2 units. At 2.5 a two-unit crack between chunk ends could sit exactly
      * between samples, each of which read "guarded" from its own side - and a car at a

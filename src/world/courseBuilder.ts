@@ -197,7 +197,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   buildSpineRibbons(r, spineSlices);
   buildSpineDecor(r, spineSlices, colliders, segments);
   buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
-  cliffRailPass(r, spineSlices, colliders, terrain);
+  cliffRailPass(r, spineSlices, segments, colliders, terrain);
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
@@ -294,7 +294,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
         if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments, terrain);
-    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
+    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades, segments, terrain);
     buildProps(r, seg, colliders, segments);
   }
 
@@ -806,6 +806,11 @@ function buildSpineWallLines(
         const y0 = heightAt(P0.x, P0.z, seg.ay);
         const y1 = heightAt(P1.x, P1.z, seg.by);
         const groundY = (y0 + y1) / 2;
+        if (
+          blocksRoad(segments, terrain, cx, cz, span / 2 + 0.35, style.thickness / 2, heading, groundY, groundY + style.maxHeight)
+        ) {
+          continue;
+        }
         const rnd = hash2(cx, cz);
         const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
         const mesh = r.createMesh(
@@ -875,6 +880,7 @@ function buildSpineWallLines(
 function cliffRailPass(
   r: Renderer,
   slices: CourseSegment[],
+  segments: CourseSegment[],
   colliders: StaticCollider[],
   terrain?: Terrain,
 ): void {
@@ -916,6 +922,9 @@ function cliffRailPass(
       if (guarded) continue;
       const span = Math.max(seg.length + 2, 8);
       const heading = Math.atan2(seg.dx, seg.dz);
+      if (blocksRoad(segments, terrain, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY, midY + style.minHeight)) {
+        continue;
+      }
       const h = style.minHeight;
       const mesh = r.createMesh(
         { kind: "box", width: style.thickness, height: h, depth: span },
@@ -927,6 +936,93 @@ function cliffRailPass(
       placed.push({ x: wx, z: wz });
     }
   }
+}
+
+/*
+ * THE ROAD IS SACRED.
+ *
+ * Whatever any wall rule decides, a piece may never stand on drivable road
+ * at road height. Two independent bugs put wall chunks mid-carriageway - a
+ * fence line and a barrier line, each let through by the grade-separation
+ * check when the decks were not actually separated there - and the player
+ * met them as blocks that 'a car can barely fit through'. This is the
+ * backstop: sample the piece's footprint, and if any of it lands inside a
+ * main road's drivable band within three units of that road's surface, the
+ * piece is not built at all.
+ */
+function blocksRoad(
+  _segments: CourseSegment[],
+  terrain: Terrain | undefined,
+  cx: number,
+  cz: number,
+  halfLength: number,
+  halfWidth: number,
+  heading: number,
+  groundY: number,
+  topY: number,
+): boolean {
+  if (!terrain) return false;
+  const fx = Math.sin(heading);
+  const fz = Math.cos(heading);
+  const rx = Math.cos(heading);
+  const rz = -Math.sin(heading);
+  /*
+   * Ask the TERRAIN, not the segment list. Hand-rolled band tests miss at the
+   * joints between the spine's four thousand micro-slices - exactly where
+   * inside-corner walls land - and that is how fence chunks ended up standing
+   * in the carriageway. `sample` is the same authority the car's own physics
+   * uses: if it says drivable road, it is road.
+   */
+  /*
+   * The whole FOOTPRINT, corners included, at a spacing no lane can hide
+   * between. A long chunk lying across a carriageway can have its centre
+   * off-course while its body spans the lane - centre-only sampling is how
+   * the fence chunks at section eight survived the first two attempts.
+   */
+  const pts: Array<[number, number]> = [];
+  const steps = Math.max(2, Math.ceil(halfLength / 1.5));
+  for (let a2 = -steps; a2 <= steps; a2++) {
+    const fa = (a2 / steps) * halfLength;
+    for (let b2 = -1; b2 <= 1; b2++) {
+      const fb = b2 * halfWidth;
+      pts.push([cx + fx * fa + rx * fb, cz + fz * fa + rz * fb]);
+    }
+  }
+  for (const [px, pz] of pts) {
+    const smp = terrain.sample(px, pz);
+    if (!smp.onCourse || smp.segment.branch) continue;
+    // Vertical overlap: a piece on a lower deck still pokes up through the
+    // road above it, and one on a higher deck hangs into it.
+    if (topY > smp.height - 0.4 && groundY < smp.height + 2.5) return true;
+  }
+  /*
+   * CROSSWAYS RULE. A wall that runs ALONG the road is a kerb, however close
+   * it sits; one lying ACROSS it is a barricade even when its own footprint
+   * technically falls outside the drivable band - the marker posts marching
+   * across a hairpin pinched the lane to two units that way. Judge by angle
+   * and lateral reach rather than overlap alone.
+   */
+  const smpC = terrain.sample(cx, cz);
+  const segC = smpC.segment;
+  if (!segC.branch) {
+    const dxC = cx - segC.ax;
+    const dzC = cz - segC.az;
+    const acrossC = Math.abs(dxC * segC.dz - dzC * segC.dx);
+    const alongC = dxC * segC.dx + dzC * segC.dz;
+    const parallel = Math.abs(fx * segC.dx + fz * segC.dz);
+    const reach = acrossC - halfLength * Math.sqrt(Math.max(0, 1 - parallel * parallel));
+    if (
+      alongC > -halfLength &&
+      alongC < segC.length + halfLength &&
+      parallel < 0.6 &&
+      reach < segC.halfWidth &&
+      topY > smpC.height - 0.4 &&
+      groundY < smpC.height + 2.5
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Fence a segment in with themed chunks on both sides. */
@@ -976,6 +1072,12 @@ function buildWalls(
         onOtherRoad(segments, seg, cx + seg.dx * halfChunk, cz + seg.dz * halfChunk, clear, terrain) ||
         onOtherRoad(segments, seg, cx - seg.dx * halfChunk, cz - seg.dz * halfChunk, clear, terrain)
       ) {
+        continue;
+      }
+
+      // The road is sacred: a spur's own side wall may not stand on the
+      // carriageway it opens onto.
+      if (blocksRoad(segments, terrain, cx, cz, chunkLen / 2, style.thickness / 2, seg.heading, groundY, groundY + style.maxHeight)) {
         continue;
       }
 
@@ -1168,6 +1270,11 @@ function sealBoundary(
     const groundY = (yA + yB) / 2;
     const rnd = hash2(px, pz);
     const height = style.minHeight + rnd * (style.maxHeight - style.minHeight) * 0.5;
+    // The road is sacred here too: boundary sealing must never march a line
+    // of posts across the carriageway at a hairpin.
+    if (blocksRoad(segments, terrain, px, pz, hl, 0.9, Math.atan2(dxh, dzh), groundY, groundY + height)) {
+      return;
+    }
     const mesh = r.createMesh(
       { kind: "box", width: 1.8, height, depth: hl * 2 },
       { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
@@ -1315,6 +1422,8 @@ function capDeadEnd(
   seg: CourseSegment,
   colliders: StaticCollider[],
   wallShades: Record<string, Rgb[]>,
+  segments: CourseSegment[],
+  terrain?: Terrain,
 ): void {
   const style = WALL_STYLE[(seg.wall === "none" ? "fence" : seg.wall) as Exclude<WallStyle, "none">];
   const shades = wallShades[seg.wall === "none" ? "fence" : seg.wall];
@@ -1322,6 +1431,16 @@ function capDeadEnd(
   const height = style.minHeight + 0.5;
   const cx = seg.bx + seg.dx * (style.thickness / 2);
   const cz = seg.bz + seg.dz * (style.thickness / 2);
+
+  /*
+   * A cap belongs at the dead end of an alley, never across the road. When a
+   * spur's ends are recorded the wrong way round its 'far end' lands on the
+   * carriageway, and the cap becomes a wall the player has to squeeze past -
+   * the yellow slab that nearly closed section twenty-two.
+   */
+  if (blocksRoad(segments, terrain, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by, seg.by + height)) {
+    return;
+  }
 
   const mesh = r.createMesh(
     { kind: "box", width, height, depth: style.thickness },

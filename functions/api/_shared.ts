@@ -9,6 +9,17 @@
 
 export const DAY_ZONE = "America/New_York";
 
+/**
+ * The contract this API serves.
+ *
+ * Bumped only for a change a client compiled against the previous version
+ * could get wrong. Clients send theirs; a mismatch is answered with a clear
+ * instruction to refresh rather than a confusing validation failure further
+ * down, because an old cached build failing on field names looks like the
+ * game being broken.
+ */
+export const API_VERSION = 1;
+
 export interface Env {
   DB: D1Database;
 }

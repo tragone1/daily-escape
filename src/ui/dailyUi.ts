@@ -9,6 +9,7 @@
 import { setChildren } from "../compat";
 import { dayKey, dayLabel, dayNumber, msUntilRollover } from "../daily";
 import { challengeFromUrl } from "./share";
+import { BUILD_ID } from "../version";
 import {
   fetchBoard,
   fetchDays,
@@ -52,6 +53,7 @@ export class DailyUi {
   private submittedFor: RunSummary | null = null;
 
   constructor() {
+    this.paintBuildStamp();
     this.paintDayBanner();
     // The banner is the only place a player learns the map has changed under them, so it
     // keeps ticking rather than being painted once.
@@ -130,6 +132,12 @@ export class DailyUi {
     el("challengeSub").textContent = challenge.isToday
       ? `on today's map${where}. Same roads for you - beat it.`
       : `${where.replace(/^, /, "")}. That map has rolled; today's is below.`;
+  }
+
+  /** Which build this is, so a player can quote it in a report. */
+  private paintBuildStamp(): void {
+    const stamp = document.getElementById("buildStamp");
+    if (stamp) stamp.textContent = `build ${BUILD_ID}`;
   }
 
   private paintDayBanner(): void {

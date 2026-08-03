@@ -9,6 +9,7 @@
 
 import { letterNumberPattern } from "./compat";
 import { dayKey } from "./daily";
+import { API_VERSION, BUILD_ID } from "./version";
 
 const ID_KEY = "dailyEscape.playerId";
 const NAME_KEY = "dailyEscape.playerName";
@@ -128,6 +129,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
     // 5xx and 429 are worth another go; 4xx is a verdict.
+    // 409 with `refresh` is the server saying this build is too old to talk to
+    // it. Not retryable - only a reload fixes it - so it must not be offered one.
     const retryable = res.status >= 500 || res.status === 429;
     const message = body.error ?? `request failed (${res.status})`;
     throw retryable ? new NetworkError(message) : new Error(message);
@@ -146,7 +149,13 @@ export async function submitScore(run: {
   return call<SubmitResult>("/api/score", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ playerId: playerId(), name, ...run }),
+    body: JSON.stringify({
+      apiVersion: API_VERSION,
+      build: BUILD_ID,
+      playerId: playerId(),
+      name,
+      ...run,
+    }),
   });
 }
 

@@ -1,38 +1,30 @@
-import { defineConfig, type Plugin } from "vite";
-import fs from "node:fs";
-import path from "node:path";
+import { defineConfig } from "vite";
+import { execSync } from "node:child_process";
 
-/*
- * Debug incident collector. The ?debug overlay in the game POSTs every finished
- * juggernaut incident here (same origin, so it works from any browser), and it lands
- * in debug-incidents.log next to the project - which means a play session on this
- * machine leaves a record that can be read afterwards without the player doing
- * anything but playing.
+/**
+ * The build's identity, stamped in at compile time.
+ *
+ * A player reporting "it went black" is unactionable without knowing which
+ * build they were running, and an old cached client talking to a newer API is
+ * invisible from both ends unless one of them says what it is. Derived from
+ * the commit so it needs no manual bumping; falls back to the timestamp
+ * outside a git checkout, which is the case on a clean CI clone.
  */
-function debugLogCollector(): Plugin {
-  return {
-    name: "debug-log-collector",
-    configureServer(server) {
-      server.middlewares.use("/debug-log", (req, res) => {
-        let body = "";
-        req.on("data", (c) => (body += c));
-        req.on("end", () => {
-          try {
-            const line = new Date().toISOString() + " " + body.replace(/\n/g, " ") + "\n";
-            fs.appendFileSync(path.join(process.cwd(), "debug-incidents.log"), line);
-          } catch {
-            /* logging must never break the game */
-          }
-          res.statusCode = 200;
-          res.end("ok");
-        });
-      });
-    },
-  };
+function buildId(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return `t${Date.now().toString(36)}`;
+  }
 }
 
 export default defineConfig({
-  plugins: [debugLogCollector()],
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+    __API_VERSION__: JSON.stringify(1),
+  },
   server: {
     port: 5173,
     open: true,

@@ -12,7 +12,7 @@
  * simulation to be deterministic, which it is not yet.
  */
 
-import { bad, cleanName, dayKey, guarded, json, validPlayerId } from "./_shared";
+import { API_VERSION, bad, cleanName, dayKey, guarded, json, validPlayerId } from "./_shared";
 
 /**
  * Fastest the game can physically bank score, per second.
@@ -42,6 +42,8 @@ const MAX_SUBMISSIONS_PER_DAY = 400;
 const MAX_SECTION = Math.ceil(MAX_RUN_MS / 1000 / 8) + 50;
 
 interface Body {
+  apiVersion?: unknown;
+  build?: unknown;
   playerId?: unknown;
   name?: unknown;
   score?: unknown;
@@ -60,6 +62,18 @@ export const onRequestPost = guarded(async ({ request, env }) => {
     body = (await request.json()) as Body;
   } catch {
     return bad("expected JSON");
+  }
+
+  /*
+   * An old cached client is told plainly to refresh. Without this it fails
+   * later on some field it does not know about, which reads to the player as
+   * the game being broken rather than as being out of date.
+   */
+  if (body.apiVersion !== undefined && body.apiVersion !== API_VERSION) {
+    return json(
+      { error: "This version of the game is out of date. Refresh to keep playing.", refresh: true },
+      409,
+    );
   }
 
   const { playerId, score, section, distance, elapsedMs } = body;

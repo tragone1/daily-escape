@@ -17,6 +17,10 @@ import {
   playerName,
   setPlayerName,
   submitScore,
+  savePending,
+  loadPending,
+  clearPending,
+  NetworkError,
   type Board,
 } from "../leaderboard";
 
@@ -55,6 +59,28 @@ export class DailyUi {
 
     const saved = playerName();
     if (saved) this.nameInput.value = saved;
+
+    /*
+     * A run held from a failed submission, offered back.
+     *
+     * Silent about it when there is nothing pending, and silent when the day
+     * has rolled - `loadPending` drops anything belonging to a map nobody is
+     * playing. Only surfaces when there is genuinely a score the player earned
+     * and the game never managed to send.
+     */
+    const held = loadPending(dayKey());
+    if (held) {
+      this.pending = {
+        score: held.score,
+        section: held.section,
+        distance: held.distance,
+        elapsedMs: held.elapsedMs,
+      };
+      this.submittedFor = null;
+      this.submitBtn.disabled = false;
+      this.submitBtn.textContent = "SUBMIT SAVED RUN";
+      this.note(`A run of ${held.score.toLocaleString()} never sent. Submit it?`, "");
+    }
 
     this.submitBtn.addEventListener("click", () => void this.submit());
     this.nameInput.addEventListener("keydown", (e) => {
@@ -146,6 +172,7 @@ export class DailyUi {
     setPlayerName(name);
 
     this.submitBtn.disabled = true;
+    this.submitBtn.textContent = "SENDING...";
     this.note("Sending...", "");
     try {
       const res = await submitScore(run);
@@ -157,10 +184,24 @@ export class DailyUi {
           : `Kept your better score of ${res.best.toLocaleString()} (rank ${res.rank ?? "?"}).`,
         "good",
       );
+      clearPending();
     } catch (err) {
       this.submitBtn.disabled = false;
-      // Offline, or the API is not deployed yet. Either way the run still happened.
-      this.note(err instanceof Error ? err.message : "Could not reach the leaderboard.", "bad");
+      const message = err instanceof Error ? err.message : "Could not reach the leaderboard.";
+      if (err instanceof NetworkError) {
+        /*
+         * Worth another go, and worth keeping. The run is held so a dropped
+         * connection at the end of a good one does not simply lose it - it is
+         * offered back when the game next loads, provided the day has not
+         * rolled over underneath it.
+         */
+        savePending(run, dayKey());
+        this.submitBtn.textContent = "RETRY SUBMIT";
+        this.note(`${message} Saved - press retry, or it will be offered next time.`, "bad");
+      } else {
+        // The server ruled on it. Retrying would only be told the same thing.
+        this.note(message, "bad");
+      }
     }
   }
 

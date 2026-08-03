@@ -90,6 +90,10 @@ export class PoliceCar {
   private springFrom: { x: number; z: number } | null = null;
   /** Outward unit vector through the mouth, set at spring time; null once clear of it. */
   private springExit: { x: number; z: number } | null = null;
+  /** The mouth a car is pulling out of, and the way out through it. */
+  private mergeMouth: { x: number; z: number } | null = null;
+  private mergeOut: { x: number; z: number } | null = null;
+  private mergeClock = 0;
   /** Seconds left of holding a struck player against the wall. */
   private pinTimer = 0;
   /** The weld: player's offset in the truck frame, latched at first contact. */
@@ -338,6 +342,9 @@ export class PoliceCar {
     this.ambushWait = 0;
     this.springFrom = null;
     this.springExit = null;
+    this.mergeMouth = null;
+    this.mergeOut = null;
+    this.mergeClock = 0;
     this.pinTimer = 0;
     this.glueLocal = null;
     this.retries = 0;
@@ -791,6 +798,21 @@ export class PoliceCar {
        * timing that works, and its identity lives in what happens on contact.
        */
       const go = this.readyToSpring(ctx);
+      /*
+       * A fleet car is not springing anything - it is pulling out of a side
+       * street. It takes none of the launch machinery below: that exists to
+       * fire a truck across the road on a timer, and used here it sent an
+       * ordinary patrol car over the far kerb at fifty metres a second.
+       */
+      if (go && !this.isAmbusher) {
+        this.mergeMouth = { x: this.ambushAt.x, z: this.ambushAt.z };
+        this.mergeOut = this.ambushOut
+          ? { x: this.ambushOut.x, z: this.ambushOut.z }
+          : { x: Math.sin(v.heading), z: Math.cos(v.heading) };
+        this.mergeClock = CONFIG.police.pacing.ambush.mergeTime;
+        this.ambushAt = null;
+        return;
+      }
       if (go) {
         // Re-arm the wait clock: it now times the poised hold at the mouth, so a
         // player who never comes releases the budget instead of locking it forever.
@@ -1219,6 +1241,70 @@ export class PoliceCar {
       }
     }
 
+    /*
+     * Merging out of a side street.
+     *
+     * Two stages, because both halves go wrong on their own. Aimed at the road
+     * it crosses it and hits the far wall; handed straight to the chase it
+     * brakes and swings round to face a player who is still behind it, which is
+     * a car parked broadside in the lane. So it drives through the mouth, then
+     * turns down-course and gets up to speed, and only then does the ordinary
+     * chase take the wheel - by which time it is just another car in front of
+     * you, and everything after this is the chase it always was.
+     */
+    if (this.mergeClock > 0 && this.mergeMouth && this.mergeOut) {
+      // The clock is for the turn onto the road; creeping up the alley to the
+      // kerb line barely counts against it, but it cannot stall there forever.
+      const inAlley =
+        (v.x - this.mergeMouth.x) * this.mergeOut.x +
+          (v.z - this.mergeMouth.z) * this.mergeOut.z <
+        1.5;
+      this.mergeClock -= inAlley ? dt * 0.25 : dt;
+      const mouth = this.mergeMouth;
+      const out = this.mergeOut;
+      const past = (v.x - mouth.x) * out.x + (v.z - mouth.z) * out.z;
+      let aimX = mouth.x + out.x * 9;
+      let aimZ = mouth.z + out.z * 9;
+      if (past > 1.5) {
+        const node = ctx.nav.nodeAtProgress(
+          ctx.terrain.progressAt(v.x, v.z) + CONFIG.police.pacing.ambush.mergeLead,
+        );
+        aimX = node.x;
+        aimZ = node.z;
+      }
+      const aimErr = wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading);
+      const merged = past > 1.5 && Math.abs(aimErr) < 0.45 && v.speed > 16;
+      if (this.mergeClock <= 0 || merged) {
+        this.mergeClock = 0;
+        this.mergeMouth = null;
+        this.mergeOut = null;
+      } else {
+        const clear = this.probeObstacles(ctx);
+        /*
+         * Arrive at the mouth SLOWLY. A side street is long enough to reach
+         * thirty-seven metres a second in, and no car turns ninety degrees in
+         * the width of a road at that pace - they went straight out over the
+         * far kerb, every time. Held to a crawl to the kerb line it can take
+         * the turn, and the road is where it opens up.
+         */
+        // Slow to the kerb AND through the turn: it is the turn that cannot be
+        // taken at speed, and coming out of the alley is only half of it.
+        const cap = CONFIG.police.pacing.ambush.mergeApproachSpeed;
+        const easing = (past < 1.5 || Math.abs(aimErr) > 0.5) && v.speed > cap;
+        this.input.throttle = easing ? 0 : clear.throttleScale;
+        this.input.brake = easing && v.speed > cap + 3 ? 0.55 : 0;
+        this.input.steer = clamp(
+          aimErr / CONFIG.police.shared.steerFullLockAngle + clear.steerBias,
+          -1,
+          1,
+        );
+        this.input.boost = false;
+        v.drive = 1;
+        v.update(this.input, dt, ctx.terrain);
+        return;
+      }
+    }
+
     if (this.springFrom) {
       const cfg = this.ambushTuning;
       if (this.isAmbusher) {
@@ -1320,6 +1406,12 @@ export class PoliceCar {
           const goLead =
             ctx.terrain.progressAt(this.springFrom.x, this.springFrom.z) -
             ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
+          /*
+           * A fleet car is only using the alley as a door. Once it is through the
+           * mouth the launch is over and the ordinary chase owns it - no waiting
+           * for a strike window, no homing on an intercept. That homing is what
+           * turned the drive-out into a T-bone.
+           */
           if (goLead <= cfg.strikeGo && goLead > -8) {
             if (cleared) this.springExit = null;
           } else {
@@ -1359,7 +1451,7 @@ export class PoliceCar {
             v.update(this.input, dt, ctx.terrain);
             return;
           }
-          if (this.springExit) {
+          if (this.springExit && this.springFrom) {
             const aimX = this.springFrom.x + exit.x * 6;
             const aimZ = this.springFrom.z + exit.z * 6;
             this.input.throttle = 1;
@@ -1856,6 +1948,35 @@ export class PoliceCar {
     const lead =
       ctx.terrain.progressAt(mouth.x, mouth.z) -
       ctx.terrain.progressAt(player.x, player.z);
+
+    /*
+     * THE FLEET DOES NOT AMBUSH.
+     *
+     * An alley is another way onto the road, so a fleet car leaves with a head
+     * start: enough road left that it is out, straight and rolling before the
+     * player reaches the mouth. Timed instead to arrive WITH them - which is
+     * what the gate below still does for the armoured classes - it was a
+     * broadside out of a blind spot, and there is no line that beats it.
+     *
+     * With too little road left to get in front it simply waits for them to
+     * pass and joins the chase from behind. Pulling out across their nose is
+     * the one thing this must never do.
+     */
+    if (!this.isAmbusher) {
+      const fleet = CONFIG.police.pacing.ambush;
+      if (lead < -6) return true;
+      if (lead < fleet.emergeMinLead) return false;
+      /*
+       * Its own time to the road, honestly: it creeps up the alley at the
+       * approach speed and then takes a moment to swing onto the road. Timed
+       * against a full-throttle exit instead, it left three times too late and
+       * arrived at the kerb with the player already on it.
+       */
+      const runway = dist(v.x, v.z, mouth.x, mouth.z);
+      const ourRun = runway / fleet.mergeApproachSpeed + fleet.mergeTurnTime;
+      return lead / Math.max(8, player.speed) <= ourRun + fleet.emergeHeadStart;
+    }
+
     if (lead < -8) return false;
     if (lead < cfg.springRange) return true;
 

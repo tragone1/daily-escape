@@ -1363,7 +1363,7 @@ export const CONFIG = {
        * meter is a near-unavoidable third of the bar - too effective to
        * read and dodge. Restore the 9 to bring them back.
        */
-      spawnWeights: { ambush: 0, side: 1.5, behind: 2.5, ahead: 3.0 },
+      spawnWeights: { ambush: 1.2, side: 1.5, behind: 2.5, ahead: 3.0 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.
@@ -1380,8 +1380,15 @@ export const CONFIG = {
       /** Ambush spurs are only used within this window ahead of the player. */
       ambushLeadMin: 85,
       ambushLeadMax: 340,
-      /** How far down the spur the unit waits, as a fraction of its length. */
-      ambushDepth: 0.72,
+      /**
+       * How far down the spur the unit waits, as a fraction of its length.
+       *
+       * Shallow, because it is not hiding. A side street is another way onto the
+       * road, and a car that pulls out of one is only worth the surprise it is
+       * not: seated near the mouth it can be out and straight before the player
+       * is on top of it.
+       */
+      ambushDepth: 0.4,
       /**
        * The ambush is a *timed* release, and that is the whole mechanic.
        *
@@ -1440,6 +1447,41 @@ export const CONFIG = {
         launchSpeedBonus: 0.75,
         /** Once the player is past, come out anyway and join the chase from behind. */
         releaseBehindRange: 90,
+        /**
+         * The fleet's alley is an ENTRANCE, not a trap.
+         *
+         * Timed to arrive with the player it was a broadside out of a blind spot,
+         * which is not a chase - it is a wall you could not have seen. So a fleet
+         * car pulls out with a head start: it reaches the road this many seconds
+         * before the player gets there, straightens up, and is rolling by the time
+         * they arrive. Everything after that is the ordinary chase - the same
+         * gliding alongside and sliding across that any other car does.
+         */
+        emergeHeadStart: 2.6,
+        /**
+         * Below this much road left between the mouth and the player, there is no
+         * longer room to get out in front. It waits for them to go past and joins
+         * in behind rather than pulling across their nose.
+         */
+        emergeMinLead: 70,
+        /**
+         * After clearing the mouth, run down-course for this long before the
+         * ordinary chase takes the wheel.
+         *
+         * A car leaves a side street pointing across the road, and its target is
+         * behind it - handed straight to the chase it stood on the brakes and
+         * swung round to face the player, which is a car stopped broadside in
+         * the road, not a police car joining a pursuit. Merging first means it
+         * is up to speed and pointing the right way when they arrive, and then
+         * it is just another car in front of you.
+         */
+        mergeTime: 3.0,
+        /** Speed it comes up to the kerb line at, before turning onto the road. */
+        mergeApproachSpeed: 13,
+        /** Allowance for swinging out of the mouth and onto the road, seconds. */
+        mergeTurnTime: 1.2,
+        /** How far down-course it aims while merging. */
+        mergeLead: 45,
         /** Never wait longer than this, so a unit cannot be stranded by a dead run. */
         maxWait: 24,
         // Pin fields exist for type unity with the openRoad ambush block; only the

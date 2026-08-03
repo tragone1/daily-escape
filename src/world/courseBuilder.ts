@@ -1253,6 +1253,8 @@ function sealBoundary(
    * rail, not as a fence post standing in open country.
    */
   const placed = new Set<string>();
+  /** Every patch piece laid, linked into a continuous barrier at the end. */
+  const sealPieces: { x: number; z: number; y: number; top: number }[] = [];
   const piece = (
     x: number,
     z: number,
@@ -1327,7 +1329,14 @@ function sealBoundary(
     mesh.position.set(px + ox * meshJitter, groundY + height / 2, pz + oz * meshJitter);
     mesh.rotation.y = heading;
     mesh.rotation.x = -Math.atan((yB - yA) / (2 * hl));
-    addCollider(colliders, px, pz, hl + 0.55, 0.75, heading, groundY + height);
+    /*
+     * MESH ONLY - the patch pieces are scenery. Sixteen thousand separate
+     * boxes, each nudged outward by a different amount, formed a saw-toothed
+     * barrier full of pockets: a car grazing it at twelve degrees stopped
+     * dead. Their collision is built as ONE CHAINED RAIL after every piece is
+     * placed (see the linking pass at the end of sealBoundary).
+     */
+    sealPieces.push({ x: px, z: pz, y: groundY, top: groundY + height });
   };
 
   /*
@@ -1448,6 +1457,81 @@ function sealBoundary(
       flush();
     }
   }
+
+  /*
+   * THE CHAINED BARRIER.
+   *
+   * Every patch piece is scenery; this is the collision. Each piece links to
+   * its nearest neighbours, and the collider spans the GAP between their
+   * centres - so instead of thousands of separate boxes at slightly
+   * different offsets (a saw-tooth full of pockets that stopped a car
+   * grazing at twelve degrees), the barrier a car touches is one connected
+   * chain with no teeth and nothing to catch on.
+   */
+  {
+    const CELL2 = 8;
+    const grid = new Map<string, number[]>();
+    const gkey = (x: number, z: number) => Math.floor(x / CELL2) + ":" + Math.floor(z / CELL2);
+    sealPieces.forEach((pc, i) => {
+      const k = gkey(pc.x, pc.z);
+      const list = grid.get(k);
+      if (list) list.push(i);
+      else grid.set(k, [i]);
+    });
+    const linked = new Set<string>();
+    for (let i = 0; i < sealPieces.length; i++) {
+      const a = sealPieces[i];
+      const near: { j: number; d: number }[] = [];
+      for (let gx = -1; gx <= 1; gx++) {
+        for (let gz = -1; gz <= 1; gz++) {
+          const list = grid.get(gkey(a.x + gx * CELL2, a.z + gz * CELL2));
+          if (!list) continue;
+          for (const j of list) {
+            if (j === i) continue;
+            const d = Math.hypot(sealPieces[j].x - a.x, sealPieces[j].z - a.z);
+            if (d < 9) near.push({ j, d });
+          }
+        }
+      }
+      near.sort((p1, p2) => p1.d - p2.d);
+      /*
+       * Links must run ALONG the boundary, never across it. Chaining to the
+       * two nearest pieces zigzagged at bends and closed pockets a car could
+       * drop into - which is how a graze at section five still ended in a
+       * dead stop. The local road direction is the reference: a link more
+       * than about fifty degrees off it is not part of this barrier.
+       */
+      const segHere = terrain.sample(a.x, a.z).segment;
+      let made = 0;
+      for (const nb of near) {
+        if (made >= 2) break;
+        const b0 = sealPieces[nb.j];
+        const ldx = (b0.x - a.x) / (nb.d || 1);
+        const ldz = (b0.z - a.z) / (nb.d || 1);
+        if (Math.abs(ldx * segHere.dx + ldz * segHere.dz) < 0.64) continue;
+        const key2 = i < nb.j ? i + "_" + nb.j : nb.j + "_" + i;
+        if (linked.has(key2)) continue;
+        linked.add(key2);
+        made++;
+        const b = sealPieces[nb.j];
+        const cx = (a.x + b.x) / 2;
+        const cz = (a.z + b.z) / 2;
+        const heading = Math.atan2(b.x - a.x, b.z - a.z);
+        addCollider(
+          colliders,
+          cx,
+          cz,
+          nb.d / 2 + 0.5,
+          0.75,
+          heading,
+          Math.max(a.top, b.top),
+        );
+      }
+      // A piece with no neighbour still has to seal on its own.
+      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top);
+    }
+  }
+
 }
 
 /**

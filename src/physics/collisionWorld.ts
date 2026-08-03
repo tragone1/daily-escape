@@ -98,6 +98,8 @@ export class CollisionWorld {
     let firstNx = 0;
     let firstNz = 0;
     let normalSpread = 0;
+    let sumNx = 0;
+    let sumNz = 0;
 
     for (let pass = 0; pass < 2; pass++) {
       for (const solid of candidates) {
@@ -120,6 +122,14 @@ export class CollisionWorld {
           hnx = hit.nx;
           hnz = hit.nz;
         }
+        // Depth-weighted average of every contact normal this frame. A wall
+        // built from many small pieces gives a different normal per piece;
+        // averaging them recovers the direction the SURFACE actually faces,
+        // so a toothed barrier answers like the smooth wall it approximates.
+        if (pass === 0) {
+          sumNx += hit.nx * hit.depth;
+          sumNz += hit.nz * hit.depth;
+        }
         if (pass === 0) {
           if (firstNx === 0 && firstNz === 0) {
             firstNx = hit.nx;
@@ -133,6 +143,13 @@ export class CollisionWorld {
     }
 
     if (deepest > 0) {
+      // Respond to the averaged surface direction rather than to whichever
+      // single piece happened to be deepest.
+      const sumLen = Math.hypot(sumNx, sumNz);
+      if (sumLen > 0.0001) {
+        hnx = sumNx / sumLen;
+        hnz = sumNz / sumLen;
+      }
       const vn = v.vx * hnx + v.vz * hnz;
       if (vn < 0) {
         const impactSpeed = -vn;

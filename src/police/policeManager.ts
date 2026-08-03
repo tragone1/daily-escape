@@ -1232,6 +1232,17 @@ export class PoliceManager {
    * Live units within `radius` of the player — drives both the HUD and the capture check.
    * Wrecks and dormant units are excluded: a burnt-out hulk must not be able to arrest you.
    */
+  /** Distance to the closest live unit, for the arrest meter's drain gate. */
+  nearestDistance(x: number, z: number): number {
+    let best = Infinity;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const d = Math.hypot(u.vehicle.x - x, u.vehicle.z - z);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
   countNear(x: number, z: number, radius: number): number {
     let n = 0;
     const r2 = radius * radius;

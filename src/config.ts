@@ -732,14 +732,18 @@ export const CONFIG = {
          * expensive.
          */
         slots: [
-          { x: 0, z: 9 },
-          { x: -6.5, z: 6.5 },
-          { x: 6.5, z: 6.5 },
-          { x: -7, z: 0 },
-          { x: 7, z: 0 },
-          { x: -6, z: -6.5 },
-          { x: 6, z: -6.5 },
-          { x: 0, z: -8 },
+          // THE STANDOFF: stations sit a car-length further out than they did.
+          // The pack escorts menacingly instead of grinding paint - ambient
+          // contact was the 'maze of cars' mush, and every hit that remains
+          // is a deliberate, telegraphed attack.
+          { x: 0, z: 12 },
+          { x: -9, z: 8.5 },
+          { x: 9, z: 8.5 },
+          { x: -9.5, z: 0 },
+          { x: 9.5, z: 0 },
+          { x: -8.5, z: -8 },
+          { x: 8.5, z: -8 },
+          { x: 0, z: -11 },
           // THE OUTER RING - manned only while converting a stop into an
           // arrest: a second seal across the escape lanes ahead, wider
           // flanks, a deep back-stop. See convertSpeed below.
@@ -755,8 +759,11 @@ export const CONFIG = {
          * you they run slower and let you close — that is the brake-check; behind you they
          * run faster and push.
          */
-        leadPace: 0.9,
-        chasePace: 1.12,
+        leadPace: 0.94,
+        // Was 1.12 - rear stations literally drove FASTER than the player, so
+        // the back of the box rode your bumper permanently. Matching pace
+        // keeps them looming without the constant shove.
+        chasePace: 1.0,
         /**
          * Pace floor while holding station — but capped to just above the player's own
          * speed.
@@ -1546,8 +1553,8 @@ export const CONFIG = {
        * The stopped-player swarm does not live here - it lives in wake persistence,
        * pool depth and the relaxed slow-player spawn floor, which are untouched.
        */
-      baseActive: 7,
-      activePerSection: 1.4,
+      baseActive: 6,
+      activePerSection: 0.85,
       /**
        * Section one only, and it equals the opening set exactly: two wave cars, three
        * chasers, two alley ambushers. No wake-fill pack at all - the first fresh face
@@ -1570,14 +1577,14 @@ export const CONFIG = {
        * and aggro - speed to +16, charges quicker and more frequent, boxes reformed
        * faster - rather than raw headcount.
        */
-      maxActive: 20,
+      maxActive: 14,
       /**
        * The body count PLATEAUS at 22, which the 1.4/section base ramp reaches
        * naturally at round twelve - by design the game gets harder after that
        * through class upgrades, aggro, and technique, never through more cars:
        * 'you should never lose because there is a pile of cars and no rocket.'
        */
-      lateMaxActive: 22,
+      lateMaxActive: 14,
       /** Section at which each class starts appearing. */
       unlock: {
         patrol: 0,
@@ -1992,7 +1999,7 @@ export const CONFIG = {
      * closes in 2.6. Was 1.8 flat-out; playtesting read that as "two seconds and I
      * lost" arriving before the meter could even be noticed, let alone fought.
      */
-    captureDuration: 2.47,
+    captureDuration: 6.0,
     /**
      * Each additional police car inside the capture radius adds this much to the fill
      * rate. Being swarmed should end the run fast; one car nudging you should not.
@@ -2102,7 +2109,29 @@ export const CONFIG = {
      * wipes out four seconds of being buried. 1.6: fighting out of a half-built box
      * should visibly rewind the meter, or the fight never feels worth having.
      */
-    captureRecovery: 1.6,
+    captureRecovery: 0.85,
+    /**
+     * THE FLOW MODEL - impact-driven arrest.
+     *
+     * The old meter only moved while you were enclosed AND slow, and drained
+     * fast, so the loop was: get swarmed, get slowed, wriggle out, repeat -
+     * never caught, never fast, a maze of cars. Now a real HIT is the thing
+     * that arrests you: every impact past `hitFloor` severity banks a chunk
+     * of the meter, scaled by how hard it was and how deep the run is. Clean
+     * driving stays clean forever; a handful of genuine mistakes ends you.
+     */
+    hitFloor: 0.38,
+    hitChunk: 0.2,
+    hitChunkMax: 0.3,
+    hitChunkPerSection: 0.008,
+    /**
+     * One mistake, one chunk. Without this a single error that bounces you
+     * between three cars banked four chunks in a second - the flow model has
+     * to price the MISTAKE, not the pinball that follows it.
+     */
+    hitGrace: 1.1,
+    /** No drain at all while a cop is this close - escapes must be real. */
+    holdRange: 16,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

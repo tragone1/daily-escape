@@ -64,15 +64,33 @@ const CAR_HEIGHT = 2.4;
 const CELL_MARGIN = 3;
 
 export class CollisionWorld {
-  readonly occluders: StaticCollider[];
-  private readonly solidGrid: SpatialGrid<StaticCollider>;
-  private readonly occluderGrid: SpatialGrid<StaticCollider>;
+  occluders: StaticCollider[] = [];
+  colliders: StaticCollider[] = [];
+  private solidGrid: SpatialGrid<StaticCollider>;
+  private occluderGrid: SpatialGrid<StaticCollider>;
   /** Scratch buffers, reused so the per-frame collision work allocates nothing. */
   private readonly nearby: StaticCollider[] = [];
   private readonly nearbyRay: StaticCollider[] = [];
   private readonly nearbyPath: StaticCollider[] = [];
 
-  constructor(readonly colliders: StaticCollider[]) {
+  constructor(colliders: StaticCollider[]) {
+    this.solidGrid = new SpatialGrid([]);
+    this.occluderGrid = new SpatialGrid([]);
+    this.reset(colliders);
+  }
+
+  /**
+   * Take a new set of solids, keeping this object's identity.
+   *
+   * A streamed world swaps whole sections in and out, and the collision world
+   * is held by the game, the police context and every unit. Rebuilding the
+   * indexes in place means none of those references go stale - and rebuilding
+   * beats patching: a full index of nine thousand colliders costs about a
+   * millisecond, against a class of bugs where a removed section leaves
+   * dangling entries behind it.
+   */
+  reset(colliders: StaticCollider[]): void {
+    this.colliders = colliders;
     this.occluders = colliders.filter((c) => c.occludes);
     this.solidGrid = new SpatialGrid(colliders);
     this.occluderGrid = new SpatialGrid(this.occluders);

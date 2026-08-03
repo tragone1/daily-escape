@@ -167,7 +167,21 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
   const sectionNames: SectionId[] = [];
   const spurs: SpurDef[] = [];
 
-  const order = dailyThemeOrder(rnd, sections);
+  /*
+   * The theme order draws from its OWN stream.
+   *
+   * It reshuffles a bag as it goes, so it consumes a number of draws that
+   * depends on how many sections were asked for - and running on the shared
+   * stream that pushed every later draw along with it. Asking for more
+   * sections therefore changed the sections you already had, from leg zero,
+   * which makes generating further course as a player approaches it
+   * impossible: the road behind them would rewrite itself.
+   *
+   * On its own stream the leg loop's draws depend only on how many sections
+   * precede them, so a course generated to any length is a prefix of the same
+   * course generated longer.
+   */
+  const order = dailyThemeOrder(makeRandom(seed ^ 0x9e3779b9), sections);
   /*
    * Daily size character, per theme. A day can run its canyons a touch wider and its
    * flats a touch meaner, which changes what the hard sections *are* - but the floors

@@ -50,7 +50,7 @@ const TOLERANCE_PENALTY = 500;
 export class Terrain {
   /** Cumulative distance to the START of each main-spine segment. */
   private readonly spineStart: number[] = [];
-  readonly mainLength: number;
+  mainLength = 0;
 
   /*
    * Uniform grid over segment bounding boxes. The curved world is thousands of short
@@ -64,7 +64,25 @@ export class Terrain {
     return cx * 100003 + cz;
   }
 
-  constructor(readonly segments: CourseSegment[]) {
+  segments: CourseSegment[] = [];
+
+  constructor(segments: CourseSegment[]) {
+    this.reset(segments);
+  }
+
+  /**
+   * Take a new set of segments, keeping this object's identity.
+   *
+   * Everything downstream - the game, every vehicle, the police context - holds
+   * this object, so a streamed world rebuilds its contents rather than handing
+   * out a new one. A full rebuild of four thousand segments is under a
+   * millisecond, which is cheaper than being careful.
+   */
+  reset(segments: CourseSegment[]): void {
+    this.segments = segments;
+    this.spineStart.length = 0;
+    this.coarse.length = 0;
+    this.grid.clear();
     let acc = 0;
     for (const s of segments) {
       if (s.branch || s.overlay) {

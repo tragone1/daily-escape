@@ -1036,9 +1036,15 @@
         window.addEventListener("unhandledrejection", function (e) {
           show("promise rejection: " + (e && e.reason ? e.reason : "unknown"));
         });
-        // If the bundle never ran at all, nothing above fires, so check explicitly.
+        /*
+         * If the bundle never ran at all, nothing above fires, so check
+         * explicitly. The signal is its own flag, NOT the game object: that is
+         * a debug handle which production deliberately does not publish, and
+         * keying the watchdog to it told every real player the game had failed
+         * to start while it ran perfectly behind the message.
+         */
         setTimeout(function () {
-          if (!window.__game) {
+          if (!window.__booted) {
             show(
               "The game code did not run. This usually means the browser could not parse it."
             );

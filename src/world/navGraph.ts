@@ -173,6 +173,18 @@ export class NavGraph {
    * Backed by a sorted index built once, because this runs for every spawn decision and
    * every frame's squad goal on a graph that is now hundreds of nodes long.
    */
+  /**
+   * The point on the spine at a given distance along it.
+   *
+   * INTERPOLATED, not snapped. Nav nodes sit forty-odd units apart, so
+   * returning the nearest one put every caller's aim point up to twenty-five
+   * units from where it asked for - and the callers are the ones that matter:
+   * a blocker staging ahead, a slide-block predicting the line, a car merging
+   * out of a side street. They were all working from a quantised road.
+   *
+   * The returned node is synthesised, so callers must treat it as a position
+   * rather than a graph node - none of them walk its links.
+   */
   nodeAtProgress(target: number): NavNode {
     const spine = this.spine ?? this.buildSpineIndex();
     let lo = 0;
@@ -183,8 +195,18 @@ export class NavGraph {
       else hi = mid;
     }
     const at = spine[lo];
-    const before = spine[Math.max(0, lo - 1)];
-    return Math.abs(before.progress - target) < Math.abs(at.progress - target) ? before : at;
+    if (lo === 0) return at;
+    const before = spine[lo - 1];
+    const span = at.progress - before.progress;
+    if (span <= 0.0001) return at;
+    const t = Math.max(0, Math.min(1, (target - before.progress) / span));
+    return {
+      ...at,
+      x: before.x + (at.x - before.x) * t,
+      y: before.y + (at.y - before.y) * t,
+      z: before.z + (at.z - before.z) * t,
+      progress: target,
+    };
   }
 
   private spine: NavNode[] | null = null;

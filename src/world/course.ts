@@ -164,28 +164,68 @@ export const SECTION_COUNT = 40;
  * page left open across the rollover keeps yesterday's course until it is reloaded, which
  * the intro card's countdown makes visible.
  */
-const GENERATED = generateCourse(SECTION_COUNT, seedForDay());
-
-export const MAIN_LEGS: LegDef[] = GENERATED.legs;
-/** Ambush spurs, in course order. */
-export const SPURS: SpurDef[] = GENERATED.spurs;
-/** Distance along the spine where each section starts. */
-export const SECTION_STARTS = GENERATED.sectionStarts;
 /**
- * Theme per section. These drive surfacing, walls and props only — sections are numbered,
- * not named. A run has no destination, so "FINAL APPROACH" was a promise the game does not
- * keep, and a number is the honest label for how far you have got.
+ * One generated course, everything downstream needs, from one seed.
+ *
+ * This used to be a set of module-level constants built at import time, which
+ * meant exactly one course could exist per page load - the day's. Nothing could
+ * be built for any other seed, so nothing could be *checked* for any other
+ * seed: a map generated tomorrow got its first inspection from a player. Making
+ * it a value rather than a module means a test can build a hundred of them.
  */
-export const SECTION_THEMES = GENERATED.sectionNames;
-/** The day's palette rolls, one per wall style. */
-export const WALL_ROLLS = GENERATED.wallRolls;
-
-/** Which section (0-based) a given distance along the course falls in. */
-export function sectionIndexAt(progress: number): number {
-  let i = 0;
-  while (i + 1 < SECTION_STARTS.length && progress >= SECTION_STARTS[i + 1]) i++;
-  return i;
+export interface Course {
+  legs: LegDef[];
+  smoothLegs: LegDef[];
+  spurs: SpurDef[];
+  sectionStarts: number[];
+  sectionThemes: SectionId[];
+  wallRolls: Record<string, number>;
+  sectionCount: number;
 }
+
+export function makeCourse(seed: number, sectionCount = SECTION_COUNT): Course {
+  const generated = generateCourse(sectionCount, seed);
+  const smoothed = smoothSpine(COURSE_START, generated.legs);
+  const sectionStarts = generated.sectionStarts.slice();
+  /*
+   * Re-anchor everything measured against the coarse polyline onto the smooth
+   * arc, which is a few percent longer. Section starts come from control
+   * indices, and spur mouths sit exactly on control points, so both re-anchor
+   * exactly rather than approximately.
+   */
+  for (let sIdx = 0; sIdx < sectionCount; sIdx++) {
+    sectionStarts[sIdx] = smoothed.controlProgress[generated.sectionFirstLeg[sIdx]];
+  }
+  /*
+   * Nearest control, never an exact-key lookup. A spur whose mouth differed
+   * from its control by a rounding hair kept PRE-SMOOTHING progress - a
+   * different scale that drifts hundreds of units along the course, which made
+   * those spurs invisible to the director's seating window.
+   */
+  for (const spur of generated.spurs) {
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < generated.legs.length; i++) {
+      const l = generated.legs[i];
+      const d = (l.x - spur.ax) * (l.x - spur.ax) + (l.z - spur.az) * (l.z - spur.az);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best >= 0 && bd < 36) spur.progress = smoothed.controlProgress[best + 1];
+  }
+  return {
+    legs: generated.legs,
+    smoothLegs: smoothed.micro,
+    spurs: generated.spurs,
+    sectionStarts,
+    sectionThemes: generated.sectionNames,
+    wallRolls: generated.wallRolls,
+    sectionCount,
+  };
+}
+
 
 /**
  * Optional branches. Each rejoins the spine, so taking one is a routing decision rather
@@ -366,53 +406,47 @@ function smoothSpine(start: PathNode, legs: LegDef[]): { micro: LegDef[]; contro
   return { micro, controlProgress };
 }
 
-const SMOOTHED = smoothSpine(COURSE_START, MAIN_LEGS);
 /** The micro-legs everything downstream is actually built from. */
-export const SMOOTH_LEGS: LegDef[] = SMOOTHED.micro;
-
-/*
- * Re-anchor everything that was measured against the coarse polyline onto the smooth
- * arc, which is a few percent longer. Section starts come from control indices (five
- * legs per section), and spur mouths sit exactly on control points, so both re-anchor
- * exactly rather than approximately.
+/**
+ * Today's course.
+ *
+ * Everybody driving the challenge on a given day drives an identical map and
+ * nothing has to be fetched to know what it is. A page left open across the
+ * rollover keeps yesterday's course until it is reloaded, which the intro
+ * card's countdown makes visible.
  */
-{
-  // Sections are five legs, six when a ramp adds its landing - so the mapping comes
-  // from the generator's own record of each section's first leg, never from division.
-  for (let sIdx = 0; sIdx < SECTION_COUNT; sIdx++) {
-    SECTION_STARTS[sIdx] = SMOOTHED.controlProgress[GENERATED.sectionFirstLeg[sIdx]];
-  }
-  /*
-   * Nearest control, never a string match. The exact-key lookup silently missed any
-   * spur whose mouth coordinates differed from the control by a rounding hair - and
-   * a miss left the spur carrying PRE-SMOOTHING progress, a different scale that
-   * drifts hundreds of units along the course. Those spurs were invisible to the
-   * ambush director's seating window (and mis-timed when they did seat), which is
-   * why juggernauts all but vanished from real runs and fired at phantom leads
-   * when they appeared. Every mouth sits on a control; the nearest one within a
-   * few units IS its control.
-   */
-  for (const spur of SPURS) {
-    let best = -1;
-    let bd = Infinity;
-    for (let i = 0; i < MAIN_LEGS.length; i++) {
-      const l = MAIN_LEGS[i];
-      const d = (l.x - spur.ax) * (l.x - spur.ax) + (l.z - spur.az) * (l.z - spur.az);
-      if (d < bd) {
-        bd = d;
-        best = i;
-      }
-    }
-    if (best >= 0 && bd < 36) spur.progress = SMOOTHED.controlProgress[best + 1];
-  }
+export const DAILY: Course = makeCourse(seedForDay());
+
+export const MAIN_LEGS: LegDef[] = DAILY.legs;
+/** Ambush spurs, in course order. */
+export const SPURS: SpurDef[] = DAILY.spurs;
+/** Distance along the spine where each section starts. */
+export const SECTION_STARTS = DAILY.sectionStarts;
+/**
+ * Theme per section. These drive surfacing, walls and props only — sections are numbered,
+ * not named. A run has no destination, so "FINAL APPROACH" was a promise the game does not
+ * keep, and a number is the honest label for how far you have got.
+ */
+export const SECTION_THEMES = DAILY.sectionThemes;
+/** The day's palette rolls, one per wall style. */
+export const WALL_ROLLS = DAILY.wallRolls;
+
+/** Which section (0-based) a given distance along the course falls in. */
+export function sectionIndexAt(progress: number, course: Course = DAILY): number {
+  const starts = course.sectionStarts;
+  let i = 0;
+  while (i + 1 < starts.length && progress >= starts[i + 1]) i++;
+  return i;
 }
 
-export function buildCourseSegments(): BuiltCourse {
+export const SMOOTH_LEGS: LegDef[] = DAILY.smoothLegs;
+
+export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
   const segments: CourseSegment[] = [];
   const spine: PathNode[] = [COURSE_START];
 
   let prev: PathNode = COURSE_START;
-  for (const leg of SMOOTH_LEGS) {
+  for (const leg of course.smoothLegs) {
     segments.push(makeSegment(segments.length, prev, leg, false));
     prev = leg;
     spine.push({ x: leg.x, z: leg.z, y: leg.y });

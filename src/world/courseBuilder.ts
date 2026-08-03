@@ -11,8 +11,8 @@ import type { Renderer } from "../gfx/renderer";
 
 import type { StaticCollider } from "../physics/collisionWorld";
 import type { CourseSegment, SectionId, Surface, WallStyle } from "./course";
-import { WALL_ROLLS } from "./course";
-import { buildCourseSegments } from "./course";
+import { buildCourseSegments, DAILY } from "./course";
+import type { Course } from "./course";
 import { NavGraph } from "./navGraph";
 import { Terrain } from "./terrain";
 
@@ -306,8 +306,8 @@ function enforceRacingLine(
   return withdrawn;
 }
 
-export function buildWorld(r: Renderer): BuiltWorld {
-  const { segments } = buildCourseSegments();
+export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
+  const { segments } = buildCourseSegments(course);
   const terrain = new Terrain(segments);
   const colliders: StaticCollider[] = [];
   /** Every withdrawable block, for the racing-line check once the world is whole. */
@@ -318,7 +318,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   const wallShades: Record<string, Rgb[]> = {};
   for (const [name, style] of Object.entries(WALL_STYLE)) {
     const variants = WALL_VARIANTS[name as Exclude<WallStyle, "none">] ?? [style.color];
-    const roll = WALL_ROLLS[name] ?? 0;
+    const roll = course.wallRolls[name] ?? 0;
     const color = variants[Math.floor(roll * 997) % variants.length];
     wallShades[name] = [0, 1, 2].map((i) => scale(color, 0.82 + i * 0.14));
   }
@@ -654,6 +654,96 @@ export function buildWorld(r: Renderer): BuiltWorld {
  * of the fence.
  */
 const JUNCTION_CLEARANCE = 1.5;
+
+/**
+ * How far inside a MAIN carriageway does this point sit?
+ *
+ * Zero when it is off the sealed road, positive by however many units it
+ * intrudes. `onOtherRoad` cannot answer this: it deliberately ignores nearby
+ * slices of the road a wall belongs to, because on a curve a wall is
+ * legitimately close to slices a few dozen indices away. But "close to" is not
+ * "standing in" - and on a tight inside bend the offset wall line folds across
+ * its own road, which that exemption waves straight through. Whole
+ * carriageways were being walled off this way, which is what a chokehold with
+ * no explanation looks like.
+ */
+function roadPenetration(
+  segments: CourseSegment[],
+  x: number,
+  z: number,
+  baseY: number,
+  topY: number,
+  terrain?: Terrain,
+): number {
+  const near = terrain?.segmentsNear(x, z);
+  const list = near ?? segments;
+  let worst = 0;
+  for (let li = 0; li < list.length; li++) {
+    const seg = near ? segments[near[li]] : (list[li] as CourseSegment);
+    if (seg.branch || seg.overlay) continue;
+    const rx = x - seg.ax;
+    const rz = z - seg.az;
+    const along = rx * seg.dx + rz * seg.dz;
+    if (along < 0 || along > seg.length) continue;
+    const across = Math.abs(rx * seg.dz - rz * seg.dx);
+    if (across >= seg.halfWidth) continue;
+    /*
+     * Does this thing actually stand in the way?
+     *
+     * Not "is it on the same deck" - that question let a spur wall whose base
+     * sat two units above a road count as a different deck and stay, while its
+     * collider rose thirteen units and stopped the car dead. The collision
+     * world's rule is the only one that matters: you pass over a solid only if
+     * you are above its top. So a wall is an obstruction unless it clears the
+     * road high enough to drive under, or is buried below its surface.
+     */
+    const hRoad = seg.ay + (seg.by - seg.ay) * (along / seg.length);
+    if (topY < hRoad + 0.3) continue;
+    if (baseY > hRoad + DRIVE_UNDER) continue;
+    const bite = seg.halfWidth - across;
+    if (bite > worst) worst = bite;
+  }
+  return worst;
+}
+
+/** Deepest a wall may sit inside a carriageway before it is simply not built. */
+const WALL_BITE_LIMIT = 1.0;
+/** Clearance a structure needs above a road for a car to pass beneath it. */
+const DRIVE_UNDER = 3.0;
+
+/**
+ * Does any part of this wall box stand meaningfully inside a carriageway?
+ * Sampled over the footprint, because thickness is exactly what the centre-line
+ * test misses.
+ */
+function wallEatsRoad(
+  segments: CourseSegment[],
+  cx: number,
+  cz: number,
+  baseY: number,
+  topY: number,
+  halfLength: number,
+  halfWidth: number,
+  heading: number,
+  terrain?: Terrain,
+): boolean {
+  const fx = Math.sin(heading);
+  const fz = Math.cos(heading);
+  const rx = fz;
+  const rz = -fx;
+  const nA = Math.max(2, Math.ceil((halfLength * 2) / 1.5));
+  const nB = Math.max(2, Math.ceil((halfWidth * 2) / 1.5));
+  for (let i = 0; i <= nA; i++) {
+    const a = -1 + (2 * i) / nA;
+    for (let j = 0; j <= nB; j++) {
+      const b = -1 + (2 * j) / nB;
+      const x = cx + fx * halfLength * a + rx * halfWidth * b;
+      const z = cz + fz * halfLength * a + rz * halfWidth * b;
+      if (roadPenetration(segments, x, z, baseY, topY, terrain) > WALL_BITE_LIMIT) return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Does a wall's FOOTPRINT land on another road?
@@ -1275,6 +1365,22 @@ function buildSpineWallLines(
           continue;
         }
         const groundY = heightAt(cx, cz, pts[i].seg.ay);
+        // ...and never on its OWN road either, which a folded offset line does.
+        if (
+          wallEatsRoad(
+            segments,
+            cx,
+            cz,
+            groundY,
+            groundY + style.maxHeight,
+            span / 2 + 0.2,
+            halfT,
+            heading,
+            terrain,
+          )
+        ) {
+          continue;
+        }
         addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight, "wallRail");
       }
     };
@@ -1509,6 +1615,17 @@ function buildWalls(
           style.thickness / 2,
           seg.heading,
           clear,
+          terrain,
+        ) ||
+        wallEatsRoad(
+          segments,
+          cx,
+          cz,
+          groundY,
+          groundY + style.maxHeight,
+          halfChunk,
+          style.thickness / 2,
+          seg.heading,
           terrain,
         )
       ) {

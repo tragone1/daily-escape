@@ -209,63 +209,198 @@ export function buildWorld(r: Renderer): BuiltWorld {
     // Slope makes the ribbon longer than its ground-plane footprint.
     const ribbonLength = seg.length * Math.hypot(1, seg.grade);
 
-    /*
-     * TRIM THE MOUTH.
-     *
-     * A spur's slab is one box laid end to end, and its mouth end overlaps the
-     * carriageway it opens onto. The two surfaces sit at slightly different
-     * heights and pitches, so that end pokes up THROUGH the road as a flat
-     * jagged wedge - drivable, but it reads as broken geometry and throws a
-     * shadow across the lane. Walk in from whichever end is over the road and
-     * shorten the slab to where the road stops owning the ground; the main
-     * ribbon already covers everything trimmed away.
-     */
-    let trimA = 0;
-    let trimB = 0;
-    if (seg.branch && terrain) {
-      const overRoad = (x: number, z: number): boolean => {
-        const smp = terrain.sample(x, z);
-        return smp.onCourse && !smp.segment.branch && !smp.segment.overlay;
-      };
-      const STEP = 0.5;
-      if (overRoad(seg.ax, seg.az)) {
-        while (trimA < seg.length * 0.5 && overRoad(seg.ax + seg.dx * trimA, seg.az + seg.dz * trimA)) {
-          trimA += STEP;
-        }
-      }
-      if (overRoad(seg.bx, seg.bz)) {
-        while (trimB < seg.length * 0.5 && overRoad(seg.bx - seg.dx * trimB, seg.bz - seg.dz * trimB)) {
-          trimB += STEP;
-        }
-      }
-    }
-    const trimmedLength = Math.max(1, ribbonLength - trimA - trimB);
-    const shift = (trimA - trimB) / 2;
-    const slabX = midX + seg.dx * shift;
-    const slabZ = midZ + seg.dz * shift;
-    const slabY = midY + seg.grade * shift;
-
     const tint = SECTION_TINT[seg.section] ?? [1, 1, 1];
     const base = SURFACE_COLOR[seg.surface];
-    const road = r.createMesh(
-      { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: trimmedLength },
-      {
-        color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
-        emissive: 0.3,
-        isStatic: true,
-      },
-    );
-    /*
-     * Drop the slab so its *top face* lands on the height the terrain reports.
-     *
-     * `heightAt` returns the centre line of the segment, and the ribbon is a half-unit
-     * thick box centred on that, so the surface you can see was a quarter of a unit above
-     * the surface the simulation puts the car on. The car sits correctly and looks sunk:
-     * about half a wheel, everywhere, all the time.
-     */
-    road.position.set(slabX, slabY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), slabZ);
-    road.rotation.y = seg.heading;
-    road.rotation.x = pitch;
+    const surfaceColor: Rgb = [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]];
+
+    if (seg.branch) {
+      /*
+       * A SPUR IS THE ROAD MINUS THE ROADS IT MEETS.
+       *
+       * A spur used to be one square-ended box, and it meets a road at an
+       * angle: measured across its width, the road's edge can sit eleven units
+       * further along on one side than the other. However that box was cut, one
+       * corner lay on the carriageway - a flat wedge on the lane, throwing its
+       * own shadow - or fell short of it, leaving a notch of bare void. A spur
+       * that crosses a road part-way along, rather than ending at one, had the
+       * whole crossing lying on top of it.
+       *
+       * So the surface is built by subtracting every same-deck carriageway it
+       * touches from its own rectangle. The join is then exactly the kerb line,
+       * at any angle, and no ground is ever drawn twice. Roads on another deck
+       * are left alone - a spur running under a flyover keeps its surface.
+       */
+      const perpX = seg.dz;
+      const perpZ = -seg.dx;
+      let pieces: SpurPt[][] = [
+        [
+          { a: 0, o: -seg.halfWidth },
+          { a: seg.length, o: -seg.halfWidth },
+          { a: seg.length, o: seg.halfWidth },
+          { a: 0, o: seg.halfWidth },
+        ],
+      ];
+      for (const m of segments) {
+        if (m.branch || m.overlay || pieces.length === 0) continue;
+        const mcx = (m.ax + m.bx) / 2;
+        const mcz = (m.az + m.bz) / 2;
+        const reach = m.length / 2 + m.halfWidth + seg.length / 2 + seg.halfWidth;
+        if ((mcx - midX) ** 2 + (mcz - midZ) ** 2 > reach * reach) continue;
+
+        // Lateral offset from the main's centre line, and distance along it -
+        // both linear in the spur's own coordinates.
+        const rx = seg.ax - m.ax;
+        const rz = seg.az - m.az;
+        const c0 = rx * m.dz - rz * m.dx;
+        const ca = seg.dx * m.dz - seg.dz * m.dx;
+        const co = perpX * m.dz - perpZ * m.dx;
+        const e0 = rx * m.dx + rz * m.dz;
+        const ea = seg.dx * m.dx + seg.dz * m.dz;
+        const eo = perpX * m.dx + perpZ * m.dz;
+        const across = (pt: SpurPt) => c0 + ca * pt.a + co * pt.o;
+        const along = (pt: SpurPt) => e0 + ea * pt.a + eo * pt.o;
+        const inside: Array<(p: SpurPt) => number> = [
+          (pt) => m.halfWidth - across(pt),
+          (pt) => m.halfWidth + across(pt),
+          (pt) => along(pt),
+          (pt) => m.length - along(pt),
+        ];
+
+        const next: SpurPt[][] = [];
+        for (const piece of pieces) {
+          const overlap = piece.reduce(
+            (acc, pt) => acc && inside.every((f) => f(pt) > -0.001),
+            true,
+          );
+          const touches = overlap || inside.every((f) => piece.some((pt) => f(pt) > 0));
+          if (!touches) {
+            next.push(piece);
+            continue;
+          }
+          // Same deck only, judged at the middle of what would be removed.
+          const kept = inside.reduce((poly, f) => clipHalf(poly, f), piece);
+          if (kept.length < 3 || polyArea(kept) < 0.05) {
+            next.push(piece);
+            continue;
+          }
+          let ca2 = 0;
+          let co2 = 0;
+          for (const pt of kept) {
+            ca2 += pt.a / kept.length;
+            co2 += pt.o / kept.length;
+          }
+          const yHere = seg.ay + ((seg.by - seg.ay) * ca2) / seg.length;
+          const yThere = m.ay + ((m.by - m.ay) * along({ a: ca2, o: co2 })) / m.length;
+          if (Math.abs(yHere - yThere) > SAME_DECK) {
+            next.push(piece);
+            continue;
+          }
+          next.push(...subtractConvex(piece, inside));
+        }
+        pieces = next;
+      }
+
+      const pos: number[] = [];
+      const norm: number[] = [];
+      const idx: number[] = [];
+      const skirtPos: number[] = [];
+      const skirtNorm: number[] = [];
+      const skirtIdx: number[] = [];
+      const at = (pt: SpurPt): [number, number, number] => [
+        seg.ax + seg.dx * pt.a + perpX * pt.o,
+        seg.ay + ((seg.by - seg.ay) * pt.a) / seg.length,
+        seg.az + seg.dz * pt.a + perpZ * pt.o,
+      ];
+      /*
+       * A curtain hanging from the surface's own edge, in place of the wide
+       * dark box that used to sit under a spur. That box was square and a
+       * little wider than the surface above it, so wherever the surface was
+       * cut back the box was left showing on the carriageway - the dark patch
+       * at the mouth. Hung from the edge it can never rise above the surface
+       * it hangs from, and it still closes the void at a dead end.
+       */
+      for (const piece of pieces) {
+        if (piece.length < 3) continue;
+        const v = piece.map(at);
+        for (let i = 1; i < v.length - 1; i++) {
+          pushQuad(pos, norm, idx, v[0], v[i], v[i + 1], v[i + 1]);
+        }
+        for (let i = 0; i < v.length; i++) {
+          const a = v[i];
+          const b = v[(i + 1) % v.length];
+          /*
+           * Only edges that open onto nothing get one. An edge made BY a cut has
+           * road on the far side of it, and a spur's plane can sit a little above
+           * the carriageway it meets, so a curtain there showed as a black line
+           * ruled across the lane.
+           */
+          const mid = {
+            a: (piece[i].a + piece[(i + 1) % piece.length].a) / 2,
+            o: (piece[i].o + piece[(i + 1) % piece.length].o) / 2,
+          };
+          if (overSameDeckMain(segments, seg, mid)) continue;
+          const nx = a[2] - b[2];
+          const nz = b[0] - a[0];
+          const nl = Math.hypot(nx, nz) || 1;
+          const bi = skirtPos.length / 3;
+          for (const q of [a, b, [b[0], b[1] - 14, b[2]], [a[0], a[1] - 14, a[2]]] as const) {
+            skirtPos.push(q[0], q[1], q[2]);
+          }
+          for (let k = 0; k < 4; k++) skirtNorm.push(nx / nl, 0.2, nz / nl);
+          skirtIdx.push(bi, bi + 1, bi + 2, bi, bi + 2, bi + 3);
+        }
+      }
+
+      if (idx.length > 0) {
+        const surface = r.createMesh(
+          {
+            kind: "custom",
+            geometry: {
+              positions: new Float32Array(pos),
+              normals: new Float32Array(norm),
+              indices: new Uint32Array(idx),
+            },
+          },
+          { color: [...surfaceColor] as Rgb, emissive: 0.3, isStatic: true },
+        );
+        surface.position.set(0, 0, 0);
+        const under = r.createMesh(
+          {
+            kind: "custom",
+            geometry: {
+              positions: new Float32Array(skirtPos),
+              normals: new Float32Array(skirtNorm),
+              indices: new Uint32Array(skirtIdx),
+            },
+          },
+          { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
+        );
+        under.position.set(0, 0, 0);
+      }
+    }
+
+    // Overlays keep the plain box - they lie along a road, never across one.
+    if (!seg.branch) {
+      const road = r.createMesh(
+        { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: ribbonLength },
+        {
+          color: [...surfaceColor] as Rgb,
+          emissive: 0.3,
+          isStatic: true,
+        },
+      );
+      /*
+       * Drop the slab so its *top face* lands on the height the terrain reports.
+       *
+       * `heightAt` returns the centre line of the segment, and the ribbon is a half-unit
+       * thick box centred on that, so the surface you can see was a quarter of a unit above
+       * the surface the simulation puts the car on. The car sits correctly and looks sunk:
+       * about half a wheel, everywhere, all the time.
+       */
+      road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), midZ);
+      road.rotation.y = seg.heading;
+      road.rotation.x = pitch;
+    }
 
     // Centre line on sealed roads only.
     if (seg.surface === "asphalt" && !seg.branch) {
@@ -294,25 +429,6 @@ export function buildWorld(r: Renderer): BuiltWorld {
       );
       lip.position.set(seg.bx, seg.by + 0.4, seg.bz);
       lip.rotation.y = seg.heading;
-    }
-
-    /*
-     * A skirt hanging under the ribbon.
-     *
-     * Consecutive legs meet at an angle and at different heights, and the ribbon is a
-     * flat slab, so every joint and every ramp landing left a vertical slot you could see
-     * straight through to the void. Dropping a deep apron under each piece fills all of
-     * them at once, and reads as the ground the road is cut into.
-     */
-    if (!seg.overlay) {
-      const skirtDepth = 14;
-      const skirt = r.createMesh(
-        { kind: "box", width: (seg.halfWidth + seg.shoulder) * 2 + 1.5, height: skirtDepth, depth: ribbonLength * 1.04 },
-        { color: [0.11, 0.1, 0.1], emissive: 0.18, isStatic: true },
-      );
-      skirt.position.set(midX, midY - skirtDepth / 2 - ROAD_THICKNESS / 2, midZ);
-      skirt.rotation.y = seg.heading;
-      skirt.rotation.x = pitch;
     }
 
     // Overlay strips are surface only: they change grip underfoot, nothing else.
@@ -440,6 +556,119 @@ function onOtherRoad(
  * overlaps, nothing to patch. Faces are flat-shaded per quad, so the ground keeps the
  * same low-poly facet look as everything else, just at the slice grain.
  */
+/** Deck gap above which a road crossing a spur is a bridge, not a junction. */
+const SAME_DECK = 1.2;
+
+/** A point in a spur's own frame: `a` along it, `o` across it. */
+interface SpurPt {
+  a: number;
+  o: number;
+}
+
+/**
+ * Does a main road's carriageway lie at this point on the spur, on the same deck?
+ * Used to tell an edge that was cut by a road from one that opens onto the void.
+ */
+function overSameDeckMain(segments: CourseSegment[], seg: CourseSegment, pt: SpurPt): boolean {
+  const x = seg.ax + seg.dx * pt.a + seg.dz * pt.o;
+  const z = seg.az + seg.dz * pt.a - seg.dx * pt.o;
+  const y = seg.ay + ((seg.by - seg.ay) * pt.a) / seg.length;
+  for (const m of segments) {
+    if (m.branch || m.overlay) continue;
+    const rx = x - m.ax;
+    const rz = z - m.az;
+    const along = rx * m.dx + rz * m.dz;
+    if (along < -0.05 || along > m.length + 0.05) continue;
+    if (Math.abs(rx * m.dz - rz * m.dx) > m.halfWidth + 0.05) continue;
+    if (Math.abs(y - (m.ay + ((m.by - m.ay) * along) / m.length)) <= SAME_DECK) return true;
+  }
+  return false;
+}
+
+/** Keep the part of a convex polygon where `f` is positive. */
+function clipHalf(poly: SpurPt[], f: (p: SpurPt) => number): SpurPt[] {
+  const out: SpurPt[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const cur = poly[i];
+    const nxt = poly[(i + 1) % poly.length];
+    const dc = f(cur);
+    const dn = f(nxt);
+    if (dc >= 0) out.push(cur);
+    if (dc >= 0 !== dn >= 0) {
+      const t = dc / (dc - dn);
+      out.push({ a: cur.a + (nxt.a - cur.a) * t, o: cur.o + (nxt.o - cur.o) * t });
+    }
+  }
+  return out;
+}
+
+function polyArea(poly: SpurPt[]): number {
+  let sum = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const c = poly[i];
+    const n = poly[(i + 1) % poly.length];
+    sum += c.a * n.o - n.a * c.o;
+  }
+  return Math.abs(sum) / 2;
+}
+
+/**
+ * Cut a convex region out of a convex polygon, exactly.
+ *
+ * `inside` is the region to remove, given as half-planes that are all positive
+ * within it. Taking the outside of each in turn, while keeping the inside of
+ * the ones already handled, tiles the difference with convex pieces - which is
+ * what lets the join be a true straight line along the kerb instead of a
+ * stepped or tapered approximation of one.
+ */
+function subtractConvex(poly: SpurPt[], inside: Array<(p: SpurPt) => number>): SpurPt[][] {
+  const pieces: SpurPt[][] = [];
+  let rest = poly;
+  for (const plane of inside) {
+    if (rest.length < 3) break;
+    const outer = clipHalf(rest, (pt) => -plane(pt));
+    if (outer.length >= 3 && polyArea(outer) > 0.05) pieces.push(outer);
+    rest = clipHalf(rest, plane);
+  }
+  // `rest` is what lies inside every plane: the removed region itself.
+  return pieces;
+}
+
+/** One flat-shaded quad in world space; normal derived, forced to face up. */
+function pushQuad(
+  pos: number[],
+  norm: number[],
+  idx: number[],
+  a: [number, number, number],
+  b: [number, number, number],
+  c: [number, number, number],
+  d: [number, number, number],
+  up = true,
+): void {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const uz = b[2] - a[2];
+  const vx = d[0] - a[0];
+  const vy = d[1] - a[1];
+  const vz = d[2] - a[2];
+  let nx = uy * vz - uz * vy;
+  let ny = uz * vx - ux * vz;
+  let nz = ux * vy - uy * vx;
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  nx /= nl;
+  ny /= nl;
+  nz /= nl;
+  if (up && ny < 0) {
+    nx = -nx;
+    ny = -ny;
+    nz = -nz;
+  }
+  const base = pos.length / 3;
+  for (const v of [a, b, c, d]) pos.push(v[0], v[1], v[2]);
+  for (let k = 0; k < 4; k++) norm.push(nx, ny, nz);
+  idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
+
 function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
   if (spine.length === 0) return;
 

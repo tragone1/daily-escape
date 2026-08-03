@@ -109,6 +109,8 @@ export class Vehicle {
   contactBoost = 1;
   /** Seconds of post-impact recovery left; throttle pulls harder while it runs. */
   recoveryTimer = 0;
+  /** Seconds spent pinned against geometry - drives the unwedge nudge. */
+  wedgeTimer = 0;
   /** Flat top-speed addition from late-run pace scaling (player only). */
   paceBonus = 0;
   /** Acceleration multiplier from the late-run switch (player only). */

@@ -78,6 +78,21 @@ export class CollisionWorld {
     // to bring a different collider into range.
     const candidates = this.solidGrid.queryCircle(v.x, v.z, reach + CELL_MARGIN, this.nearby);
 
+    /*
+     * SLIDE, DO NOT SNAG.
+     *
+     * Position is resolved against every collider - a car may never end up
+     * inside geometry - but the VELOCITY response is applied once, from the
+     * deepest contact of the frame. It used to run per collider per pass, and
+     * wall chunks deliberately overlap at their joints, so brushing a seam
+     * charged the tangential friction four times over: 0.82^4 is a 55% speed
+     * cut for touching a wall you were already sliding along. That was the
+     * snag - not the geometry, the bookkeeping.
+     */
+    let deepest = 0;
+    let hnx = 0;
+    let hnz = 0;
+
     for (let pass = 0; pass < 2; pass++) {
       for (const solid of candidates) {
         // Airborne over a low obstacle: no contact at all.
@@ -94,33 +109,85 @@ export class CollisionWorld {
         v.x += hit.nx * hit.depth;
         v.z += hit.nz * hit.depth;
 
-        const vn = v.vx * hit.nx + v.vz * hit.nz;
-        if (vn < 0) {
-          const impactSpeed = -vn;
+        if (hit.depth >= deepest) {
+          deepest = hit.depth;
+          hnx = hit.nx;
+          hnz = hit.nz;
+        }
+      }
+    }
 
-          // Split velocity into normal / tangential, then rebuild.
-          const tx = v.vx - hit.nx * vn;
-          const tz = v.vz - hit.nz * vn;
-          const bounce = -vn * c.restitution;
-          v.vx = tx * c.wallFriction + hit.nx * bounce;
-          v.vz = tz * c.wallFriction + hit.nz * bounce;
+    if (deepest > 0) {
+      const vn = v.vx * hnx + v.vz * hnz;
+      if (vn < 0) {
+        const impactSpeed = -vn;
+        const speed = Math.hypot(v.vx, v.vz) || 1;
 
-          // Glancing blows turn the car to run along the wall.
-          const fwdX = Math.sin(v.heading);
-          const fwdZ = Math.cos(v.heading);
-          const align = cross2(fwdX, fwdZ, hit.nx, hit.nz);
-          v.applySpin(clamp(-align * impactSpeed * c.spinFactor, -c.maxSpin, c.maxSpin));
+        /*
+         * Friction scales with how square the contact is. Running along a
+         * wall barely loses anything; driving into one still costs. A flat
+         * multiplier treated a graze and a head-on the same, which is why
+         * hugging a barrier bled speed until the car stopped.
+         */
+        const squareness = clamp(impactSpeed / speed, 0, 1);
+        const friction = c.wallFrictionGrazing + (c.wallFriction - c.wallFrictionGrazing) * squareness;
 
-          const severity = clamp(impactSpeed / v.params.maxSpeed, 0, 1);
-          const keep = 1 - c.buildingSpeedLoss * severity * v.impactResistance;
-          v.vx *= keep;
-          v.vz *= keep;
+        // Split velocity into normal / tangential, then rebuild.
+        const tx = v.vx - hnx * vn;
+        const tz = v.vz - hnz * vn;
+        const bounce = -vn * c.restitution;
+        v.vx = tx * friction + hnx * bounce;
+        v.vz = tz * friction + hnz * bounce;
 
-          if (pass === 0 && impactSpeed > c.minImpactSpeed) {
-            if (!strongest || impactSpeed > strongest.speed) {
-              strongest = { speed: impactSpeed, x: v.x, z: v.z, kind: "static" };
-            }
+        // Glancing blows turn the car to run along the wall.
+        const fwdX = Math.sin(v.heading);
+        const fwdZ = Math.cos(v.heading);
+        const align = cross2(fwdX, fwdZ, hnx, hnz);
+        v.applySpin(clamp(-align * impactSpeed * c.spinFactor, -c.maxSpin, c.maxSpin));
+
+        const severity = clamp(impactSpeed / v.params.maxSpeed, 0, 1);
+        const keep = 1 - c.buildingSpeedLoss * severity * v.impactResistance;
+        v.vx *= keep;
+        v.vz *= keep;
+
+        /*
+         * Slide assist: a stalled contact gets a shove ALONG the surface in
+         * whichever direction the car already faces, so geometry deflects
+         * instead of pinning. Fades out as speed returns.
+         */
+        const after = Math.hypot(v.vx, v.vz);
+        if (after < c.wallSlideAssistSpeed) {
+          const tanX = -hnz;
+          const tanZ = hnx;
+          let dir = fwdX * tanX + fwdZ * tanZ >= 0 ? 1 : -1;
+          const fade = 1 - after / c.wallSlideAssistSpeed;
+          /*
+           * WEDGED: pinned in a corner where the surfaces oppose whichever way
+           * the car points, the tangent shove alone just holds it there. After
+           * half a second the assist alternates direction and adds a shove
+           * back out along the contact normal - the same thing a player does
+           * by reversing, without the player having to do it.
+           */
+          // Reset only when genuinely driving again: the assist itself lifts
+          // speed just off zero, so a low threshold cleared the timer every
+          // frame and the escalation below never engaged.
+          v.wedgeTimer = after < 6 ? v.wedgeTimer + 1 / 60 : 0;
+          let boostAssist = 1;
+          if (v.wedgeTimer > 0.4) {
+            // Alternate which way along the surface we try, and shove out
+            // along the normal - escalating with how long it has been stuck.
+            if (Math.floor(v.wedgeTimer * 1.5) % 2 === 1) dir = -dir;
+            const esc = Math.min(3.5, 1.6 + v.wedgeTimer);
+            boostAssist = esc;
+            v.vx += hnx * c.wallSlideAssist * esc;
+            v.vz += hnz * c.wallSlideAssist * esc;
           }
+          v.vx += tanX * dir * c.wallSlideAssist * fade * boostAssist;
+          v.vz += tanZ * dir * c.wallSlideAssist * fade * boostAssist;
+        }
+
+        if (impactSpeed > c.minImpactSpeed) {
+          strongest = { speed: impactSpeed, x: v.x, z: v.z, kind: "static" };
         }
       }
     }

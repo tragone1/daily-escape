@@ -1847,7 +1847,7 @@ export const CONFIG = {
        * of the flat climb - the late game was reading as no harder than the mid
        * game once the player's own pace ramp kicked in.
        */
-      lateSpeedPerSection: 1.8,
+      lateSpeedPerSection: 1.1,
       /**
        * 26, reached around round twenty-three. At 20 the cops stopped gaining
        * at round nineteen while the player's own ramp ran to round thirty -
@@ -1855,7 +1855,7 @@ export const CONFIG = {
        * A capped heavy runs 70; the player's full-ramp boost peaks 73.5, so
        * the boost escape stays alive by design.
        */
-      maxSpeedBonus: 30,
+      maxSpeedBonus: 20,
       /**
        * The smarts curve. From the tenth section each section adds this much aggro,
        * capped: charges wind up faster and repeat sooner, and the box around the
@@ -1902,6 +1902,22 @@ export const CONFIG = {
     restitution: 0.28,
     /** Fraction of tangential (sliding) speed kept when scraping a wall. */
     wallFriction: 0.82,
+    /**
+     * Tangential retention for a GRAZE - a car running along a barrier keeps
+     * essentially all its speed. Wall contact should be smooth enough to lean
+     * on through a corner, not a thing that stops you dead on a seam.
+     */
+    wallFrictionGrazing: 0.995,
+    /**
+     * SLIDE ASSIST. A car pinned against geometry at low speed used to sit
+     * there with the throttle buried - nose into an edge block, no way off it
+     * but reverse. This nudges a stalled contact ALONG the surface, in
+     * whichever direction the car is already pointing, so walls and blocks
+     * deflect you instead of catching you. Scales to nothing by `assistSpeed`,
+     * so it never pushes a car that is genuinely driving.
+     */
+    wallSlideAssist: 0.62,
+    wallSlideAssistSpeed: 18,
     /** Fraction of speed lost on a solid building hit. */
     buildingSpeedLoss: 0.42,
     /** Fraction of speed lost when cars trade paint. */

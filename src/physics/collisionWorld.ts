@@ -36,6 +36,11 @@ export interface StaticCollider {
   occludes: boolean;
   /** Which builder placed it. Diagnostic: it is what makes a choke traceable. */
   source?: string;
+  /**
+   * Which streamed window built it, so a retired stretch of course can take
+   * its own colliders with it and leave everyone else's alone.
+   */
+  window?: number;
 }
 
 export interface Impact {

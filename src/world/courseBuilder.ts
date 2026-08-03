@@ -364,7 +364,7 @@ function enforceRacingLine(
  * a band of progress is a compact region, and it is also the unit a streamed
  * world adds and drops.
  */
-function bakeInChunks(r: Renderer, segments: CourseSegment[]): void {
+function bakeInChunks(r: Renderer, segments: CourseSegment[], prefix: string): void {
   const mains = segments.filter((sg) => !sg.branch && !sg.overlay);
   let acc = 0;
   const bounds: Array<{ upto: number; x: number; z: number }> = [];
@@ -392,7 +392,7 @@ function bakeInChunks(r: Renderer, segments: CourseSegment[]): void {
     }
     return Math.min(chunkCount - 1, Math.floor(bounds[best].upto / CHUNK_SPAN));
   };
-  r.bakeGrouped(chunkOf, chunkCount);
+  r.bakeGrouped(chunkOf, chunkCount, prefix);
 }
 
 export function buildWorld(
@@ -408,6 +408,8 @@ export function buildWorld(
    * its resident set; a one-shot build passes nothing and starts empty.
    */
   into?: StaticCollider[],
+  /** Namespace for this build's geometry, so a window can be released later. */
+  chunkPrefix = "world",
 ): BuiltWorld {
   const { segments } = buildCourseSegments(course);
   const terrain = new Terrain(segments);
@@ -742,7 +744,7 @@ export function buildWorld(
    * near enough to see is drawn - and a chunk is a unit the world can later
    * release, which is what streaming needs.
    */
-  bakeInChunks(r, segments);
+  bakeInChunks(r, segments, chunkPrefix);
 
   return {
     segments,

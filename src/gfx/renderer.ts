@@ -396,7 +396,12 @@ export class Renderer {
    * transformed and copied into that chunk's buffer, then dropped, because a
    * baked mesh has no life of its own afterwards.
    */
-  bakeGrouped(chunkOf: (x: number, z: number) => number, chunkCount: number): void {
+  bakeGrouped(
+    chunkOf: (x: number, z: number) => number,
+    chunkCount: number,
+    /** Namespace for the chunk ids, so windows cannot overwrite each other's. */
+    prefix = "chunk",
+  ): void {
     const statics = this.meshes.filter((m) => m.isStatic && !this.batched.has(m));
     if (statics.length === 0) return;
     const groups: Mesh[][] = Array.from({ length: chunkCount }, () => []);
@@ -429,7 +434,7 @@ export class Renderer {
       groups[idx].push(mesh);
     }
     for (let i = 0; i < groups.length; i++) {
-      if (groups[i].length > 0) this.bakeMeshes(groups[i], `chunk${i}`);
+      if (groups[i].length > 0) this.bakeMeshes(groups[i], `${prefix}:${i}`);
     }
     this.forgetBaked();
   }
@@ -510,6 +515,21 @@ export class Renderer {
     gl.deleteVertexArray(existing.gpu.vao);
     for (const buf of existing.gpu.buffers) gl.deleteBuffer(buf);
     this.chunks.delete(chunkId);
+  }
+
+  /**
+   * Drop every chunk in a namespace: the geometry of a retired stretch of
+   * course, released in one call along with its GPU buffers.
+   */
+  disposeChunkGroup(prefix: string): number {
+    let dropped = 0;
+    for (const id of [...this.chunks.keys()]) {
+      if (id.startsWith(`${prefix}:`)) {
+        this.disposeChunk(id);
+        dropped++;
+      }
+    }
+    return dropped;
   }
 
   /** Meshes already folded into a chunk, so they are not drawn individually. */

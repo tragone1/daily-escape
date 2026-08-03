@@ -43,6 +43,16 @@ const WINDOW = 4;
  * anything the director reaches for.
  */
 const LOOKAHEAD_SECTIONS = 3;
+/**
+ * Sections kept behind the player before a stretch of course is released.
+ *
+ * Generous, because "behind" is not the same as "finished with": the police
+ * are dispatched up to a couple of hundred units back and a car shoved off the
+ * road can lose ground, and neither should find the world missing. Beyond this
+ * nothing can drive back into it - the arrest ends a run long before a player
+ * could reverse that far.
+ */
+const KEEP_BEHIND_SECTIONS = 6;
 
 export interface StreamedWorld {
   segments: CourseSegment[];
@@ -52,9 +62,20 @@ export interface StreamedWorld {
   blocksWithdrawn: number;
 }
 
+/** A stretch of course that was built together, and can be released together. */
+interface Window {
+  id: number;
+  from: number;
+  to: number;
+}
+
 export class WorldStream {
   /** Sections whose geometry exists. Everything below this has been built. */
   private builtThrough = 0;
+  /** Windows currently standing, oldest first. */
+  private windows: Window[] = [];
+  private nextWindowId = 0;
+  private retiredSections = 0;
   private course: Course;
   private segments: CourseSegment[];
   private colliders: StaticCollider[] = [];
@@ -115,12 +136,54 @@ export class WorldStream {
      * Building against an empty list would treat each seam as the edge of the
      * world - which is where blocked roads came from before.
      */
-    const built = buildWorld(this.renderer, this.course, emitSections(from, to), this.colliders);
+    const id = this.nextWindowId++;
+    const before = this.colliders.length;
+    const built = buildWorld(
+      this.renderer,
+      this.course,
+      emitSections(from, to),
+      this.colliders,
+      `w${id}`,
+    );
+    // Tag what this window added, so releasing it takes its own and no more.
+    for (let i = before; i < this.colliders.length; i++) this.colliders[i].window = id;
+    this.windows.push({ id, from, to });
     this.builtThrough = to;
     this.withdrawn += built.blocksWithdrawn;
 
+    this.retireBehind(sectionIndex);
     this.publish();
     return true;
+  }
+
+  /**
+   * Let go of course far enough behind that nothing can return to it.
+   *
+   * Without this a long run grows for as long as it lasts - which, now that
+   * there is no end to reach, means without bound. What is DRAWN stays flat
+   * either way because the chunks cull, so this is about memory: the colliders,
+   * their index, and the geometry sitting in GPU buffers behind the player.
+   */
+  private retireBehind(sectionIndex: number): void {
+    const cutoff = sectionIndex - KEEP_BEHIND_SECTIONS;
+    if (cutoff <= 0) return;
+    const dead = this.windows.filter((w) => w.to <= cutoff);
+    if (dead.length === 0) return;
+
+    const ids = new Set(dead.map((w) => w.id));
+    for (const w of dead) this.renderer.disposeChunkGroup(`w${w.id}`);
+    // One filter rather than repeated splices: the array is thousands long and
+    // the whole point of this is to stop paying for what is behind you.
+    const kept = this.colliders.filter((c) => c.window === undefined || !ids.has(c.window));
+    this.colliders.length = 0;
+    this.colliders.push(...kept);
+    this.windows = this.windows.filter((w) => !ids.has(w.id));
+    this.retiredSections += dead.reduce((n, w) => n + (w.to - w.from), 0);
+  }
+
+  /** Sections released behind the player. Diagnostic. */
+  get retired(): number {
+    return this.retiredSections;
   }
 
   /** Hand the freshly built world to the objects that hold it, in place. */

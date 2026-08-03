@@ -80,6 +80,7 @@ export function stubRenderer(): Renderer {
     // of which exist before any of it happens.
     bakeGrouped: () => {},
     disposeChunk: () => {},
+    disposeChunkGroup: () => 0,
     forgetBaked: () => {},
   } as unknown as Renderer;
 }

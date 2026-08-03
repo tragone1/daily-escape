@@ -85,3 +85,46 @@ describe("a streamed course", () => {
     expect(stream.sectionCount).toBeGreaterThan(8);
   });
 });
+
+describe("retiring what is behind", () => {
+  it("stops growing however long the run lasts", () => {
+    const { world, stream } = start(8919);
+    const sizes: number[] = [];
+    for (let section = 0; section < 120; section++) {
+      stream.ensureBuiltThrough(section);
+      if (section > 20 && section % 10 === 0) sizes.push(world.colliders.length);
+    }
+    /*
+     * The point is a ceiling, not a shrink: the resident set should settle
+     * rather than climb with the length of the run. Without retirement this
+     * grows linearly and a long run eventually holds the whole course.
+     */
+    const early = sizes[0];
+    const late = sizes[sizes.length - 1];
+    expect(late).toBeLessThan(early * 1.6);
+    expect(stream.retired).toBeGreaterThan(0);
+  });
+
+  it("keeps the ground under and ahead of the player", () => {
+    const { world, stream } = start(8919);
+    for (let section = 0; section < 60; section++) {
+      stream.ensureBuiltThrough(section);
+      const here = stream.sectionStarts[section];
+      // The road the player is standing on must still be described.
+      const node = world.nav.nodeAtProgress(here + 20);
+      expect(world.terrain.sample(node.x, node.z).onCourse).toBe(true);
+    }
+  });
+
+  it("never releases ground the player could still drive back to", () => {
+    const { world, stream } = start(8919);
+    for (let section = 0; section < 40; section++) stream.ensureBuiltThrough(section);
+    // Six sections back is inside the keep-behind margin, so it is still built.
+    const back = stream.sectionStarts[36];
+    const node = world.nav.nodeAtProgress(back);
+    const near = world.colliders.filter(
+      (c) => Math.hypot(c.obb.x - node.x, c.obb.z - node.z) < 60,
+    );
+    expect(near.length).toBeGreaterThan(0);
+  });
+});

@@ -294,7 +294,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
         if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments, terrain);
-    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
+    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades, terrain);
     buildProps(r, seg, colliders, segments);
   }
 
@@ -1414,6 +1414,7 @@ function capDeadEnd(
   seg: CourseSegment,
   colliders: StaticCollider[],
   wallShades: Record<string, Rgb[]>,
+  terrain?: Terrain,
 ): void {
   const style = WALL_STYLE[(seg.wall === "none" ? "fence" : seg.wall) as Exclude<WallStyle, "none">];
   const shades = wallShades[seg.wall === "none" ? "fence" : seg.wall];
@@ -1421,6 +1422,17 @@ function capDeadEnd(
   const height = style.minHeight + 0.5;
   const cx = seg.bx + seg.dx * (style.thickness / 2);
   const cz = seg.bz + seg.dz * (style.thickness / 2);
+
+  /*
+   * A cap belongs at the dead end of an alley, never across the road. When a
+   * spur's ends are recorded the wrong way round its 'far end' lands on the
+   * carriageway and the cap becomes a wall to squeeze past - the yellow slab
+   * that nearly closed section twenty-two.
+   */
+  {
+    const smpCap = terrain?.sample(cx, cz);
+    if (smpCap && smpCap.onCourse && !smpCap.segment.branch) return;
+  }
 
   const mesh = r.createMesh(
     { kind: "box", width, height, depth: style.thickness },

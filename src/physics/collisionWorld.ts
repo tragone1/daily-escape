@@ -215,10 +215,20 @@ export class CollisionWorld {
            * the car has driven into a genuine corner, and being stuck there
            * is a fair consequence: no escalation, just the gentle slide.
            */
+          /*
+           * Along a flat wall a stopped car is CAUGHT and frees itself
+           * quickly. Where the normals fan out it has driven into a corner
+           * and is held - but not forever: geometry can form a pocket no
+           * driver aimed for (two barrier systems meeting at the road edge),
+           * and sitting there at full throttle for good is never right. A
+           * corner therefore holds for a full second and a half before the
+           * same escape applies.
+           */
           const flatWall = normalSpread < c.wallCornerAngle;
-          v.wedgeTimer = after < 6 && flatWall ? v.wedgeTimer + 1 / 60 : 0;
+          v.wedgeTimer = after < 6 ? v.wedgeTimer + 1 / 60 : 0;
+          const freeAt = flatWall ? 0.4 : 1.5;
           let esc = 1;
-          if (v.wedgeTimer > 0.4) {
+          if (v.wedgeTimer > freeAt) {
             if (Math.floor(v.wedgeTimer * 1.5) % 2 === 1) dir = -dir;
             esc = Math.min(3.5, 1.6 + v.wedgeTimer);
             v.vx += hnx * c.wallSlideAssist * esc * 0.5;

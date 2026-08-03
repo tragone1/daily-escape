@@ -7,9 +7,43 @@
 import { CONFIG } from "./config";
 import { clamp } from "./math";
 
+/**
+ * The mute preference, stored if storage will have it.
+ *
+ * Wrapped because `localStorage` throws outright in some embedded frames and
+ * in Safari with cookies blocked - and a player who cannot save a preference
+ * should still get a working mute button for this session.
+ */
+const MUTE_KEY = "dailyEscape.muted";
+
+function readMutePreference(): boolean {
+  try {
+    return localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeMutePreference(muted: boolean): void {
+  try {
+    localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  } catch {
+    /* No storage: the choice holds for this session and no longer. */
+  }
+}
+
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /**
+   * Player-chosen mute, distinct from `silenced`.
+   *
+   * `silenced` is the game quieting its own loops between runs; this is the
+   * player saying no. They must not share a flag - starting a new run calls
+   * `resumeLoops`, which would otherwise un-mute someone who had asked for
+   * silence.
+   */
+  private muted = readMutePreference();
   private engineOsc: OscillatorNode | null = null;
   private engineSub: OscillatorNode | null = null;
   private engineGain: GainNode | null = null;
@@ -51,7 +85,7 @@ export class GameAudio {
       this.ctx = ctx;
 
       this.master = ctx.createGain();
-      this.master.gain.value = CONFIG.audio.masterVolume;
+      this.master.gain.value = this.muted ? 0 : CONFIG.audio.masterVolume;
       this.master.connect(ctx.destination);
 
       // Shared noise buffer for impacts, the boost whoosh and the tyre rush.
@@ -239,6 +273,26 @@ export class GameAudio {
    * must stop driving the loops as well as asking for quiet; `updateLoop` now refuses to
    * do anything once silenced.
    */
+  /** Is the player currently muted? Drives the button's label and state. */
+  get isMuted(): boolean {
+    return this.muted;
+  }
+
+  /**
+   * Turn player audio on or off.
+   *
+   * Applied at the master gain so one node governs everything, including loops
+   * that are mid-ramp. Ramped rather than switched: a hard cut to zero on a
+   * running oscillator is an audible click.
+   */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    writeMutePreference(muted);
+    if (!this.ctx || !this.master) return;
+    const target = muted ? 0 : CONFIG.audio.masterVolume;
+    this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
+  }
+
   quietLoops(): void {
     this.silenced = true;
     if (!this.ctx) return;

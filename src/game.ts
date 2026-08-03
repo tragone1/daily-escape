@@ -191,6 +191,30 @@ export class Game {
       this.begin();
     };
     document.getElementById("startGo")?.addEventListener("click", start);
+
+    /*
+     * Mute.
+     *
+     * Reflected into `aria-pressed` rather than only the icon, so the state is
+     * available to a screen reader and to a player who cannot tell the two
+     * glyphs apart. `stopPropagation` because the canvas below starts a run on
+     * any pointer press - silencing the game should not also launch it.
+     */
+    const muteBtn = document.getElementById("muteBtn");
+    const paintMute = (): void => {
+      const muted = this.audio.isMuted;
+      muteBtn?.setAttribute("aria-pressed", muted ? "true" : "false");
+      muteBtn?.setAttribute("aria-label", muted ? "Unmute sound" : "Mute sound");
+      const icon = document.getElementById("muteIcon");
+      if (icon) icon.textContent = muted ? "\u266A" : "\u266B";
+    };
+    paintMute();
+    muteBtn?.addEventListener("pointerdown", (e) => e.stopPropagation());
+    muteBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.audio.setMuted(!this.audio.isMuted);
+      paintMute();
+    });
     /*
      * Clicking the backdrop starts the run — but only the backdrop.
      *

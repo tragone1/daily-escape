@@ -759,6 +759,35 @@
         padding: 1px 4px;
         border-radius: 3px;
       }
+      /*
+       * Mute sits beside restart: the two things a player reaches for without
+       * being told. Square and quiet so it reads as a utility rather than
+       * competing with the run's own readouts.
+       */
+      #muteBtn {
+        position: absolute;
+        top: 14px;
+        left: calc(50% + 92px);
+        z-index: 30;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        font-size: 17px;
+        line-height: 1;
+        color: #dfe6f5;
+        background: rgba(10, 12, 18, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 9px;
+        backdrop-filter: blur(8px);
+        cursor: pointer;
+      }
+      #muteBtn:hover { background: rgba(24, 28, 40, 0.85); }
+      #muteBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      /* Muted reads as struck through, so the state is legible without colour. */
+      #muteBtn[aria-pressed="true"] { color: #8a92a8; }
+      #muteBtn[aria-pressed="true"] #muteIcon { text-decoration: line-through; }
+      body.touch-mode #muteBtn { width: 44px; height: 44px; }
+
       #restartBtn {
         position: absolute;
         top: 16px;
@@ -896,6 +925,9 @@
       </div>
 
       <button id="restartBtn">RESTART (P)</button>
+      <button id="muteBtn" type="button" aria-pressed="false" aria-label="Mute sound">
+        <span id="muteIcon" aria-hidden="true">&#9834;</span>
+      </button>
     </div>
 
     <div id="overlay">

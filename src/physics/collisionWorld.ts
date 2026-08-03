@@ -21,6 +21,15 @@ export interface StaticCollider {
   obb: OBB;
   /** World Y of the top face. A car above this passes over instead of colliding. */
   topY: number;
+  /**
+   * World Y of the BOTTOM face. A car below this passes under.
+   *
+   * Solids used to have a top and no bottom, so anything overhead was solid at
+   * ground level: the fence along a spur a hundred and forty units up stood in
+   * the road beneath it as an invisible wall. Every course had roads blocked
+   * this way by geometry nobody could see.
+   */
+  baseY: number;
   /** Broad-phase bounding radius around obb centre. */
   radius: number;
   /** Tall enough to block line of sight and the chase camera. */
@@ -44,6 +53,8 @@ function cross2(ax: number, az: number, bx: number, bz: number): number {
 
 /** Vertical slack before a car counts as "over" an obstacle. */
 const CLEAR_MARGIN = 0.6;
+/** How tall a car stands. Anything based above its roof is overhead, not in the way. */
+const CAR_HEIGHT = 2.4;
 
 /**
  * Slack added to broad-phase queries. The grid is exact for a static query — items are
@@ -106,7 +117,9 @@ export class CollisionWorld {
     for (let pass = 0; pass < 2; pass++) {
       for (const solid of candidates) {
         // Airborne over a low obstacle: no contact at all.
+        // Over the top, or under the bottom: either way there is no contact.
         if (v.y > solid.topY - CLEAR_MARGIN) continue;
+        if (v.y + CAR_HEIGHT < solid.baseY) continue;
 
         const dx = v.x - solid.obb.x;
         const dz = v.z - solid.obb.z;
@@ -442,6 +455,7 @@ export class CollisionWorld {
     );
     for (const solid of candidates) {
       if (solid.topY < carHeight) continue;
+      if (solid.baseY > carHeight + CAR_HEIGHT) continue;
       const t = segmentVsOBB(x0, z0, x1, z1, solid.obb);
       if (t !== null && t * maxDist < best) best = t * maxDist;
     }
@@ -483,6 +497,7 @@ export class CollisionWorld {
     for (const solid of candidates) {
       // Kerbs and low debris are driveable over; anything taller is a wall to this car.
       if (solid.topY < carHeight) continue;
+      if (solid.baseY > carHeight + CAR_HEIGHT) continue;
       if (segmentVsOBB(x0, z0, x1, z1, solid.obb) !== null) return false;
     }
     return true;

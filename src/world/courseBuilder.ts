@@ -161,10 +161,17 @@ function addCollider(
   topY: number,
   /** What built it. Diagnostic only - it is what makes a choke point traceable. */
   source = "unknown",
+  /**
+   * Where the solid starts. Defaults far below, which is the old behaviour -
+   * every caller that knows its ground height should say so, because a solid
+   * with no bottom blocks the road under it however high up it is.
+   */
+  baseY = -Infinity,
 ): void {
   list.push({
     obb: { x, z, halfLength, halfWidth, heading },
     topY,
+    baseY,
     radius: Math.hypot(halfLength, halfWidth),
     occludes: topY > 4.5,
     source,
@@ -1256,7 +1263,7 @@ function placePropStation(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
-    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "spineProp");
+    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "spineProp", groundY);
     props.push({ mesh, collider: colliders[colliders.length - 1] });
   };
 
@@ -1381,7 +1388,7 @@ function buildSpineWallLines(
         ) {
           continue;
         }
-        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight, "wallRail");
+        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight, "wallRail", groundY);
       }
     };
 
@@ -1555,7 +1562,7 @@ function cliffRailPass(
       );
       mesh.position.set(wx, midY + h / 2, wz);
       mesh.rotation.y = heading;
-      addCollider(colliders, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY + h, "branchWall");
+      addCollider(colliders, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY + h, "branchWall", midY);
       placed.push({ x: wx, z: wz });
     }
   }
@@ -1652,6 +1659,7 @@ function buildWalls(
         seg.heading,
         groundY + height,
         "branchWallChunk",
+        groundY,
       );
     }
   }
@@ -1874,7 +1882,7 @@ function sealBoundary(
        * had touched a key. An invisible barrier contains identically and shows nothing;
        * the void behind the start never enters view once the car is moving.
        */
-      addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height, "capHead");
+      addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height, "capHead", groundY);
     }
   }
 
@@ -2019,9 +2027,10 @@ function sealBoundary(
           Math.atan2(b.x - a.x, b.z - a.z),
           Math.max(a.top, b.top),
           "sealLink",
+          Math.min(a.top, b.top) - 14,
         );
       }
-      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top, "sealLone");
+      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top, "sealLone", a.top - 14);
     }
   }
 
@@ -2065,7 +2074,7 @@ function capDeadEnd(
   mesh.position.set(cx, seg.by + height / 2, cz);
   mesh.rotation.y = seg.heading;
 
-  addCollider(colliders, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by + height, "capDeadEnd");
+  addCollider(colliders, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by + height, "capDeadEnd", seg.by);
 
   // A hazard chevron on the cap, so a player who chases a unit in can see the wall coming.
   const sign = r.createMesh(
@@ -2117,7 +2126,7 @@ function buildProps(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
-    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "branchProp");
+    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "branchProp", groundY);
     props.push({ mesh, collider: colliders[colliders.length - 1] });
   };
 

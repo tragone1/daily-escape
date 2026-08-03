@@ -255,7 +255,14 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
        * arriving as a wall across the windscreen with no way to carry speed
        * through it.
        */
-      const corridor = theme.shoulder < 1;
+      /*
+       * The run-off THIS section actually has, not the theme's nominal figure.
+       * Deep sections tighten every shoulder, so a theme with room to spare at
+       * section five can be walled in by section thirty-five - and a hard
+       * corner placed on the theme's original allowance lands in a corridor
+       * that no longer exists.
+       */
+      const corridor = shoulder < 1;
       /*
        * Never on a section's first or last leg either. A corner rolled on the
        * boundary is entered or left in the NEXT theme, which may be one of the

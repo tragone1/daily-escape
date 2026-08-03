@@ -57,11 +57,16 @@ function widestLane(seg: CourseSegment, along: number, colliders: StaticCollider
   const px = seg.dz;
   const pz = -seg.dx;
   const hw = seg.halfWidth;
+  const roadY = seg.ay + (seg.by - seg.ay) * (along / seg.length);
   const near = colliders.filter((c) => {
     const dx = c.obb.x - sx;
     const dz = c.obb.z - sz;
     const reach = c.radius + hw + CAR + 1;
-    return dx * dx + dz * dz <= reach * reach;
+    if (dx * dx + dz * dz > reach * reach) return false;
+    // Overhead geometry is not a lane obstruction - the same rule collision uses.
+    if (c.baseY > roadY + 2.4) return false;
+    if (c.topY < roadY) return false;
+    return true;
   });
   let best = 0;
   let run = 0;
@@ -109,21 +114,41 @@ describe("every generated course", () => {
     expect(worst, `narrowest lane at ${worstAt}`).toBeGreaterThanOrEqual(MIN_LANE);
   });
 
-  it.each(SEEDS)("seed %i puts no hairpin where there is no run-off", (seed) => {
+  it.each(SEEDS)("seed %i turns no tighter than it can be driven", (seed) => {
     const { segments } = get(seed);
     const mains = segments.filter((s) => !s.branch && !s.overlay);
-    let worst = 0;
-    let worstSection = "";
-    for (let i = 12; i < mains.length - 12; i++) {
-      // Only the walled-in themes: a corner is a corner where you can run wide.
-      if (mains[i].shoulder >= 1) continue;
-      const turn = Math.abs(wrap(mains[i + 6].heading - mains[i - 6].heading)) * (180 / Math.PI);
-      if (turn > worst) {
-        worst = turn;
-        worstSection = mains[i].section;
+    /*
+     * RADIUS, not angle. A long sweeping bend and a hairpin can turn through
+     * the same number of degrees; what decides whether it can be carried at
+     * speed - or whether it arrives as a wall across the windscreen - is how
+     * tight it is. The corner that started all this turned 88 degrees in 24
+     * units: radius 15. Measured this way it fails by a mile, while the wide
+     * bends it used to be confused with pass.
+     *
+     * Two bars, because run-off is what makes a tight corner survivable: a
+     * theme with a shoulder to spill into may be tighter than one walled on
+     * both sides.
+     */
+    let worstWalled = Infinity;
+    let worstOpen = Infinity;
+    let where = "";
+    for (let i = 6; i < mains.length - 6; i++) {
+      const turn = Math.abs(wrap(mains[i + 6].heading - mains[i - 6].heading));
+      if (turn < 0.01) continue;
+      let arc = 0;
+      for (let j = i - 6; j < i + 6; j++) arc += mains[j].length;
+      const radius = arc / turn;
+      if (mains[i].shoulder < 1) {
+        if (radius < worstWalled) {
+          worstWalled = radius;
+          where = `${mains[i].section} seg${mains[i].index}`;
+        }
+      } else if (radius < worstOpen) {
+        worstOpen = radius;
       }
     }
-    expect(worst, `sharpest walled-in corner in ${worstSection}`).toBeLessThan(55);
+    expect(worstWalled, `tightest walled-in corner at ${where}`).toBeGreaterThan(45);
+    expect(worstOpen, "tightest corner with run-off").toBeGreaterThan(25);
   });
 
   it.each(SEEDS)("seed %i keeps its spurs and their surfaces", (seed) => {
@@ -155,8 +180,9 @@ describe("every generated course", () => {
           const dz = c.obb.z - sz;
           if (dx * dx + dz * dz > (c.radius + seg.halfWidth + 2) ** 2) continue;
           if (Math.abs(dx * seg.dx + dz * seg.dz) > c.obb.halfLength) continue;
-          // A wall on another deck is a bridge overhead, not an obstruction.
-          if (Math.abs(c.topY - y) > 8) continue;
+          // Overhead or buried: the same rule collision uses, not a guess.
+          if (c.baseY > y + 2.4) continue;
+          if (c.topY < y) continue;
           const inner = Math.abs(dx * px + dz * pz) - c.obb.halfWidth;
           const bite = seg.halfWidth - inner;
           if (bite > worstBite) worstBite = bite;

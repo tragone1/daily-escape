@@ -1222,8 +1222,13 @@ export const CONFIG = {
       spike: {
         /** First section it can appear in. */
         unlockSection: 3,
-        /** Classes that carry it: the ones that get in front of you on purpose. */
-        roles: ["interceptor", "blocker"],
+        /**
+         * Classes that carry it: the ones that get in front of you on
+         * purpose. The ELITE joins them for the deep game - interceptor and
+         * blocker both retire in the early teens, which left the late fleet
+         * with no deployables at all and nothing but ramming.
+         */
+        roles: ["interceptor", "blocker", "elite"],
         /** Seconds between landing and biting. Long enough to read and swerve. */
         armTime: 0.7,
         life: 18,
@@ -1242,7 +1247,8 @@ export const CONFIG = {
        */
       oil: {
         unlockSection: 5,
-        roles: ["rammer"],
+        // The HEAVY inherits the slick when the rammer musters out.
+        roles: ["rammer", "heavy"],
         armTime: 0.3,
         life: 9,
         /** Wide enough that threading it is a real line rather than a shrug. */

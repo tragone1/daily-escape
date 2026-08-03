@@ -1925,6 +1925,13 @@ export const CONFIG = {
      * fans the normals well past this and holds you there.
      */
     wallCornerAngle: 0.7,
+    /**
+     * Seconds the wall slide assist stays disabled after a car-to-car touch.
+     * Long enough that a squad leaning on you against a barrier keeps you
+     * there through the jostling, short enough that it returns the moment
+     * they are actually off you.
+     */
+    wallAssistHoldOff: 0.6,
     /** Fraction of speed lost on a solid building hit. */
     buildingSpeedLoss: 0.42,
     /** Fraction of speed lost when cars trade paint. */

@@ -111,6 +111,12 @@ export class Vehicle {
   recoveryTimer = 0;
   /** Seconds spent pinned against geometry - drives the unwedge nudge. */
   wedgeTimer = 0;
+  /**
+   * Seconds since another CAR last leaned on this one. While it is running,
+   * the wall slide assist stands down: being held against a barrier by the
+   * police is a legitimate arrest, not the geometry catching you.
+   */
+  pressedByCar = 0;
   /** Flat top-speed addition from late-run pace scaling (player only). */
   paceBonus = 0;
   /** Acceleration multiplier from the late-run switch (player only). */
@@ -201,6 +207,8 @@ export class Vehicle {
     this.boostCooldown = 0;
     this.boostFired = false;
     this.recoveryTimer = 0;
+    this.wedgeTimer = 0;
+    this.pressedByCar = 0;
     this.slip = 0;
     this.leanRoll = 0;
     this.leanPitch = 0;
@@ -230,6 +238,7 @@ export class Vehicle {
     this.justLanded = false;
     this.justLaunched = false;
     this.recoveryTimer = Math.max(0, this.recoveryTimer - dt);
+    this.pressedByCar = Math.max(0, this.pressedByCar - dt);
 
     const ground = terrain.sample(this.x, this.z);
     const raw = t.surfaces[ground.surface];

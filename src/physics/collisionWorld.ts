@@ -171,7 +171,15 @@ export class CollisionWorld {
          * instead of pinning. Fades out as speed returns.
          */
         const after = Math.hypot(v.vx, v.vz);
-        if (after < c.wallSlideAssistSpeed) {
+        /*
+         * NOT WHILE THE POLICE HAVE YOU. The assist exists to stop geometry
+         * catching a car that is sliding along it - never to break a hold.
+         * If anything on wheels is leaning on this car, the wall is their
+         * ally and the car stays where it is put.
+         */
+        if (v.pressedByCar > 0) {
+          v.wedgeTimer = 0;
+        } else if (after < c.wallSlideAssistSpeed) {
           const tanX = -hnz;
           const tanZ = hnx;
           let dir = fwdX * tanX + fwdZ * tanZ >= 0 ? 1 : -1;
@@ -220,6 +228,11 @@ export class CollisionWorld {
 
     const hit = obbVsOBB(a.obb, b.obb);
     if (!hit) return null;
+
+    // Mark both: while cars are in contact the wall assist stands down, so a
+    // car held against a barrier stays held.
+    a.pressedByCar = CONFIG.collision.wallAssistHoldOff;
+    b.pressedByCar = CONFIG.collision.wallAssistHoldOff;
 
     // A boosting player barges: whatever they are hitting keeps only a fraction of its
     // mass for the exchange, which is what makes a parked roadblock answerable.

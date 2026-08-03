@@ -577,13 +577,13 @@ export const CONFIG = {
         fromSection: 0,
         roles: ["interceptor", "elite", "heavy"] as const,
         /** Assignment cadence: base seconds, tightening per section to a floor. */
-        intervalBase: 9,
-        intervalPerSection: 0.7,
-        intervalMin: 3,
+        intervalBase: 12,
+        intervalPerSection: 0.5,
+        intervalMin: 5,
         /** Chance a spotted opportunity is taken: grows per section, capped. */
-        chanceBase: 0.6,
-        chancePerSection: 0.04,
-        chanceMax: 0.95,
+        chanceBase: 0.45,
+        chancePerSection: 0.03,
+        chanceMax: 0.8,
         /**
          * The LINE-UP: before snapping sideways the unit steers to converge on
          * the player's predicted lane, so the broadside lands where the player
@@ -638,12 +638,11 @@ export const CONFIG = {
          * about half the strength of the old objectionable carve, and with
          * the fast pivot they read as drift control.
          */
-        spinRate: 11,
+        /** Yaw authority through the slide: a hard but human handbrake turn. */
+        spinRate: 5.2,
         brake: 0.7,
         slideTime: 1.25,
         holdTime: 1.6,
-        slideAssist: 110,
-        holdAssist: 130,
         /**
          * THE DRIFT SLAM - the whole point of the move, per the player: the
          * car snaps near-perpendicular and KEEPS COMING, sliding sideways on
@@ -652,7 +651,6 @@ export const CONFIG = {
          * grip scrub while the body rides sideways. A miss decays into the
          * standing wall standoff.
          */
-        driftPush: 260,
         /**
          * EXECUTION PERSONALITY. Each slide rolls a pose error off perfect
          * square - quadratic, so small slop is common and the occasional

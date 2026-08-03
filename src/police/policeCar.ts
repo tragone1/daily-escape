@@ -144,7 +144,6 @@ export class PoliceCar {
   rigObstacles: { x: number; z: number; r: number }[] = [];
   private slideTravelX = 0;
   private slideTravelZ = 1;
-  private slideSpeed = 0;
 
   /** Units stay dormant until the director wakes them. */
   active = false;
@@ -237,7 +236,6 @@ export class PoliceCar {
     // TRAVELLING this way at this speed - the slam arrives broadside.
     this.slideTravelX = Math.sin(travel);
     this.slideTravelZ = Math.cos(travel);
-    this.slideSpeed = Math.max(v.speed, 24);
     this.slideTimer = Math.max(cfg.slideTime, this.slideSnapMeet + 0.25);
     v.contactBoost = cfg.contactBoost;
   }
@@ -566,43 +564,24 @@ export class PoliceCar {
       this.slideTimer -= dt;
       const err = wrapAngle(this.slideHeading - v.heading);
       v.applySpin(clamp(err, -1, 1) * cfg.spinRate * dt);
-      // THE DRIFT: hold closing speed along the locked travel line while the
-      // body rides sideways - gas on, sliding on the tires, broadside first.
-      // Drift tires: without this, grip re-aligns the body with its travel
-      // and the ride flattens to ~33 degrees; at 0.3 (above the oil-spin
-      // threshold) the body holds a real sideways angle. Restored at the
-      // wall stand and on reset.
-      v.tireGrip = 0.3;
-      const spAlong = v.vx * this.slideTravelX + v.vz * this.slideTravelZ;
+      /*
+       * NORMAL PHYSICS. The slide is momentum and the handbrake now - no
+       * momentum keeper, no drift tires, no lateral assists. The car turns
+       * in, scrubs speed the way any car does, and whatever the geometry
+       * gives is what the block gets. All the intelligence lives in the
+       * approach (staging, boost, timing), which is legal driving.
+       */
       const pdD = dist(v.x, v.z, ctx.player.x, ctx.player.z);
       const passedD =
         (ctx.player.x - v.x) * this.slideTravelX + (ctx.player.z - v.z) * this.slideTravelZ < -2;
-      if (!passedD && spAlong < this.slideSpeed) {
-        const needD = Math.min(cfg.driftPush, (this.slideSpeed - spAlong) * 5);
-        v.applyImpulse(this.slideTravelX * needD * dt, this.slideTravelZ * needD * dt);
-      }
       if (passedD || pdD > 120) this.slideTimer = 0; // missed: stand the wall
-      // Glide the forming wall onto the kill lane while the player is still
-      // out - momentum does the along-road travel, this does the fine set.
-      const pdG = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-      if (pdG > 10) {
-        const prxG = Math.cos(ctx.player.heading);
-        const przG = -Math.sin(ctx.player.heading);
-        const latErrG =
-          (v.x - ctx.player.x) * prxG + (v.z - ctx.player.z) * przG - this.slideLane;
-        const magG = Math.min(1, Math.abs(latErrG) / 3) * cfg.slideAssist;
-        v.applyImpulse(-Math.sign(latErrG) * prxG * magG * dt, -Math.sign(latErrG) * przG * magG * dt);
-      }
-      this.input.throttle = 0.6;
-      this.input.brake = 0;
+      this.input.throttle = 0;
+      this.input.brake = cfg.brake;
       this.input.steer = clamp(err / 0.5, -1, 1);
       this.input.boost = false;
       v.drive = 1;
       v.update(this.input, dt, ctx.terrain);
-      if (this.slideTimer <= 0) {
-        this.slideHold = cfg.holdTime;
-        v.tireGrip = 1;
-      }
+      if (this.slideTimer <= 0) this.slideHold = cfg.holdTime;
       return;
     }
     if (this.slideHold > 0) {
@@ -651,14 +630,6 @@ export class PoliceCar {
         if (Math.abs(errH) > 1.0 && v.speed < 8) {
           const fwdAcrossH = Math.sin(v.heading) * segH.dz - Math.cos(v.heading) * segH.dx;
           driveH = Math.sign(errH) * Math.sign(fwdAcrossH || 1);
-        }
-        // The formed wall GLIDES with the feints - bent physics at half the
-        // old carve strength, and only while the player is still out.
-        if (pdH > 9 && Math.abs(errH) > 0.8) {
-          const cfgH = CONFIG.police.shared.slideBlock;
-          const rH = { x: segH.dz, z: -segH.dx };
-          const magH = Math.min(1, Math.abs(errH) / 3) * cfgH.holdAssist;
-          v.applyImpulse(Math.sign(errH) * rH.x * magH * dt, Math.sign(errH) * rH.z * magH * dt);
         }
       }
       this.input.throttle = driveH > 0 ? 0.65 : 0;

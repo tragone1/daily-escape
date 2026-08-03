@@ -766,162 +766,105 @@ function buildSpineWallLines(
       if (!styleName || pts.length < 2) return;
       const style = WALL_STYLE[styleName];
       const shades = wallShades[styleName];
-
-      /*
-       * ONE CONTINUOUS WALL, not a row of blocks.
-       *
-       * This used to chop each run into chunks and drop a box per chunk, each
-       * with its own randomised height and its own collider. It looked like a
-       * staircase and it drove like one: every box corner on a bend was an
-       * edge sticking into the road, and a car brushing the wall caught on
-       * them. Now the run is a single mitred ribbon - inner face, top cap and
-       * outer face at a constant height - and the colliders are laid flat
-       * along the SAME polyline, so the surface a car touches is exactly the
-       * surface it sees, with no corners poking out of it anywhere.
-       */
-      const halfT = style.thickness / 2;
-      /*
-       * The skyline still varies - it just does so SMOOTHLY. Height is a
-       * low-frequency wave along the run rather than a fresh random number
-       * per block, so downtown keeps its uneven roofline while the face a
-       * car touches stays one unbroken surface.
-       */
-      const span0 = style.maxHeight - style.minHeight;
-      const heightAtArc = (a2: number, seed: number): number =>
-        style.minHeight +
-        span0 *
-          (0.5 +
-            0.32 * Math.sin(a2 * 0.035 + seed) +
-            0.18 * Math.sin(a2 * 0.011 + seed * 2.7));
-      const pos: number[] = [];
-      const norm: number[] = [];
-      const idx: number[] = [];
-      const tops: number[] = [];
-      const seedRun = hash2(pts[0].x, pts[0].z) * 6.28;
-      const arcAt: number[] = [0];
+      railRun(pts, styleName);
+      // Arc lengths along the wall line itself.
+      const arc: number[] = [0];
       for (let i = 1; i < pts.length; i++) {
-        arcAt.push(arcAt[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+        arc.push(arc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
       }
-
-      // Inward/outward offsets per point, mitred along the run.
-      const inner: Array<{ x: number; z: number; y: number }> = [];
-      const outer: Array<{ x: number; z: number; y: number }> = [];
-      for (let i = 0; i < pts.length; i++) {
-        const prev = pts[Math.max(0, i - 1)];
-        const next = pts[Math.min(pts.length - 1, i + 1)];
-        let dx = next.x - prev.x;
-        let dz = next.z - prev.z;
-        const dl = Math.hypot(dx, dz) || 1;
-        dx /= dl;
-        dz /= dl;
-        const nx = dz;
-        const nz = -dx;
-        const y = heightAt(pts[i].x, pts[i].z, pts[i].seg.ay);
-        /*
-         * The polyline is ALREADY the wall's centre line, offset to its side
-         * of the road. The two faces straddle it by half the thickness -
-         * multiplying by `side` here shifted the whole ribbon a full
-         * thickness across, which put the wall on top of the car.
-         */
-        inner.push({ x: pts[i].x - nx * halfT, z: pts[i].z - nz * halfT, y });
-        outer.push({ x: pts[i].x + nx * halfT, z: pts[i].z + nz * halfT, y });
-        tops.push(heightAtArc(arcAt[i], seedRun));
-      }
-
-      const quad = (
-        a: { x: number; z: number; y: number },
-        b: { x: number; z: number; y: number },
-        aTop: number,
-        bTop: number,
-        nx: number,
-        ny: number,
-        nz: number,
-      ) => {
-        const base = pos.length / 3;
-        pos.push(a.x, a.y, a.z);
-        pos.push(b.x, b.y, b.z);
-        pos.push(b.x, bTop, b.z);
-        pos.push(a.x, aTop, a.z);
-        for (let k = 0; k < 4; k++) norm.push(nx, ny, nz);
-        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      const total = arc[arc.length - 1];
+      if (total < 2) return;
+      const count = Math.max(1, Math.round(total / style.chunk));
+      const at = (a: number): { x: number; z: number; seg: CourseSegment } => {
+        let i = 1;
+        while (i < arc.length - 1 && arc[i] < a) i++;
+        const t = (a - arc[i - 1]) / Math.max(0.001, arc[i] - arc[i - 1]);
+        return {
+          x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+          z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t,
+          seg: pts[i - 1].seg,
+        };
       };
-
-      for (let i = 0; i < pts.length - 1; i++) {
-        const iA = inner[i];
-        const iB = inner[i + 1];
-        const oA = outer[i];
-        const oB = outer[i + 1];
-        const topA = iA.y + tops[i];
-        const topB = iB.y + tops[i + 1];
-        let dx = iB.x - iA.x;
-        let dz = iB.z - iA.z;
-        const dl = Math.hypot(dx, dz) || 1;
-        dx /= dl;
-        dz /= dl;
-        // Inner face looks at the road, outer face away, plus the top cap.
-        quad(iA, iB, topA, topB, -dz, 0, dx);
-        quad(oB, oA, topB, topA, dz, 0, -dx);
-        const base = pos.length / 3;
-        pos.push(iA.x, topA, iA.z);
-        pos.push(iB.x, topB, iB.z);
-        pos.push(oB.x, topB, oB.z);
-        pos.push(oA.x, topA, oA.z);
-        for (let k = 0; k < 4; k++) norm.push(0, 1, 0);
-        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-
+      for (let i = 0; i < count; i++) {
+        const a0 = (i / count) * total;
+        const a1 = ((i + 1) / count) * total;
+        const P0 = at(a0);
+        const P1 = at(a1);
+        const cx = (P0.x + P1.x) / 2;
+        const cz = (P0.z + P1.z) / 2;
+        const span = Math.hypot(P1.x - P0.x, P1.z - P0.z);
+        if (span < 0.8) continue;
+        const heading = Math.atan2(P1.x - P0.x, P1.z - P0.z);
+        const seg = P0.seg;
+        // Junction and spur mouths stay open: never wall across a connecting road.
+        if (
+          onOtherRoad(segments, seg, cx, cz, JUNCTION_CLEARANCE, terrain) ||
+          onOtherRoad(segments, seg, P0.x, P0.z, JUNCTION_CLEARANCE, terrain) ||
+          onOtherRoad(segments, seg, P1.x, P1.z, JUNCTION_CLEARANCE, terrain)
+        ) {
+          continue;
+        }
+        const y0 = heightAt(P0.x, P0.z, seg.ay);
+        const y1 = heightAt(P1.x, P1.z, seg.by);
+        const groundY = (y0 + y1) / 2;
+        if (
+          blocksRoad(segments, terrain, cx, cz, span / 2 + 0.35, style.thickness / 2, heading, groundY, groundY + style.maxHeight)
+        ) {
+          continue;
+        }
+        const rnd = hash2(cx, cz);
+        const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
+        const mesh = r.createMesh(
+          { kind: "box", width: style.thickness, height, depth: span * 1.06 },
+          {
+            color: [...shades[Math.floor(rnd * 997) % shades.length]],
+            emissive: 0.24,
+            isStatic: true,
+          },
+        );
+        mesh.position.set(cx, groundY + height / 2, cz);
+        mesh.rotation.y = heading;
+        mesh.rotation.x = -Math.atan((y1 - y0) / Math.max(0.001, span));
+        // Colliders overlap a little past each joint: one unbroken rail to slide on.
         /*
-         * One collider per polyline segment, centred ON the line with the
-         * wall's true thickness - no extra length, no shaved faces. Short
-         * segments mean the chord error at a bend is a few centimetres
-         * instead of the half-metre a long box produced.
+         * A SMOOTH RAIL, not a saw-tooth. Consecutive pieces on a curve are
+         * each rotated a little from the last, so their inner corners poke
+         * out into the road and a car sliding along catches the leading edge
+         * of the next one. Overlapping them further and shaving the inner
+         * face makes the union read as one continuous surface.
          */
+        /*
+         * MESH ONLY. The blocks are the look - varied heights, jitter, the
+         * skyline the game is known for - and they are no longer what the car
+         * touches. Collision comes from one continuous rail built along this
+         * same wall line below, so the surface stays smooth however jagged
+         * the silhouette is.
+         */
+      }
+    };
+
+    /*
+     * THE SMOOTH RAIL - collision only, no mesh.
+     *
+     * One collider per segment of the wall's own polyline, centred on the
+     * line at its true thickness. The decorative blocks above can jut and
+     * vary as much as they like; the surface a car slides along is this, and
+     * it has no corners poking out of it anywhere.
+     */
+    const railRun = (pts: { x: number; z: number; seg: CourseSegment }[], styleName: Exclude<WallStyle, "none">) => {
+      const style = WALL_STYLE[styleName];
+      const halfT = style.thickness / 2;
+      for (let i = 0; i < pts.length - 1; i++) {
         const cx = (pts[i].x + pts[i + 1].x) / 2;
         const cz = (pts[i].z + pts[i + 1].z) / 2;
         const span = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
         if (span < 0.2) continue;
         const heading = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
-        const groundY = (iA.y + iB.y) / 2;
-        const hHere = (tops[i] + tops[i + 1]) / 2;
-        if (
-          blocksRoad(segments, terrain, cx, cz, span / 2, halfT, heading, groundY, groundY + hHere)
-        ) {
-          continue;
-        }
-        if (
-          onOtherRoad(segments, pts[i].seg, cx, cz, JUNCTION_CLEARANCE, terrain)
-        ) {
-          continue;
-        }
-        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + hHere);
-      }
-
-      if (idx.length > 0) {
-        /*
-         * Colour varies along the run the way the old blocks did - stone is
-         * not one flat shade - but it is a colour change only: every group
-         * shares the same continuous vertices, so there is no seam, no lip
-         * and nothing to catch a car.
-         */
-        const groups = Math.max(1, Math.round(idx.length / 6 / 8));
-        const perGroup = Math.ceil(idx.length / groups / 6) * 6;
-        for (let gi = 0; gi < groups; gi++) {
-          const from = gi * perGroup;
-          const to = Math.min(idx.length, from + perGroup);
-          if (to <= from) break;
-          const shade = shades[(gi + Math.floor(seedRun * 3)) % shades.length];
-          const mesh = r.createMesh(
-            {
-              kind: "custom",
-              geometry: {
-                positions: new Float32Array(pos),
-                normals: new Float32Array(norm),
-                indices: new Uint32Array(idx.slice(from, to)),
-              },
-            },
-            { color: [...shade] as Rgb, emissive: 0.28, isStatic: true },
-          );
-          mesh.position.set(0, 0, 0);
-        }
+        const groundY = heightAt(cx, cz, pts[i].seg.ay);
+        const top = groundY + style.minHeight;
+        if (blocksRoad(segments, terrain, cx, cz, span / 2, halfT, heading, groundY, top)) continue;
+        if (onOtherRoad(segments, pts[i].seg, cx, cz, JUNCTION_CLEARANCE, terrain)) continue;
+        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight);
       }
     };
 

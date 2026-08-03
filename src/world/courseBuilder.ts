@@ -817,8 +817,14 @@ function buildSpineWallLines(
         const nx = dz;
         const nz = -dx;
         const y = heightAt(pts[i].x, pts[i].z, pts[i].seg.ay);
-        inner.push({ x: pts[i].x - nx * halfT * side, z: pts[i].z - nz * halfT * side, y });
-        outer.push({ x: pts[i].x + nx * halfT * side, z: pts[i].z + nz * halfT * side, y });
+        /*
+         * The polyline is ALREADY the wall's centre line, offset to its side
+         * of the road. The two faces straddle it by half the thickness -
+         * multiplying by `side` here shifted the whole ribbon a full
+         * thickness across, which put the wall on top of the car.
+         */
+        inner.push({ x: pts[i].x - nx * halfT, z: pts[i].z - nz * halfT, y });
+        outer.push({ x: pts[i].x + nx * halfT, z: pts[i].z + nz * halfT, y });
         tops.push(heightAtArc(arcAt[i], seedRun));
       }
 
@@ -853,8 +859,8 @@ function buildSpineWallLines(
         dx /= dl;
         dz /= dl;
         // Inner face looks at the road, outer face away, plus the top cap.
-        quad(iA, iB, topA, topB, dz * side, 0, -dx * side);
-        quad(oB, oA, topB, topA, -dz * side, 0, dx * side);
+        quad(iA, iB, topA, topB, -dz, 0, dx);
+        quad(oB, oA, topB, topA, dz, 0, -dx);
         const base = pos.length / 3;
         pos.push(iA.x, topA, iA.z);
         pos.push(iB.x, topB, iB.z);
@@ -890,18 +896,32 @@ function buildSpineWallLines(
       }
 
       if (idx.length > 0) {
-        const mesh = r.createMesh(
-          {
-            kind: "custom",
-            geometry: {
-              positions: new Float32Array(pos),
-              normals: new Float32Array(norm),
-              indices: new Uint32Array(idx),
+        /*
+         * Colour varies along the run the way the old blocks did - stone is
+         * not one flat shade - but it is a colour change only: every group
+         * shares the same continuous vertices, so there is no seam, no lip
+         * and nothing to catch a car.
+         */
+        const groups = Math.max(1, Math.round(idx.length / 6 / 8));
+        const perGroup = Math.ceil(idx.length / groups / 6) * 6;
+        for (let gi = 0; gi < groups; gi++) {
+          const from = gi * perGroup;
+          const to = Math.min(idx.length, from + perGroup);
+          if (to <= from) break;
+          const shade = shades[(gi + Math.floor(seedRun * 3)) % shades.length];
+          const mesh = r.createMesh(
+            {
+              kind: "custom",
+              geometry: {
+                positions: new Float32Array(pos),
+                normals: new Float32Array(norm),
+                indices: new Uint32Array(idx.slice(from, to)),
+              },
             },
-          },
-          { color: [...shades[0]] as Rgb, emissive: 0.24, isStatic: true },
-        );
-        mesh.position.set(0, 0, 0);
+            { color: [...shade] as Rgb, emissive: 0.28, isStatic: true },
+          );
+          mesh.position.set(0, 0, 0);
+        }
       }
     };
 

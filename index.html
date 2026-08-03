@@ -18,7 +18,19 @@
       property="og:description"
       content="An endless arcade police pursuit. Drive until they box you in."
     />
-    <meta name="twitter:card" content="summary" />
+    <!--
+      A picture, because a share with none previews as a line of grey text.
+      Absolute URL: every platform that fetches this does so from its own
+      servers, where a relative path means nothing. The middleware rewrites the
+      title and description per score; the image is the same for every share,
+      which is why it carries no text of its own.
+    -->
+    <meta property="og:image" content="https://daily-escape.pages.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A yellow car ahead of two police cars on a night road." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://daily-escape.pages.dev/og.png" />
     <style>
       :root {
         --accent: #ffd23f;

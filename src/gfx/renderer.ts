@@ -173,11 +173,28 @@ export class Mesh extends Node3D {
   }
 }
 
+/**
+ * How far past the fog's end a chunk may still be drawn.
+ *
+ * A chunk is culled by its bounding box, and the box's nearest corner can be
+ * well behind geometry that still shows at the box's far side; the slack keeps
+ * that from popping at the edge of visibility.
+ */
+const CHUNK_FOG_SLACK = 260;
+
 interface GpuGeometry {
   vao: WebGLVertexArrayObject;
   indexCount: number;
   /** gl.UNSIGNED_SHORT or gl.UNSIGNED_INT, matching the uploaded index array. */
   indexType: number;
+  /**
+   * Every buffer bound into the VAO, so it can be released.
+   *
+   * Deleting a vertex array does NOT free the buffers attached to it - they
+   * only go when the last reference does. A streamed world that dropped chunks
+   * without these would leak the whole course's geometry over a long run.
+   */
+  buffers: WebGLBuffer[];
 }
 
 export class Renderer {
@@ -202,7 +219,17 @@ export class Renderer {
   private uniforms: Record<string, WebGLUniformLocation | null> = {};
   private meshes: Mesh[] = [];
   private cache = new Map<string, GpuGeometry>();
-  private batch: GpuGeometry | null = null;
+  /**
+   * Static geometry, baked in chunks rather than one buffer.
+   *
+   * One buffer meant one draw call for the whole world, which was the right
+   * trade when the world was fixed - but it also meant every triangle in it was
+   * submitted every frame, and a streamed world cannot release anything from a
+   * buffer it shares with everything else. Chunks keep the draw calls low (one
+   * per resident chunk, a handful) while making the world both cullable and
+   * disposable.
+   */
+  private chunks = new Map<string, { gpu: GpuGeometry; minX: number; maxX: number; minZ: number; maxZ: number }>();
   private batched = new Set<Mesh>();
   private viewProj = mat4();
   private proj = mat4();
@@ -328,8 +355,10 @@ export class Renderer {
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
 
+    const buffers: WebGLBuffer[] = [];
     const bind = (data: Float32Array, loc: number, size: number) => {
-      const buf = gl.createBuffer();
+      const buf = gl.createBuffer()!;
+      buffers.push(buf);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, data as unknown as ArrayBufferView, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc);
@@ -339,7 +368,8 @@ export class Renderer {
     bind(normals, 1, 3);
     bind(colors, 2, 4);
 
-    const ib = gl.createBuffer();
+    const ib = gl.createBuffer()!;
+    buffers.push(ib);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices as unknown as ArrayBufferView, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -348,6 +378,7 @@ export class Renderer {
       vao,
       indexCount: indices.length,
       indexType: indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+      buffers,
     };
   }
 
@@ -358,9 +389,62 @@ export class Renderer {
    * is why static meshes must not move afterwards — in exchange the whole course renders
    * in a single draw call instead of eleven hundred.
    */
-  bake(): void {
-    const statics = this.meshes.filter((m) => m.isStatic);
+  /**
+   * Bake the static scenery into several chunks at once.
+   *
+   * `chunkOf` says which chunk a mesh's position belongs to; every mesh is
+   * transformed and copied into that chunk's buffer, then dropped, because a
+   * baked mesh has no life of its own afterwards.
+   */
+  bakeGrouped(chunkOf: (x: number, z: number) => number, chunkCount: number): void {
+    const statics = this.meshes.filter((m) => m.isStatic && !this.batched.has(m));
     if (statics.length === 0) return;
+    const groups: Mesh[][] = Array.from({ length: chunkCount }, () => []);
+    for (const mesh of statics) {
+      /*
+       * Place a mesh by where its geometry actually is, not by its transform.
+       *
+       * The road ribbon, the spur surfaces and their curtains are built with
+       * world-space vertices and left sitting at the origin, so their
+       * transforms all read (0,0,0) - grouping on that dropped every one of
+       * them into a single chunk, which is most of the world's triangles in
+       * one indivisible lump that is always on screen.
+       */
+      const geo = geometryFor(mesh.shape);
+      const m = mesh.worldMatrix();
+      let sx = 0;
+      let sz = 0;
+      const n = geo.positions.length / 3;
+      const step = Math.max(1, Math.floor(n / 32));
+      let taken = 0;
+      for (let i = 0; i < n; i += step) {
+        const x = geo.positions[i * 3];
+        const y = geo.positions[i * 3 + 1];
+        const z = geo.positions[i * 3 + 2];
+        sx += m[0] * x + m[4] * y + m[8] * z + m[12];
+        sz += m[2] * x + m[6] * y + m[10] * z + m[14];
+        taken++;
+      }
+      const idx = Math.max(0, Math.min(chunkCount - 1, chunkOf(sx / taken, sz / taken)));
+      groups[idx].push(mesh);
+    }
+    for (let i = 0; i < groups.length; i++) {
+      if (groups[i].length > 0) this.bakeMeshes(groups[i], `chunk${i}`);
+    }
+    this.forgetBaked();
+  }
+
+  bake(chunkId = "world"): void {
+    const statics = this.meshes.filter((m) => m.isStatic && !this.batched.has(m));
+    if (statics.length === 0) return;
+    this.bakeMeshes(statics, chunkId);
+  }
+
+  private bakeMeshes(statics: Mesh[], chunkId: string): void {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
 
     const positions: number[] = [];
     const normals: number[] = [];
@@ -391,17 +475,49 @@ export class Renderer {
         const len = Math.hypot(wx, wy, wz) || 1;
         normals.push(wx / len, wy / len, wz / len);
         colors.push(mesh.color[0], mesh.color[1], mesh.color[2], mesh.emissive);
+        const px = positions[positions.length - 3];
+        const pz = positions[positions.length - 1];
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (pz < minZ) minZ = pz;
+        if (pz > maxZ) maxZ = pz;
       }
       for (const idx of geo.indices) indices.push(base + idx);
       this.batched.add(mesh);
     }
 
-    this.batch = this.upload(
+    const gpu = this.upload(
       new Float32Array(positions),
       new Float32Array(normals),
       new Float32Array(colors),
       new Uint32Array(indices),
     );
+    this.disposeChunk(chunkId);
+    this.chunks.set(chunkId, { gpu, minX, maxX, minZ, maxZ });
+  }
+
+  /**
+   * Release a baked chunk and the meshes that went into it.
+   *
+   * The meshes are scenery that has been copied into the chunk's buffer, so
+   * they have no life of their own once it exists - dropping both together is
+   * what keeps a streamed world's memory flat however long a run lasts.
+   */
+  disposeChunk(chunkId: string): void {
+    const existing = this.chunks.get(chunkId);
+    if (!existing) return;
+    const gl = this.gl;
+    gl.deleteVertexArray(existing.gpu.vao);
+    for (const buf of existing.gpu.buffers) gl.deleteBuffer(buf);
+    this.chunks.delete(chunkId);
+  }
+
+  /** Meshes already folded into a chunk, so they are not drawn individually. */
+  forgetBaked(): void {
+    for (let i = this.meshes.length - 1; i >= 0; i--) {
+      if (this.batched.has(this.meshes[i])) this.meshes.splice(i, 1);
+    }
+    this.batched.clear();
   }
 
   resize(): void {
@@ -448,13 +564,26 @@ export class Renderer {
     gl.uniform3fv(u.uFogColor, this.fogColor);
     gl.uniform2fv(u.uFogRange, this.fogRange);
 
-    // --- Static world: one call ------------------------------------------
-    if (this.batch) {
-      gl.uniformMatrix4fv(u.uModel, false, this.identity);
-      gl.uniform4f(u.uTint, 1, 1, 1, 0);
-      gl.uniform1f(u.uAlpha, 1);
-      gl.bindVertexArray(this.batch.vao);
-      gl.drawElements(gl.TRIANGLES, this.batch.indexCount, gl.UNSIGNED_INT, 0);
+    /*
+     * Static world: one call per chunk, and only the chunks worth drawing.
+     *
+     * Fog closes long before the far plane, so a chunk whose nearest corner is
+     * already past the fog's end contributes nothing but vertex work. The whole
+     * course used to be submitted every frame regardless - a hundred and twenty
+     * thousand triangles for a road you could see six hundred units of.
+     */
+    gl.uniformMatrix4fv(u.uModel, false, this.identity);
+    gl.uniform4f(u.uTint, 1, 1, 1, 0);
+    gl.uniform1f(u.uAlpha, 1);
+    const cx = this.camera.position.x;
+    const cz = this.camera.position.z;
+    const cutoff = this.fogRange[1] + CHUNK_FOG_SLACK;
+    for (const chunk of this.chunks.values()) {
+      const dx = Math.max(chunk.minX - cx, 0, cx - chunk.maxX);
+      const dz = Math.max(chunk.minZ - cz, 0, cz - chunk.maxZ);
+      if (dx * dx + dz * dz > cutoff * cutoff) continue;
+      gl.bindVertexArray(chunk.gpu.vao);
+      gl.drawElements(gl.TRIANGLES, chunk.gpu.indexCount, gl.UNSIGNED_INT, 0);
     }
 
     // --- Dynamic meshes, opaque then transparent -------------------------

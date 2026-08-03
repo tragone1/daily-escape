@@ -48,5 +48,10 @@ export function stubRenderer(): Renderer {
   return {
     createMesh: () => stubMesh(),
     bake: () => {},
+    // Baking is a GPU upload; the tests care about colliders and geometry, both
+    // of which exist before any of it happens.
+    bakeGrouped: () => {},
+    disposeChunk: () => {},
+    forgetBaked: () => {},
   } as unknown as Renderer;
 }

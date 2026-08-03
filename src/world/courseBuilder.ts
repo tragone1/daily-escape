@@ -40,6 +40,16 @@ export interface BuiltWorld {
  */
 const MIN_LANE_WIDTH = 7.5;
 
+/**
+ * How long a single piece of ribbon may be before it is cut.
+ *
+ * Nothing to do with looks - the pieces meet exactly. It is a bound on how big
+ * one indivisible mesh can get, because a mesh is the unit both the culler and
+ * a streamed world work in, and one that runs the length of the course can be
+ * neither skipped nor released.
+ */
+const RIBBON_BLOCK = 420;
+
 const ROAD_THICKNESS = 0.5;
 const APRON_THICKNESS = 0.34;
 
@@ -313,6 +323,44 @@ function enforceRacingLine(
   return withdrawn;
 }
 
+/**
+ * Group the static scenery by where it is and bake one chunk per group.
+ *
+ * Chunks follow course progress, not a spatial grid: the road is a ribbon, so
+ * a band of progress is a compact region, and it is also the unit a streamed
+ * world adds and drops.
+ */
+function bakeInChunks(r: Renderer, segments: CourseSegment[]): void {
+  const mains = segments.filter((sg) => !sg.branch && !sg.overlay);
+  let acc = 0;
+  const bounds: Array<{ upto: number; x: number; z: number }> = [];
+  for (const sg of mains) {
+    acc += sg.length;
+    bounds.push({ upto: acc, x: sg.bx, z: sg.bz });
+  }
+  const CHUNK_SPAN = 500;
+  const chunkCount = Math.max(1, Math.ceil(acc / CHUNK_SPAN));
+  /*
+   * A mesh belongs to the chunk nearest its own position, found against the
+   * spine. Meshes off the spine - alley furniture, boundary patches - land in
+   * whichever chunk their nearest road belongs to, which is the one a player
+   * is looking at when they can see them.
+   */
+  const chunkOf = (x: number, z: number): number => {
+    let best = 0;
+    let bd = Infinity;
+    for (let i = 0; i < bounds.length; i += 4) {
+      const d = (bounds[i].x - x) ** 2 + (bounds[i].z - z) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return Math.min(chunkCount - 1, Math.floor(bounds[best].upto / CHUNK_SPAN));
+  };
+  r.bakeGrouped(chunkOf, chunkCount);
+}
+
 export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
   const { segments } = buildCourseSegments(course);
   const terrain = new Terrain(segments);
@@ -357,7 +405,13 @@ export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
    */
   const floor = r.createMesh(
     { kind: "plane", width: maxX - minX, depth: maxZ - minZ },
-    { color: [0.12, 0.06, 0.045], emissive: 0.34, isStatic: true },
+    /*
+     * Deliberately NOT baked into a chunk. It is two triangles the size of the
+     * whole world, so whichever chunk it joined inherited a world-sized
+     * bounding box and could never be culled - taking seventeen thousand real
+     * triangles along with it. Drawn on its own it costs one call.
+     */
+    { color: [0.12, 0.06, 0.045], emissive: 0.34, isStatic: false },
   );
   floor.position.set((minX + maxX) / 2, -8, (minZ + maxZ) / 2);
 
@@ -630,6 +684,17 @@ export function buildWorld(r: Renderer, course: Course = DAILY): BuiltWorld {
   // No gate: endless mode has no finish to build.
 
   const nav = NavGraph.fromCourse(segments);
+
+  /*
+   * Bake the scenery in chunks along the course rather than one buffer.
+   *
+   * Fog closes at six hundred units and the course runs to twenty-three
+   * thousand, so a single buffer meant submitting the whole world's triangles
+   * every frame to show a fraction of one. Chunked by position, only what is
+   * near enough to see is drawn - and a chunk is a unit the world can later
+   * release, which is what streaming needs.
+   */
+  bakeInChunks(r, segments);
 
   return {
     segments,
@@ -1082,7 +1147,15 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
   };
   const sameColor = (a: Rgb, b: Rgb) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 0.001;
   for (let i = 1; i <= spine.length; i++) {
-    if (i < spine.length && sameColor(colorOf(spine[i]), colorOf(spine[runStart]))) continue;
+    let runLength = 0;
+    for (let k = runStart; k < i; k++) runLength += spine[k].length;
+    if (
+      i < spine.length &&
+      runLength < RIBBON_BLOCK &&
+      sameColor(colorOf(spine[i]), colorOf(spine[runStart]))
+    ) {
+      continue;
+    }
     const pos: number[] = [];
     const norm: number[] = [];
     const idx: number[] = [];
@@ -1099,14 +1172,30 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
     runStart = i;
   }
 
-  // Grass shoulders, both sides in one mesh, only where a shoulder exists.
+  /*
+   * Grass shoulders, in blocks along the course rather than one mesh.
+   *
+   * As a single mesh this ran the whole twenty-three kilometres, which made it
+   * one indivisible object with a bounding box the size of the world - never
+   * cullable, and never releasable by a streamed world. Cut into blocks it is
+   * the same geometry, in pieces that can be skipped when they are behind you.
+   */
   {
-    const pos: number[] = [];
-    const norm: number[] = [];
-    const idx: number[] = [];
+    let pos: number[] = [];
+    let norm: number[] = [];
+    let idx: number[] = [];
+    let block = 0;
     for (let k = 0; k < spine.length; k++) {
       const r0 = rows[k];
       const r1 = rows[k + 1];
+      block += Math.hypot(r1.x - r0.x, r1.z - r0.z);
+      if (block > RIBBON_BLOCK) {
+        emit(pos, norm, idx, SURFACE_COLOR.grass, 0.3);
+        pos = [];
+        norm = [];
+        idx = [];
+        block = 0;
+      }
       if (r0.s < 0.08 && r1.s < 0.08) continue;
       for (const side of [-1, 1]) {
         quad(pos, norm, idx,
@@ -1127,12 +1216,21 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
    * which is the mistake the old mouth pads made.
    */
   {
-    const pos: number[] = [];
-    const norm: number[] = [];
-    const idx: number[] = [];
+    let pos: number[] = [];
+    let norm: number[] = [];
+    let idx: number[] = [];
+    let block = 0;
     for (let k = 0; k < spine.length; k++) {
       const r0 = rows[k];
       const r1 = rows[k + 1];
+      block += Math.hypot(r1.x - r0.x, r1.z - r0.z);
+      if (block > RIBBON_BLOCK) {
+        emit(pos, norm, idx, [0.17, 0.12, 0.08], 0.24);
+        pos = [];
+        norm = [];
+        idx = [];
+        block = 0;
+      }
       for (const side of [-1, 1]) {
         quad(pos, norm, idx,
           [r0.x + r0.px * (r0.w + r0.s) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s) * side],
@@ -1145,13 +1243,24 @@ function buildSpineRibbons(r: Renderer, spine: CourseSegment[]): void {
   }
 
   // Dark skirts at the outer edge, so the ground reads as cut into the world.
+  // Blocked along the course like the surfaces above it, and for the same
+  // reason: one mesh the length of the world can be neither culled nor freed.
   {
-    const pos: number[] = [];
-    const norm: number[] = [];
-    const idx: number[] = [];
+    let pos: number[] = [];
+    let norm: number[] = [];
+    let idx: number[] = [];
+    let block = 0;
     for (let k = 0; k < spine.length; k++) {
       const r0 = rows[k];
       const r1 = rows[k + 1];
+      block += Math.hypot(r1.x - r0.x, r1.z - r0.z);
+      if (block > RIBBON_BLOCK) {
+        emit(pos, norm, idx, [0.11, 0.1, 0.1], 0.18);
+        pos = [];
+        norm = [];
+        idx = [];
+        block = 0;
+      }
       for (const side of [-1, 1]) {
         vquad(pos, norm, idx,
           [r0.x + r0.px * (r0.w + r0.s + 2.6) * side, r0.y - 0.1, r0.z + r0.pz * (r0.w + r0.s + 2.6) * side],

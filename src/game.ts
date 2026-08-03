@@ -94,7 +94,9 @@ export class Game {
     this.camera = new ChaseCamera(this.renderer, this.collision, this.world.terrain);
     this.camera.reset(this.player);
     // Bake the static world into one draw call now that everything is placed.
-    this.renderer.bake();
+    // Scenery is already baked into position chunks by the world builder;
+    // this catches anything static created outside it.
+    this.renderer.bake("late");
 
     /*
      * Optional chrome, constructed defensively. `DailyUi` looks up a dozen elements and

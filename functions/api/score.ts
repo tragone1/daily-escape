@@ -12,7 +12,8 @@
  * simulation to be deterministic, which it is not yet.
  */
 
-import { API_VERSION, bad, cleanName, dayKey, guarded, json, validPlayerId } from "./_shared";
+import { API_VERSION, bad, dayKey, guarded, json, validPlayerId } from "./_shared";
+import { checkName } from "./names";
 
 /**
  * Fastest the game can physically bank score, per second.
@@ -79,8 +80,9 @@ export const onRequestPost = guarded(async ({ request, env }) => {
   const { playerId, score, section, distance, elapsedMs } = body;
   if (!validPlayerId(playerId)) return bad("bad playerId");
 
-  const name = cleanName(body.name);
-  if (!name) return bad("name must be 2-18 characters, letters and numbers");
+  const verdict = checkName(body.name);
+  if (!verdict.ok) return bad(verdict.reason ?? "That name can't be used.");
+  const name = verdict.name as string;
 
   if (!isInt(score, 0, 10_000_000)) return bad("bad score");
   if (!isInt(section, 1, MAX_SECTION)) return bad("bad section");

@@ -5,6 +5,6 @@ export default defineConfig({
     // The world tests build whole courses; a generous ceiling keeps a slow
     // machine from failing a suite that is only doing arithmetic.
     testTimeout: 60_000,
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "functions/**/*.test.ts"],
   },
 });

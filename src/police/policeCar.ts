@@ -129,6 +129,11 @@ export class PoliceCar {
   private slideTimer = 0;
   private slideHold = 0;
   private slideHeading = 0;
+  /** True while this car is setting up or throwing a blocking slide. */
+  get blocking(): boolean {
+    return this.slideAim > 0 || this.slideTimer > 0 || this.slideHold > 0;
+  }
+
   private slideAim = 0;
   private slideLane = 0;
   private slideFinal = 0;

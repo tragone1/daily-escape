@@ -459,6 +459,19 @@ export function activeSectionStarts(): number[] {
   return activeCourse.sectionStarts;
 }
 
+/**
+ * Alleys on the course being played.
+ *
+ * Read through the active course, never captured. The exported `SPURS` is a
+ * snapshot of the course as it stood at import - which, once the world streams
+ * and keeps generating, describes only the sections that happened to exist at
+ * startup. The director seating an ambush would have found no alley anywhere
+ * beyond them and quietly stopped placing any.
+ */
+export function activeSpurs(): SpurDef[] {
+  return activeCourse.spurs;
+}
+
 /** Which section (0-based) a given distance along the course falls in. */
 export function sectionIndexAt(progress: number, course: Course = activeCourse): number {
   const starts = course.sectionStarts;

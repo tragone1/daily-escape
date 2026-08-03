@@ -23,7 +23,13 @@ import type { Renderer } from "../gfx/renderer";
 import type { CollisionWorld } from "../physics/collisionWorld";
 import { CONFIG, type PoliceRole } from "../config";
 import { dist, forwardOf, headingOf, rightOf } from "../math";
-import { POLICE_LOOKAHEAD, SECTION_THEMES, SPURS, sectionIndexAt, type SpurDef } from "../world/course";
+import {
+  POLICE_LOOKAHEAD,
+  SECTION_THEMES,
+  activeSpurs,
+  sectionIndexAt,
+  type SpurDef,
+} from "../world/course";
 import type { NavGraph, NavNode } from "../world/navGraph";
 import type { Terrain } from "../world/terrain";
 import type { PursuitContext } from "./behaviors";
@@ -901,7 +907,7 @@ export class PoliceManager {
   private spawnInSpur(unit: PoliceCar, ctx: PursuitContext, playerProgress: number): boolean {
     const pacing = CONFIG.police.pacing;
     const candidates: SpurDef[] = [];
-    for (const spur of SPURS) {
+    for (const spur of activeSpurs()) {
       const lead = spur.progress - playerProgress;
       if (lead < pacing.ambushLeadMin || lead > pacing.ambushLeadMax) continue;
       candidates.push(spur);
@@ -1149,7 +1155,7 @@ export class PoliceManager {
     // Anyone waiting in an early spur comes at you from the side rather than head-on,
     // which is the whole reason the spurs exist.
     const [spurFrom, spurTo] = pacing.openingSpurRange;
-    const nearSpurs = SPURS.filter(
+    const nearSpurs = activeSpurs().filter(
       (sp) => sp.progress > spurFrom && sp.progress < spurTo,
     ).slice(0, pacing.openingAmbushes);
 

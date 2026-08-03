@@ -16,7 +16,7 @@ import { PoliceManager } from "./policeManager";
 import { CollisionWorld } from "../physics/collisionWorld";
 import { Vehicle } from "../vehicle/vehicle";
 import { CONFIG } from "../config";
-import { makeCourse, buildCourseSegments } from "../world/course";
+import { makeCourse, buildCourseSegments, setActiveCourse } from "../world/course";
 import { buildWorld } from "../world/courseBuilder";
 import { Terrain } from "../world/terrain";
 import { NavGraph } from "../world/navGraph";
@@ -39,8 +39,20 @@ afterEach(() => {
   Math.random = realRandom;
 });
 
+/** Which behaviour modes actually ran, so coverage is a fact rather than a hope. */
+export interface ChaseRun {
+  print: string;
+  modes: Set<string>;
+}
+
 function runChase(steps: number): string {
-  const course = makeCourse(8919, 12);
+  return chase(steps).print;
+}
+
+function chase(steps: number, startSection = 0): ChaseRun {
+  const course = makeCourse(8919, 16);
+  // The director reads the ACTIVE course for its alleys, as the game does.
+  setActiveCourse(course);
   const { segments } = buildCourseSegments(course);
   const world = buildWorld(stubRenderer(), course);
   const terrain = new Terrain(segments);
@@ -54,7 +66,9 @@ function runChase(steps: number): string {
 
   const ctx = police.buildContext({ player, nav, world: collision, terrain });
   const dt = 1 / 60;
-  let progress = 60;
+  const starts = course.sectionStarts;
+  let progress = Math.max(60, starts[Math.min(startSection, starts.length - 1)] + 40);
+  const modes = new Set<string>();
 
   for (let step = 0; step < steps; step++) {
     // Rail the player forward so the only variable is what the police do.
@@ -69,7 +83,17 @@ function runChase(steps: number): string {
     // makes the player look like they are travelling at all.
     player.vx = Math.sin(player.heading) * 38;
     player.vz = Math.cos(player.heading) * 38;
-    police.update(dt, ctx, step * dt, Math.floor(step / 600));
+    police.update(dt, ctx, step * dt, startSection + Math.floor(step / 600));
+
+    // Record which branches the run actually exercised.
+    for (const u of police.units) {
+      if (!u.active) continue;
+      if (u.ambushAt) modes.add("alley-wait");
+      if (u.welded) modes.add("welded");
+      if (u.role === "rig") modes.add("rig");
+      if (u.blocking) modes.add("slide-block");
+      modes.add(`role:${u.role}`);
+    }
   }
 
   // Fingerprint: where everyone ended up, rounded so floating-point noise
@@ -82,18 +106,21 @@ function runChase(steps: number): string {
     );
   }
   parts.sort();
-  return `${parts.length}|${parts.join(",")}`;
+  return { print: `${parts.length}|${parts.join(",")}`, modes };
 }
 
 /*
- * Captured before the juggernaut machinery was cut out of the AI. The whole
- * point of that deletion was that it removed nothing live: every branch of it
- * was already unreachable, its class disabled twice over. If this value moves,
- * something that was running went with it.
+ * A fingerprint of the chase, to refactor against.
+ *
+ * Re-taken when the harness was corrected: it had been feeding the director
+ * the DAILY course's alleys while running a different course, so no car ever
+ * seated an ambush and the whole alley path went unexercised. That is the same
+ * blind spot that let a broken alley launch through during the juggernaut
+ * deletion, so the value moved deliberately and the coverage is asserted below.
  */
 const BASELINE =
-  "7|patrol:-317.8:261.3:40.4,patrol:-370.7:649.1:37.6,patrol:-44.5:38.7:21.8," +
-  "patrol:-45.6:36.3:34.2,patrol:-65.2:72.5:21.7,patrol:-74.2:64.4:35.3," +
+  "7|patrol:-159.4:152.7:45.6,patrol:-19.2:23.0:23.9,patrol:-44.5:38.7:21.8," +
+  "patrol:-46.5:27.4:34.4,patrol:-65.2:72.5:21.7,patrol:-74.2:64.4:35.3," +
   "patrol:-77.4:99.0:22.1";
 
 describe("the pursuit", () => {
@@ -111,5 +138,22 @@ describe("the pursuit", () => {
     const print = runChase(400);
     const count = Number(print.split("|")[0]);
     expect(count).toBeGreaterThan(3);
+  });
+});
+
+describe("what the fingerprint actually covers", () => {
+  it("exercises the modes a refactor could break", () => {
+    /*
+     * Recorded because a fingerprint only proves what it runs. Cutting the
+     * juggernaut out, an earlier version of this test stayed green while the
+     * alley launch lost the branch that computed its own timing - no unit had
+     * entered an alley in four hundred frames. Coverage is asserted now
+     * rather than assumed.
+     */
+    const { modes } = chase(2400, 6);
+    const seen = [...modes].sort();
+    expect(seen, `saw: ${seen.join(", ")}`).toContain("alley-wait");
+    expect(seen, `saw: ${seen.join(", ")}`).toContain("rig");
+    expect(seen.filter((m) => m.startsWith("role:")).length).toBeGreaterThan(3);
   });
 });

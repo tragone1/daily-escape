@@ -44,9 +44,37 @@ function stubMesh(): StubMesh {
   };
 }
 
+function stubNode(): unknown {
+  const position = {
+    x: 0,
+    y: 0,
+    z: 0,
+    set(x: number, y: number, z: number) {
+      position.x = x;
+      position.y = y;
+      position.z = z;
+    },
+  };
+  let on = true;
+  return {
+    position,
+    rotation: { x: 0, y: 0, z: 0 },
+    scaling: { x: 1, y: 1, z: 1, set() {} },
+    parent: null,
+    dispose() {},
+    isEnabled: () => on,
+    setEnabled(v: boolean) {
+      on = v;
+    },
+  };
+}
+
 export function stubRenderer(): Renderer {
   return {
     createMesh: () => stubMesh(),
+    // The cars build a small scene graph for their bodywork; the pursuit tests
+    // care where a car IS, never what it looks like.
+    createNode: () => stubNode(),
     bake: () => {},
     // Baking is a GPU upload; the tests care about colliders and geometry, both
     // of which exist before any of it happens.

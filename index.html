@@ -279,13 +279,28 @@
       }
       #overlay.show { display: flex; }
       #overlayCard {
-        max-height: calc(100vh - 32px);
-        overflow: auto;
+        /* Same rule as the start card: the middle scrolls, the buttons stay put. */
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
         text-align: center;
-        padding: 34px 54px;
+        padding: 24px 32px;
         border-radius: 16px;
         background: var(--panel);
         border: 1px solid rgba(255, 255, 255, 0.14);
+      }
+      #overlayScroll {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        overflow: auto;
+        min-height: 0;
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
       }
       #overlayTitle {
         font-size: 44px;
@@ -331,7 +346,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 16px;
+        padding: 12px;
         background: radial-gradient(circle at 50% 42%, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.95));
         overflow: auto;
       }
@@ -347,10 +362,34 @@
         display: flex;
         flex-direction: column;
         gap: 7px;
-        /* Short viewports are the common case in an embedded frame, so the card scrolls
-           inside itself rather than pushing the button off the bottom of the screen. */
-        max-height: calc(100vh - 32px);
+        /*
+         * Short viewports - a phone in landscape above all - are the case that
+         * breaks. `dvh` because a phone's `vh` counts the space behind the URL
+         * bar, so the card was sized to a viewport taller than the one you can
+         * see, and `min-height: 0` because a flex child will not shrink below
+         * its content without it. The card itself never scrolls: the middle
+         * does, and START RUN is pinned outside that, so the one button that
+         * matters cannot end up below the fold.
+         */
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        min-height: 0;
+        overflow: hidden;
+      }
+      #startScroll {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
         overflow: auto;
+        min-height: 0;
+        /*
+         * Fade the last few pixels. Content pinned under the button row reads
+         * as broken if it is cut off square, and as "there is more below" if it
+         * dissolves - which is the truth, and the only cue a touch user gets
+         * that the panel scrolls at all.
+         */
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
       }
       #startCard h2 {
         margin: 0;
@@ -399,6 +438,28 @@
       /* Two columns as soon as there is room: four stacked rows plus the controls and the
          button do not fit in a short embedded frame, and the button must never be the thing
          that ends up below the fold. */
+      /*
+       * A phone held sideways has about three hundred usable pixels of height.
+       * Everything here is a size reduction rather than a hidden element: a
+       * player who turns the phone should see the same card, tighter - not a
+       * different, quieter one that leaves them wondering what they missed.
+       */
+      @media (max-height: 460px) {
+        #startCard { padding: 10px 16px; gap: 5px; }
+        #startCard h2 { font-size: clamp(18px, 3.4vw, 24px); letter-spacing: 0.12em; }
+        #startCard .tagline { font-size: 11px; line-height: 1.35; }
+        #dayLine { font-size: 11px; }
+        #startBeats { gap: 5px 16px; }
+        #startBeats i { font-size: 11px; line-height: 1.35; }
+        #startKeys { font-size: 10px; gap: 4px 10px; }
+        #startActions { padding-top: 6px; }
+        #buildStamp { display: none; }
+        #overlayCard { padding: 14px 20px; gap: 6px; }
+        #overlayTitle { font-size: 30px; }
+        #overlayTime { font-size: 22px; }
+        #overlaySub, #overlayDetail { font-size: 12px; }
+      }
+
       @media (min-width: 660px) {
         #startBeats { grid-template-columns: 1fr 1fr; }
       }
@@ -513,6 +574,68 @@
       #submitNote.good { color: var(--good); }
       #submitNote.bad { color: var(--danger); }
       #resultActions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+      /*
+       * The share button leads. Playing again is the thing a player will find
+       * anyway - they just pressed a key to get here - while sending the score
+       * is the thing that only happens if it is put in front of them, so it
+       * gets the filled treatment and the first position.
+       */
+      #shareScore {
+        font: inherit;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        /*
+         * Its own colour, not a second yellow. Two filled accent buttons side
+         * by side read as one indecisive pair and the eye picks neither; the
+         * green already means "this went well" on this card, and it carries
+         * the share without taking the primary action's place.
+         */
+        color: #05070c;
+        background: var(--good);
+        border: none;
+        border-radius: 8px;
+        padding: 12px 22px;
+        cursor: pointer;
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+      #shareScore:hover { filter: brightness(1.08); }
+      #shareScore:active { transform: translateY(1px); }
+      #shareScore.done { background: #fff; }
+      #shareScore:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+      /*
+       * The card someone lands on when a friend sends them a score. It is the
+       * first thing on the page and states the number plainly: the pitch is
+       * that the map is the same one, so the number is answerable.
+       */
+      #challengeCard {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        padding: 9px 14px;
+        margin-bottom: 2px;
+        border-radius: 11px;
+        background: linear-gradient(180deg, rgba(255, 210, 63, 0.14), rgba(255, 210, 63, 0.05));
+        border: 1px solid rgba(255, 210, 63, 0.4);
+      }
+      #challengeCard[hidden] { display: none; }
+      #challengeWho {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+      }
+      #challengeScore {
+        font-size: clamp(26px, 5.5vw, 38px);
+        font-weight: 800;
+        line-height: 1.05;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+      }
+      #challengeSub { font-size: 11px; color: #b9c2d6; }
 
       #boardOverlay {
         position: absolute;
@@ -765,6 +888,7 @@
 
     <div id="overlay">
       <div id="overlayCard">
+        <div id="overlayScroll">
         <h1 id="overlayTitle">BUSTED</h1>
         <div id="overlaySub">They boxed you in.</div>
         <div id="overlayStars"></div>
@@ -783,8 +907,11 @@
           <button id="submitScore" type="button">SUBMIT SCORE</button>
         </div>
         <p id="submitNote"></p>
+        </div>
+
         <div id="resultActions">
-          <button id="playAgainBtn">PLAY AGAIN (Q)</button>
+          <button id="shareScore" type="button">SHARE SCORE</button>
+          <button id="playAgainBtn">PLAY AGAIN (P)</button>
           <button id="resultBoard" class="ghost" type="button">LEADERBOARD</button>
         </div>
       </div>
@@ -795,7 +922,13 @@
 
     <div id="focusHint">
       <div id="startCard">
+        <div id="challengeCard" hidden>
+          <span id="challengeWho">A friend</span>
+          <strong id="challengeScore">0</strong>
+          <span id="challengeSub"></span>
+        </div>
         <h2>DAILY ESCAPE</h2>
+        <div id="startScroll">
         <p id="dayLine">
           <span id="dayNumber">DAY 1</span>
           <span id="dayDate"></span>
@@ -837,6 +970,8 @@
           <span><b>F</b> rocket</span>
           <span><b>P</b> restart</span>
           <span><b>C</b> camera</span>
+        </div>
+
         </div>
 
         <div id="startActions">

@@ -8,6 +8,7 @@
 
 import { setChildren } from "../compat";
 import { dayKey, dayLabel, dayNumber, msUntilRollover } from "../daily";
+import { challengeFromUrl } from "./share";
 import {
   fetchBoard,
   fetchDays,
@@ -77,8 +78,37 @@ export class DailyUi {
     return !this.overlay.hidden;
   }
 
+  /**
+   * Someone arrived from a shared score: lead with the number they were sent.
+   *
+   * A link that opens on the same start card everyone else sees loses the only
+   * thing that made it worth opening. Stated first, the score is a claim about
+   * a map the reader is one button away from driving.
+   *
+   * A link from an earlier day still works and still says so - the map has
+   * rolled since, so the number is not answerable any more, and pretending
+   * otherwise would send them off to chase a score on different roads.
+   */
+  private paintChallenge(): void {
+    const card = el("challengeCard");
+    const challenge = challengeFromUrl();
+    if (!challenge) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    const who = challenge.name ? challenge.name.toUpperCase() : "A FRIEND";
+    el("challengeWho").textContent = challenge.isToday ? `${who} SCORED` : `${who} SCORED ON DAY ${challenge.day}`;
+    el("challengeScore").textContent = challenge.score.toLocaleString();
+    const where = challenge.section > 0 ? `, busted on section ${challenge.section}` : "";
+    el("challengeSub").textContent = challenge.isToday
+      ? `on today's map${where}. Same roads for you - beat it.`
+      : `${where.replace(/^, /, "")}. That map has rolled; today's is below.`;
+  }
+
   private paintDayBanner(): void {
     const key = dayKey();
+    this.paintChallenge();
     el("dayNumber").textContent = `DAY ${dayNumber(key)}`;
     el("dayDate").textContent = dayLabel(key);
 

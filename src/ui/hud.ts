@@ -5,6 +5,7 @@
 
 import { CONFIG } from "../config";
 import type { Surface } from "../world/course";
+import { shareRun } from "./share";
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -83,13 +84,49 @@ export class Hud {
   private surfaceTag = el("surfaceTag");
 
 
+  private shareBtn = el<HTMLButtonElement>("shareScore");
+
   private bannerTime = 0;
   private sectionTime = 0;
   private flashAmount = 0;
+  /** The run currently on the result card, for the share button to describe. */
+  private lastRun: RunSummary | null = null;
+  private shareResetAt = 0;
 
   constructor(onRestart: () => void) {
     el<HTMLButtonElement>("restartBtn").addEventListener("click", onRestart);
     el<HTMLButtonElement>("playAgainBtn").addEventListener("click", onRestart);
+    this.shareBtn.addEventListener("click", () => void this.share());
+  }
+
+  /**
+   * Send the run.
+   *
+   * The button reports what actually happened rather than a generic
+   * confirmation: on a phone the share sheet is its own feedback, but a
+   * desktop copy is silent, and a link on the clipboard that nobody was told
+   * about is the same as no link at all.
+   */
+  private async share(): Promise<void> {
+    const run = this.lastRun;
+    if (!run) return;
+    const name = (document.getElementById("nameInput") as HTMLInputElement | null)?.value;
+    this.shareBtn.disabled = true;
+    const outcome = await shareRun(
+      { score: run.score, section: run.section, distance: run.distance },
+      name,
+    );
+    this.shareBtn.disabled = false;
+    const label =
+      outcome === "copied" ? "LINK COPIED" : outcome === "failed" ? "COULD NOT SHARE" : "SHARED";
+    this.shareBtn.textContent = label;
+    this.shareBtn.classList.toggle("done", outcome !== "failed");
+    this.shareResetAt = performance.now() + 2200;
+    window.setTimeout(() => {
+      if (performance.now() < this.shareResetAt - 50) return;
+      this.shareBtn.textContent = "SHARE SCORE";
+      this.shareBtn.classList.remove("done");
+    }, 2300);
   }
 
   /** Screen-wide white pop for boosts and heavy impacts. */
@@ -190,6 +227,9 @@ export class Hud {
   }
 
   showResult(summary: RunSummary): void {
+    this.lastRun = summary;
+    this.shareBtn.textContent = "SHARE SCORE";
+    this.shareBtn.classList.remove("done");
     this.overlay.classList.add("show");
     this.overlayTitle.textContent = "BUSTED";
     this.overlayTitle.className = "lose";

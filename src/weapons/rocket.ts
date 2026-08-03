@@ -2,7 +2,7 @@
  * The player's single rocket, and the explosion it makes.
  *
  * One per run, so the interesting decision is *when* to spend it — breaking a box-in, opening a
- * roadblock, or wrecking a juggernaut before it gets its shot. Anything caught near the centre
+ * roadblock, or breaking up a squad before it closes. Anything caught near the centre
  * is wrecked outright and gone for the rest of the run; anything on the fringe is thrown
  * and left driverless. It does not home, so a miss costs you the whole run's firepower.
  *
@@ -305,13 +305,7 @@ export class RocketSystem {
       // The armoured classes take a near-direct hit to wreck; anything less staggers
       // them. Killing one with your single rocket should be a deliberate play, not a
       // side effect of aiming at the group they happen to be standing in.
-      const armoured =
-        unit.role === "juggernaut"
-          ? {
-              kill: CONFIG.police.juggernaut.rocketKillRadius,
-              stun: CONFIG.police.juggernaut.rocketDisableTime,
-            }
-          : { kill: cfg.killRadius, stun: cfg.policeDisableTime };
+      const armoured = { kill: cfg.killRadius, stun: cfg.policeDisableTime };
 
       const alreadyWrecked = unit.destroyed;
       if (d <= armoured.kill) {

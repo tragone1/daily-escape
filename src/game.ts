@@ -7,7 +7,6 @@ import { Renderer } from "./gfx/renderer";
 
 import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
-import { DEBUG_JUGG, recordJuggernauts } from "./debugJugg";
 import { CONFIG } from "./config";
 import { Input } from "./input";
 import { clamp } from "./math";
@@ -353,7 +352,6 @@ export class Game {
 
     // --- Rocket ------------------------------------------------------------
     // Debug mode is a test rig: never run dry.
-    if (DEBUG_JUGG && this.rockets.ammo < 9) this.rockets.ammo = 9;
     if (this.controller.firePressed(this.keys) && this.rockets.fire(this.player)) {
       this.camera.addShake(0.35);
       this.audio.rocketLaunch();
@@ -385,7 +383,6 @@ export class Game {
     const progress = terrain.progressAt(this.player.x, this.player.z);
     this.ctx = this.police.buildContext(this.ctx);
     this.police.update(dt, this.ctx, progress, this.state.section);
-    if (DEBUG_JUGG) recordJuggernauts(this.police.units, this.player, this.elapsed);
 
     // --- Police deployables -------------------------------------------------
     const hazard = this.hazards.update(
@@ -426,7 +423,7 @@ export class Game {
        */
       if (unit.destroyed) continue;
       /*
-       * A welded juggernaut owns its player: the weld drives them INTO the blade
+       * A welded truck owns its player: the weld drives them INTO the front
        * pocket on purpose, and the separation solver ejecting them back out every
        * frame was the weld losing a fight it should never have been in.
        */

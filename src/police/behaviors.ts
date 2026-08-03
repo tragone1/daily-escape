@@ -209,7 +209,7 @@ export function patrolGoal(self: Vehicle, ctx: PursuitContext): Goal {
  * chassis. It commits earlier and from further out because it cannot correct late, and
  * once it is alongside its mass does the work.
  *
- * The juggernaut runs the identical logic on its own, longer ranges: the behaviour that
+ * The heavy classes run the identical logic on their own, longer ranges: the behaviour that
  * suits a heavy chassis is the behaviour that suits a heavier one.
  */
 export function heavyGoal(
@@ -410,8 +410,6 @@ export function goalFor(
       return patrolGoal(self, ctx);
     case "heavy":
       return heavyGoal(self, ctx);
-    case "juggernaut":
-      return heavyGoal(self, ctx, CONFIG.police.juggernaut);
     case "elite":
       return eliteGoal(self, ctx);
     case "interceptor":

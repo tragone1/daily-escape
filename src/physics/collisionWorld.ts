@@ -325,9 +325,9 @@ export class CollisionWorld {
 
     // A fixed extra shove on top of the elastic response, so contact always reads as
     // a hit even when both cars are travelling at similar speeds — heavily damped when
-    // it is one police car hitting another, so a charging juggernaut cannot blow its own
+    // it is one police car hitting another, so a charging unit cannot blow its own
     // squad off you and hand the player the gap it was sent to close.
-    // A plowing juggernaut is nobody's friend: its squadmates take the full hit
+    // A plowing unit is nobody's friend: its squadmates take the full hit
     // and scatter like ants, which is the entire visual promise of the class.
     const friendly = a.isPolice && b.isPolice && !a.plow && !b.plow;
     /*
@@ -361,7 +361,7 @@ export class CollisionWorld {
       }
     }
     /*
-     * Against a jammed juggernaut nothing bounces and nothing is thrown: the trap
+     * Against a jammed blocker nothing bounces and nothing is thrown: the trap
      * closes and the contact SETTLES, which is the difference between "pinned to the
      * wall" and "hit into the wall and back out again".
      */

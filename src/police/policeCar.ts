@@ -35,7 +35,6 @@ const ROLE_ACCENT: Record<PoliceRole, [number, number, number]> = {
   blocker: [0.98, 0.65, 0.05],
   // Blood orange on charcoal. It should not look like the rest of the squad, because
   // trading paint with it is not the same decision as trading paint with the rest.
-  juggernaut: [1.0, 0.28, 0.04],
   // Hazard yellow on charcoal, like a works vehicle. It is not chasing anybody.
   rig: [0.98, 0.78, 0.06],
 };
@@ -101,8 +100,6 @@ export class PoliceCar {
   /** One backed-up second attempt per ambush, then it is spent for real. */
   private retries = 0;
   /** Exit-phase deadline: geometry that never "clears" must not trap the strike. */
-  private exitClock = 0;
-  private springPSpd = 0;
   /** Section-scaled aggression, set by the director: quicker, more frequent charges. */
   aggro = 0;
   /**
@@ -307,25 +304,18 @@ export class PoliceCar {
     this.vehicle.isPolice = true;
     this.vehicle.reset(spawn.x, spawn.z, spawn.heading);
     /*
-     * The juggernaut is DRAWN at its strike-collider width (one big box), not
+     * A car is DRAWN at its collider width (one big box), not
      * its resting width. Every other car's visual matches the box that hits
      * you; drawing this one narrow while it catches with the wide strike box
      * meant side latches gripped visibly empty air. The physics params are
      * untouched - this is purely what the mesh looks like.
      */
-    const viewHalfWidth =
-      role === "juggernaut"
-        ? CONFIG.police.escalation.openRoad.ambush.bladeHalfWidth
-        : params.halfWidth;
     this.view = new CarView(
       r,
-      policeStyle(
-        ROLE_ACCENT[role],
-        role === "juggernaut" || role === "rig",
-      ),
+      policeStyle(ROLE_ACCENT[role], role === "rig"),
       params.halfLength,
-      viewHalfWidth,
-      role === "juggernaut",
+      params.halfWidth,
+      false,
     );
   }
 
@@ -361,7 +351,6 @@ export class PoliceCar {
     this.pinTimer = 0;
     this.glueLocal = null;
     this.retries = 0;
-    this.exitClock = 0;
     this.spent = false;
     this.rigPost = null;
     this.rigLateral = 0;
@@ -399,16 +388,9 @@ export class PoliceCar {
    * numbers, which are built to be read and beaten.
    */
   private get ambushTuning() {
-    const openRoad = CONFIG.police.escalation.openRoad;
-    return openRoad.roles.includes(this.role)
-      ? openRoad.ambush
-      : CONFIG.police.pacing.ambush;
+    return CONFIG.police.pacing.ambush;
   }
 
-  /** True for the two classes that exist only to ambush. */
-  private get isAmbusher(): boolean {
-    return CONFIG.police.escalation.openRoad.roles.includes(this.role);
-  }
 
   distanceToPlayer(player: Vehicle): number {
     return dist(this.vehicle.x, this.vehicle.z, player.x, player.z);
@@ -458,10 +440,6 @@ export class PoliceCar {
     v.jam = false;
     // The strike owns the truck: a charge committing mid-ambush was a second driver
     // fighting the wheel at the moment of contact.
-    if (this.isAmbusher && (this.ambushAt || this.springFrom || this.pinTimer > 0)) {
-      this.charging = false;
-      this.chargeTimer = 0;
-    }
 
     // A wreck: no driver, ever again. Let it coast to a stop and stay there.
     if (this.wrecked) {
@@ -772,70 +750,14 @@ export class PoliceCar {
      * parked in the open, which the player met and reasonably called a sitting
      * duck. A decelerating truck reads as a failed charge; a statue reads as a bug.
      */
-    if (this.isAmbusher && this.spent) {
-      if (v.params.halfWidth > CONFIG.police.juggernaut.vehicle.halfWidth + 0.01) {
-        v.params = { ...v.params, halfWidth: CONFIG.police.juggernaut.vehicle.halfWidth };
-      }
-      /*
-       * A missed shot does not leave a truck parked in the middle of the road - it
-       * slinks back into the alley it came from and disappears there. Only when the
-       * alley is genuinely out of reach does it settle where it stands.
-       */
-      const m = this.lastMouth;
-      if (m) {
-        const hx = m.x - m.ox * 12;
-        const hz = m.z - m.oz * 12;
-        const toHide = dist(v.x, v.z, hx, hz);
-        if (toHide > 3 && dist(v.x, v.z, m.x, m.z) < 55) {
-          this.input.throttle = v.speed > 11 ? 0 : 0.55;
-          this.input.brake = 0;
-          this.input.steer = clamp(
-            wrapAngle(headingOf(hx - v.x, hz - v.z) - v.heading) /
-              CONFIG.police.shared.steerFullLockAngle,
-            -1,
-            1,
-          );
-          this.input.boost = false;
-          this.view.setCharge(0);
-          v.drive = 1;
-          v.update(this.input, dt, ctx.terrain);
-          return;
-        }
-      }
-      this.input.throttle = 0;
-      this.input.brake = v.speed > 0.5 ? 1 : 0;
-      this.input.steer = 0;
-      this.input.boost = false;
-      this.view.setCharge(0);
-      v.drive = 1;
-      v.update(this.input, dt, ctx.terrain);
-      return;
-    }
 
     // Waiting in an alley: sit still, engine running, until the moment is right.
     if (this.ambushAt) {
       this.ambushWait += dt;
-      // The player has gone by and the shot never came: stand down rather than pull out
-      // behind them and give chase.
-      if (this.isAmbusher) {
-        const mouth = this.ambushAt;
-        // Course progress, not the player's heading frame: on a switchback the mouth
-        // reads as "behind" the player's nose while still genuinely up the road.
-        const past =
-          ctx.terrain.progressAt(ctx.player.x, ctx.player.z) -
-          ctx.terrain.progressAt(mouth.x, mouth.z);
-        if (past > CONFIG.police.escalation.openRoad.ambush.giveUpPast) {
-          this.ambushAt = null;
-          this.spent = true;
-          return;
-        }
-      }
       /*
-       * One gate for everyone: the fleet's ETA spring. The player's own verdict,
-       * session after session, is that the regular cops "sit in the back of the
-       * alley and broadside me pretty good" - while every bespoke juggernaut
-       * trigger ever built fired early or late. So the juggernaut uses the exact
-       * timing that works, and its identity lives in what happens on contact.
+       * The ETA spring: hold until the time it takes to reach the mouth matches
+       * the time the player takes to arrive at it. Timed this way the car comes
+       * out of the alley beside them rather than behind them.
        */
       const go = this.readyToSpring(ctx);
       if (go) {
@@ -849,69 +771,9 @@ export class PoliceCar {
         const oz = this.ambushAt.z - v.z;
         const ol = Math.hypot(ox, oz) || 1;
         this.springExit = { x: ox / ol, z: oz / ol };
-        this.exitClock = 1.2;
-        // The launch plan was solved for THIS player speed; the burn gears off
-        // how far they deviate from it.
-        this.springPSpd = Math.max(8, Math.hypot(ctx.player.vx, ctx.player.vz));
-        if (this.isAmbusher) {
-          if (this.ambushOut) {
-            this.lastMouth = {
-              x: this.ambushAt.x,
-              z: this.ambushAt.z,
-              ox: this.ambushOut.x,
-              oz: this.ambushOut.z,
-            };
-          }
-        }
         this.ambushAt = null;
       } else {
-        /*
-         * Pre-stage while armed: creep from the seat depth up to a hold point a car
-         * length inside the mouth. A truck launching from deep in the alley needs
-         * 1.4 seconds to reach the road, and no half-second-honest gate can predict
-         * a player that far out - staged at the mouth its launch is ~0.5s, which is
-         * inside the window the timing math genuinely controls.
-         */
-        // A re-armed truck that is out on the road backs up into its alley first;
-        // a seated one waits motionless, exactly like the fleet.
-        const out2 = this.ambushOut;
-        if (this.isAmbusher && out2) {
-          const hx2 = this.ambushAt.x - out2.x * 12;
-          const hz2 = this.ambushAt.z - out2.z * 12;
-          const toHold2 = dist(v.x, v.z, hx2, hz2);
-          const outside =
-            (v.x - this.ambushAt.x) * out2.x + (v.z - this.ambushAt.z) * out2.z > -2;
-          /*
-           * Never retreat THROUGH the player: a reversing truck crossing their path
-           * registered hollow contacts with no pin machinery live - the exact
-           * "feels like decoration" report. Hold still until they are clear.
-           */
-          if (outside && dist(v.x, v.z, ctx.player.x, ctx.player.z) < 16) {
-            this.input.throttle = 0;
-            this.input.brake = v.speed > 0.5 ? 1 : 0;
-            this.input.steer = 0;
-            this.input.boost = false;
-            this.view.setCharge(0);
-            v.drive = 1;
-            v.update(this.input, dt, ctx.terrain);
-            return;
-          }
-          if (outside && toHold2 > 3) {
-            this.input.throttle = 0;
-            this.input.brake = 1; // reverse toward the alley
-            this.input.steer = clamp(
-              -wrapAngle(headingOf(hx2 - v.x, hz2 - v.z) - v.heading - Math.PI) /
-                CONFIG.police.shared.steerFullLockAngle,
-              -1,
-              1,
-            );
-            this.input.boost = false;
-            this.view.setCharge(0);
-            v.drive = 1;
-            v.update(this.input, dt, ctx.terrain);
-            return;
-          }
-        }
+        // Seated and waiting: motionless, engine running, until the gate opens.
         this.input.throttle = 0;
         this.input.brake = v.speed > 1 ? 1 : 0;
         this.input.steer = 0;
@@ -1096,212 +958,15 @@ export class PoliceCar {
      * glue pin. It exits the alley on rails and then the shared homing below owns
      * the run; nothing here predicts, everything adjusts.
      */
-    if (
-      this.isAmbusher &&
-      v.params.halfWidth > CONFIG.police.juggernaut.vehicle.halfWidth + 0.01
-    ) {
-      // Blade deployed: wings are solid against walls too. If the nose ray finds a
-      // wall inside the claw's reach, the truck is held back at the surface.
-      const fxW = Math.sin(v.heading);
-      const fzW = Math.cos(v.heading);
-      const reach = v.params.halfLength + 1.2;
-      const wallD = ctx.world.raycastDistance(v.x, v.z, fxW, fzW, reach);
-      if (wallD < reach) {
-        const push = reach - wallD;
-        v.x -= fxW * push;
-        v.z -= fzW * push;
-        const vn = v.vx * fxW + v.vz * fzW;
-        if (vn > 0) {
-          v.vx -= fxW * vn;
-          v.vz -= fzW * vn;
-        }
-      }
-    }
 
-    if (this.isAmbusher && this.springFrom) {
-      const cfg = this.ambushTuning;
-      if (this.springExit) {
-        const exit = this.springExit;
-        /*
-         * The exit phase ENDS, whatever the geometry says. A spur whose record makes
-         * the "cleared the mouth" dot product unsatisfiable trapped the strike in
-         * exit-mode forever: it hit the player with no homing, no pin, no weld ever
-         * running - the recurring hollow contact. Deadline, or player-close, or
-         * cleared: any of the three hands over to the homing.
-         */
-        this.exitClock -= dt;
-        const cleared =
-          (v.x - this.springFrom.x) * exit.x + (v.z - this.springFrom.z) * exit.z > 1.5 ||
-          this.exitClock <= 0;
-        if (cleared) {
-          this.springExit = null;
-          /*
-           * The claw unfolds HERE, clear of the alley - deploying at fire wrapped a
-           * 6.8-wide collider in a 7-wide corridor, and the blade scraping both
-           * walls was the mystery brake that bled every launch to a crawl.
-           */
-          if (cfg.bladeHalfWidth > 0) {
-            v.params = { ...v.params, halfWidth: cfg.bladeHalfWidth };
-          }
-        } else {
-          /*
-           * Contact DURING the exit still counts: alleys whose geometry never
-           * satisfies the cleared test (seat 88's species) meet the player while
-           * technically "exiting", and without this latch that contact had no pin,
-           * no weld, nothing - the recurring hollow touch. Latch here; the pin
-           * branch preempts from the next frame.
-           */
-          const pdE = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-          if (pdE < 7.2 && !this.glueLocal) {
-            const fxE = Math.sin(v.heading);
-            const fzE = Math.cos(v.heading);
-            const rxE = Math.cos(v.heading);
-            const rzE = -Math.sin(v.heading);
-            const relXE = ctx.player.x - v.x;
-            const relZE = ctx.player.z - v.z;
-            const relAlongE = relXE * fxE + relZE * fzE;
-            const relLatE = relXE * rxE + relZE * rzE;
-            const frontBiteE = relAlongE > 0 && Math.abs(relLatE) < 6.0;
-            // Side bite: crushing metal keeps whatever it touches - a player who
-            // clips our flank grinds along the blade into the pocket.
-            const sideBiteE =
-              relAlongE > -v.params.halfLength && Math.abs(relLatE) < 4.6 && pdE < 6.0;
-            if (frontBiteE || sideBiteE) {
-              this.glueLocal = {
-                along: v.params.halfLength + 1.1,
-                lateral: Math.max(-3.0, Math.min(3.0, relLatE)),
-              };
-              this.pinTimer = cfg.pinTime;
-              if (cfg.bladeHalfWidth > 0) {
-                v.params = { ...v.params, halfWidth: cfg.bladeHalfWidth };
-              }
-            }
-          }
-          /*
-           * The exit phase OWNS the terminal encounter - the gate fires when the
-           * player is ~0.85s out and the exit takes ~1.3s, so contact lands here,
-           * not in the homing branch. An open-loop exit made the whole strike only
-           * as good as the launch calibration: a player who braked to a stop met a
-           * truck barrelling across their empty lane, one who boosted crossed
-           * behind a truck still nosing out. Same two clocks as the strike:
-           * stalled player -> hold HIDDEN mid-alley with the clock pinned (the
-           * strike resumes when they do; a receding player reads late, which
-           * drives the exit to complete and the homing give-up to run - no
-           * statues); running late -> afterburner straight down the alley axis,
-           * the one direction that cannot scrape a wall.
-           */
-          let exThrottle = 1;
-          let exBrake = 0;
-          const pSpdE = Math.hypot(ctx.player.vx, ctx.player.vz);
-          const dxTE = v.x - ctx.player.x;
-          const dzTE = v.z - ctx.player.z;
-          let schedE = 2;
-          let lateE = 0;
-          let approachingE = false;
-          let lineDistE = 999;
-          if (pSpdE > 2) {
-            const alongPE = (dxTE * ctx.player.vx + dzTE * ctx.player.vz) / pSpdE;
-            const latDE = Math.abs(dxTE * ctx.player.vz - dzTE * ctx.player.vx) / pSpdE;
-            const tLevelE = alongPE > 0.5 ? alongPE / pSpdE : 0;
-            approachingE = alongPE > 0.5;
-            // Accel-honest time to their line - a flat speed guess told a truck
-            // holding at rest it could cross instantly, so it released its hold
-            // too late and spooled up car-lengths short.
-            const aRunE = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-            // Our real path runs along the alley axis - for an oblique spur the
-            // crossing point is farther than the perpendicular distance by
-            // 1/sin(angle), and using the short number made every oblique seat
-            // read "early" and mistime under dynamics.
-            lineDistE = latDE;
-            const pdxE = ctx.player.vx / pSpdE;
-            const pdzE = ctx.player.vz / pSpdE;
-            const denE = exit.x * pdzE - exit.z * pdxE;
-            if (Math.abs(denE) > 0.25) {
-              const sE = (-dxTE * pdzE + dzTE * pdxE) / denE;
-              if (sE > 0) lineDistE = Math.min(sE, latDE * 3);
-            }
-            const dLatE = Math.max(0, lineDistE - 3.5);
-            const tMineE = (Math.sqrt(v.speed * v.speed + 2 * aRunE * dLatE) - v.speed) / aRunE;
-            schedE = tLevelE - tMineE;
-            lateE = schedE;
-          }
-          if (schedE > 0.9 && pdE > 14) {
-            // Hold at the LIP: a piston poised 10 from the crossing line lunges
-            // in ~0.6s; one parked 20 back needs 1.4s of spool and scatters.
-            this.exitClock = Math.max(this.exitClock, 0.35);
-            if (lineDistE > 12 && v.speed < 16) {
-              exThrottle = 0.6;
-            } else {
-              exThrottle = 0;
-              exBrake = 1;
-            }
-          } else if (schedE > 0.35 && pdE > 12) {
-            // The middle band: a knock that slows the player reads moderately
-            // early - without this taper the truck crosses car-lengths ahead.
-            exThrottle = Math.max(0.3, 1 - (schedE - 0.35) * 1.4);
-            this.exitClock = Math.max(this.exitClock, 0.2);
-          } else if (lateE < -0.04 && v.speed < 46 && this.strikeMuff === 0 && (approachingE || pdE < 25)) {
-            // Honest lateness picks WHEN to burn; how hard gears off how much the
-            // player has outrun the speed the launch was solved for. A punctual
-            // pass burns mildly, a boosting one gets the full afterburner.
-            const ratioE = Math.min(2.6, Math.max(1, (pSpdE / this.springPSpd) ** 2));
-            const lateF = Math.min(1.6, Math.min(1, (-lateE - 0.04) * 8) * ratioE);
-            v.applyImpulse(exit.x * 340 * lateF * dt, exit.z * 340 * lateF * dt);
-          }
-          const aimX = this.springFrom.x + exit.x * 6;
-          const aimZ = this.springFrom.z + exit.z * 6;
-          this.input.throttle = exThrottle;
-          this.input.brake = exBrake;
-          this.input.steer = clamp(
-            wrapAngle(headingOf(aimX - v.x, aimZ - v.z) - v.heading) /
-              CONFIG.police.shared.steerFullLockAngle,
-            -1,
-            1,
-          );
-          this.input.boost = false;
-          v.drive = 1 + cfg.launchSpeedBonus;
-          v.update(this.input, dt, ctx.terrain);
-          return;
-        }
-      }
-    }
 
     if (this.springFrom) {
       const cfg = this.ambushTuning;
-      if (this.isAmbusher) {
-        // The blade is live: contact converts to the glue pin, colleagues scatter.
-        const pd0 = dist(v.x, v.z, ctx.player.x, ctx.player.z);
-        if (pd0 < cfg.pinRange) this.pinTimer = cfg.pinTime;
-        /*
-         * Latch the weld HERE, at the frame of arrival - waiting for the pin branch
-         * gave the collision separation a frame to shove the player past the latch
-         * window, and the joint never formed on half of dead-centre hits.
-         */
-        if (pd0 < 7.2 && !this.glueLocal) {
-          const fxL = Math.sin(v.heading);
-          const fzL = Math.cos(v.heading);
-          const rxL = Math.cos(v.heading);
-          const rzL = -Math.sin(v.heading);
-          const relXL = ctx.player.x - v.x;
-          const relZL = ctx.player.z - v.z;
-          const relAlongL = relXL * fxL + relZL * fzL;
-          const relLatL = relXL * rxL + relZL * rzL;
-          if (relAlongL > v.params.halfLength - 1.6 && Math.abs(relLatL) < 3.6) {
-            this.glueLocal = {
-              along: v.params.halfLength + 1.1,
-              lateral: Math.max(-3.0, Math.min(3.0, relLatL)),
-            };
-            this.pinTimer = cfg.pinTime;
-          }
-        }
-        v.plow = true;
-        v.contactBoost = 7;
-      }
       /*
        * The shot exists only while the unit is still across or ahead of the player.
        *
        * `homeDistance` alone kept the strike alive for its full length even when the
-       * launch had already missed - and a missed juggernaut homing on an intercept
+       * launch had already missed - and a missed car homing on an intercept
        * point from behind is indistinguishable from a chaser, which players duly
        * reported. Behind the player by more than a car length, the T-bone is gone,
        * so the run is over: it rolls out, hits whatever its momentum takes it into,
@@ -1315,12 +980,9 @@ export class PoliceCar {
        * class's field record. A truck is only truly beaten when it is down-course
        * of the player, and that is a progress question.
        */
-      const along =
-        ctx.terrain.progressAt(v.x, v.z) -
-        ctx.terrain.progressAt(ctx.player.x, ctx.player.z);
       // Fallen behind or crossed twenty ahead: the run is over - but the machine
       // gets ONE backed-up second attempt if its alley still lies ahead of the prey.
-      const missed = this.isAmbusher && (along < -14 || along > 20);
+      const missed = false;
       if (missed && this.retries < 3 && this.lastMouth) {
         const mouthLead =
           ctx.terrain.progressAt(this.lastMouth.x, this.lastMouth.z) -
@@ -1341,10 +1003,6 @@ export class PoliceCar {
         this.springFrom = null;
         this.springExit = null;
         // One alley, one strike. Whatever happened, this unit is finished.
-        if (this.isAmbusher) {
-          this.spent = true;
-          return;
-        }
       } else {
         /*
          * Phase one of the launch: get OUT of the alley.
@@ -1377,12 +1035,6 @@ export class PoliceCar {
              * In cover it stays a surprise, and the extra length is launch runway.
              */
             this.ambushWait += dt;
-            if (this.isAmbusher && this.ambushWait > cfg.maxWait) {
-              this.springFrom = null;
-              this.springExit = null;
-              this.spent = true;
-              return;
-            }
             const hx = this.springFrom.x - exit.x * 5;
             const hz = this.springFrom.z - exit.z * 5;
             if (dist(v.x, v.z, hx, hz) < 4) {
@@ -1466,65 +1118,11 @@ export class PoliceCar {
          * pessimistic time to cross their line. Positive = we are early, negative =
          * late. Computed before the aim so a late run can also stretch its lead.
          */
-        /*
-         * Two clocks: the EASE side stays pessimistic about our speed (+14 credit)
-         * so a punctual launch never reads early and gets throttled - but that same
-         * credit hides real lateness, which is why every boost-away pass read as
-         * "barely late" while missing astern by car-lengths. Late detection gets an
-         * honest clock instead.
-         */
-        let strikeSched: number | null = null;
-        let strikeLate: number | null = null;
-        let strikeApproaching = false;
-        let strikeLineDist = 999;
-        if (this.isAmbusher) {
-          const pSpdS = Math.hypot(ctx.player.vx, ctx.player.vz);
-          const dxT = v.x - ctx.player.x;
-          const dzT = v.z - ctx.player.z;
-          if (pSpdS > 2) {
-            const alongP = (dxT * ctx.player.vx + dzT * ctx.player.vz) / pSpdS;
-            const latD = Math.abs(dxT * ctx.player.vz - dzT * ctx.player.vx) / pSpdS;
-            const tLevel = alongP > 0.5 ? alongP / pSpdS : 0;
-            strikeApproaching = alongP > 0.5;
-            // Accel-honest time to their line, same kinematics as the launch gate.
-            const aRunS = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-            // Same oblique correction as the exit clock, along our actual velocity.
-            let lineDistS = latD;
-            if (v.speed > 8) {
-              const pdxS = ctx.player.vx / pSpdS;
-              const pdzS = ctx.player.vz / pSpdS;
-              const vdxS = v.vx / v.speed;
-              const vdzS = v.vz / v.speed;
-              const denS = vdxS * pdzS - vdzS * pdxS;
-              if (Math.abs(denS) > 0.25) {
-                const sS = (-dxT * pdzS + dzT * pdxS) / denS;
-                if (sS > 0) lineDistS = Math.max(latD, Math.min(sS, latD * 2.5));
-              }
-            }
-            strikeLineDist = lineDistS;
-            const dLatS = Math.max(0, lineDistS - 3.5);
-            const tMineS = (Math.sqrt(v.speed * v.speed + 2 * aRunS * dLatS) - v.speed) / aRunS;
-            strikeSched = tLevel - tMineS;
-            strikeLate = strikeSched;
-          } else {
-            strikeSched = 2; // player stalled: hold, do not overshoot their line
-          }
-        }
         // Late runs aim further ahead of the player - a stern chase becomes a cut-off.
-        const leadT =
-          strikeLate !== null && strikeLate < -0.04
-            ? 0.08 + Math.min(0.5, (-strikeLate - 0.04) * 1.6)
-            : 0.08;
-        const lead = this.isAmbusher
-          ? { x: ctx.player.x + ctx.player.vx * leadT, z: ctx.player.z + ctx.player.vz * leadT }
-          : interceptPoint(v, ctx.player, 1.4);
+        const lead = interceptPoint(v, ctx.player, 1.4);
         const tx = lead.x - v.x;
         const tz = lead.z - v.z;
         const tl = Math.hypot(tx, tz) || 1;
-        if (this.isAmbusher) {
-          v.jam = true;
-          if (tl < 22) v.applyImpulse((tx / tl) * 140 * dt, (tz / tl) * 140 * dt);
-        }
         /*
          * Terminal guidance: the through-point shrinks as the range closes. At full
          * depth a player who brakes or swerves late walks the aim point off their far
@@ -1532,7 +1130,7 @@ export class PoliceCar {
          * converges the aim onto the player themselves, so speeding up, slowing down
          * and turning all lead to the same place - contact.
          */
-        const depth = this.isAmbusher ? 1.5 : cfg.strikeDepth * clamp(tl / 45, 0.35, 1);
+        const depth = cfg.strikeDepth * clamp(tl / 45, 0.35, 1);
         const aim = {
           x: lead.x + (tx / tl) * depth,
           z: lead.z + (tz / tl) * depth,
@@ -1552,36 +1150,8 @@ export class PoliceCar {
         let strikeThrottle = 1;
         let strikeBrake = 0;
         let strikeDrive = 1 + cfg.launchSpeedBonus;
-        if (this.isAmbusher && strikeSched !== null && tl > 12) {
-          if (strikeSched > 0.9) {
-            strikeDrive = 1;
-            if (strikeLineDist > 12 && v.speed < 16) {
-              strikeThrottle = 0.6;
-            } else {
-              strikeThrottle = 0;
-              strikeBrake = 1;
-            }
-          } else if (strikeSched > 0.35) {
-            strikeThrottle = Math.max(0.35, 1 - (strikeSched - 0.35) * 1.4);
-            strikeDrive = 1 + cfg.chaseSpeed * 0.4;
-          }
-        }
         // Afterburner: runs on the honest clock and all the way into terminal range -
         // the boost-away misses happened at 7-12 units out, inside the old tl guard.
-        if (
-          this.isAmbusher &&
-          strikeLate !== null &&
-          strikeLate < -0.04 &&
-          tl > 6 &&
-          v.speed < 46 &&
-          this.strikeMuff === 0 &&
-          (strikeApproaching || tl < 25)
-        ) {
-          const pSpdB = Math.hypot(ctx.player.vx, ctx.player.vz);
-          const ratioB = Math.min(2.6, Math.max(1, (pSpdB / Math.max(8, this.springPSpd)) ** 2));
-          const late = Math.min(1.6, Math.min(1, (-strikeLate - 0.04) * 8) * ratioB);
-          v.applyImpulse((tx / tl) * 340 * late * dt, (tz / tl) * 340 * late * dt);
-        }
         this.input.throttle = strikeThrottle;
         this.input.brake = strikeBrake;
         this.input.steer = clamp(
@@ -1855,75 +1425,19 @@ export class PoliceCar {
     const player = ctx.player;
 
     /*
-     * The ambusher gate is EUCLID + LINE OF SIGHT, nothing else. Progress space
-     * lies exactly at the junction (the player's position snaps onto the spur's own
-     * branch segment and the lead collapses), which silently blocked the gate in
-     * its firing window; and the chord cannot lie at these ranges once the mouth
-     * can SEE the player - no switchback fits inside sixty units with sight. The
-     * fleet keeps the progress path below.
+     * Progress space, not straight-line range: a player fifty units away across
+     * a switchback wall is not approaching this mouth, and launching at them is
+     * how a car ends up planted in the wall opposite as they round the corner.
      */
-    if (this.isAmbusher) {
-      const dM = dist(player.x, player.z, mouth.x, mouth.z);
-      if (dM > 110) return false;
-      if (!ctx.world.lineOfSight(mouth.x, mouth.z, player.x, player.z)) return false;
-      const effSpd = Math.max(8, Math.min(player.speed, player.params.maxSpeed));
-      const theirEtaE = dM / effSpd;
-      const aRun = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-      const topRun = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
-      const tAcc = topRun / aRun;
-      const dAcc = 0.5 * aRun * tAcc * tAcc;
-      /*
-       * Lane-aware: the crossing distance is to the PLAYER'S lane, not the road
-       * centre. A near-lane player arrives at a shorter runway, a far-lane player
-       * a longer one - timing to the centre was why only centre-line passes were
-       * being caught.
-       */
-      const outX = this.ambushOut ? this.ambushOut.x : 0;
-      const outZ = this.ambushOut ? this.ambushOut.z : 0;
-      const laneDepth = Math.max(2, Math.min(14, (player.x - mouth.x) * outX + (player.z - mouth.z) * outZ));
-      const rw = dist(v.x, v.z, mouth.x, mouth.z) + laneDepth;
-      const ourEtaE =
-        0.15 + (rw <= dAcc ? Math.sqrt((2 * rw) / aRun) : tAcc + (rw - dAcc) / topRun);
-      // A shot that is already stale at first sight lands behind the player every
-      // time - hold instead; a no-show is invisible, a tail-graze is a complaint.
-      if ((cfg as { pistonMode?: boolean }).pistonMode) {
-      /*
-       * Slow-piston mode (positive lead = the detuned truck): fire EARLY on
-       * principle and let the closed-loop exit hold at the lip and time the
-       * lunge. The old stale guard compared against a fast truck's ETA and
-       * refused nearly every honest approach at half pace. Refuse only a
-       * player already on the mouth.
-       */
-      if (theirEtaE < 0.35 + Math.max(0, this.strikeMuff)) return false;
-      return theirEtaE <= ourEtaE + cfg.leadTime + this.strikeMuff;
-    }
-    if (theirEtaE < ourEtaE + cfg.leadTime + this.strikeMuff - 0.6) return false;
-      return theirEtaE <= ourEtaE + cfg.leadTime + this.strikeMuff;
-    }
     const lead =
       ctx.terrain.progressAt(mouth.x, mouth.z) -
       ctx.terrain.progressAt(player.x, player.z);
     if (lead < -8) return false;
     if (lead < cfg.springRange) return true;
 
-    /*
-     * The ambusher launches from a DEEP seat at rest: its time to the road is
-     * acceleration-dominated, and the cruise-speed estimate under-reads it by a
-     * third of a second - which, against a straight, predictable player, was a
-     * clean miss behind them every time. Physics, not cruise math.
-     */
-    let ourEta: number;
+    // Time to the mouth against time to the player reaching it.
     const runway = dist(v.x, v.z, mouth.x, mouth.z) + 7;
-    if (this.isAmbusher) {
-      const a = Math.max(20, v.params.accel * (1 + cfg.launchSpeedBonus) * 0.8);
-      const top = Math.max(10, v.params.maxSpeed * cfg.launchSpeedFactor);
-      const tAccel = top / a;
-      const dAccel = 0.5 * a * tAccel * tAccel;
-      ourEta =
-        0.15 + (runway <= dAccel ? Math.sqrt((2 * runway) / a) : tAccel + (runway - dAccel) / top);
-    } else {
-      ourEta = (runway - 7) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
-    }
+    const ourEta = (runway - 7) / Math.max(6, v.params.maxSpeed * cfg.launchSpeedFactor);
     const theirEta = lead / Math.max(8, player.speed);
     return theirEta <= ourEta + cfg.leadTime;
   }

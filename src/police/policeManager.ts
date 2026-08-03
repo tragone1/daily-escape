@@ -78,22 +78,7 @@ export class PoliceManager {
 
   /** Units that actually chase: the budget the difficulty curve is written against. */
   private get mainFleetCount(): number {
-    const esc = CONFIG.police.escalation;
-    return this.units.filter(
-      (u) =>
-        u.active &&
-        !u.destroyed &&
-        u.role !== "rig" &&
-        !esc.openRoad.roles.includes(u.role),
-    ).length;
-  }
-
-  /** Traps lying in wait, counted apart from the chase. */
-  private get ambusherCount(): number {
-    const esc = CONFIG.police.escalation;
-    return this.units.filter(
-      (u) => u.active && !u.destroyed && esc.openRoad.roles.includes(u.role),
-    ).length;
+    return this.units.filter((u) => u.active && !u.destroyed && u.role !== "rig").length;
   }
 
   get activeCount(): number {
@@ -289,19 +274,13 @@ export class PoliceManager {
     /*
      * Two budgets, not one.
      *
-     * `target` is the main fleet: everything that actually chases you. The juggernaut is a
-     * trap with their own small allowance, and the rig has always had its
-     * own cap of one. Sharing a single number meant an ambusher parked in an alley - or a
-     * spent one waiting to be stood down - was counted as part of the chase and cost the
-     * road a car.
+     * `target` is the main fleet: everything that actually chases you. The rig
+     * has always had its own cap of one, because a parked roadblock counted as
+     * part of the chase cost the road a car that was actually driving.
      */
     const target = Math.min(
       section >= 9 ? esc.lateMaxActive : esc.maxActive,
       section === 0 ? esc.openingActive : Math.round(esc.baseActive + section * esc.activePerSection),
-    );
-    const ambushTarget = Math.min(
-      esc.openRoad.maxActive,
-      1 + (section >= esc.openRoad.secondAt ? 1 : 0) + (section >= esc.openRoad.thirdAt ? 1 : 0),
     );
 
     // Recycle stragglers first; they may well cover the whole deficit on their own.
@@ -381,7 +360,6 @@ export class PoliceManager {
        * awake and kept following you through it.
        */
       if (!this.spawnUnit(unit, ctx, playerProgress)) {
-        if (esc.openRoad.roles.includes(unit.role)) unit.deactivate();
       }
     }
 
@@ -407,24 +385,6 @@ export class PoliceManager {
       if (!this.spawnUnit(unit, ctx, playerProgress)) continue;
       active++;
       woken++;
-    }
-
-    /*
-     * The traps, on their own allowance.
-     *
-     * Kept to a single wake per tick and generous on attempts, because a spur has to be
-     * in range for one to go anywhere at all and a refusal here must never eat into the
-     * chase - which, with a shared budget and a shared loop, is exactly what it did.
-     */
-    let ambushers = this.ambusherCount;
-    let ambushAttempts = 0;
-    while (ambushers < ambushTarget && ambushAttempts < pacing.wakeAttempts) {
-      ambushAttempts++;
-      const unit = this.pickDormant(section, "ambush");
-      if (!unit) break;
-      if (!this.spawnUnit(unit, ctx, playerProgress)) continue;
-      ambushers++;
-      break;
     }
 
     /*
@@ -470,7 +430,7 @@ export class PoliceManager {
     const player = ctx.player;
     const fwd = forwardOf(player.heading);
     let n = 0;
-    const traps = CONFIG.police.escalation.openRoad.roles;
+    const traps: string[] = [];
     for (const u of this.units) {
       if (!u.active || u.destroyed) continue;
       // A trap idling in an alley behind you is not pressure, and letting it count
@@ -490,14 +450,14 @@ export class PoliceManager {
     const fwd = forwardOf(player.heading);
     let best: PoliceCar | null = null;
     let bestAlong = 0;
-    const traps = CONFIG.police.escalation.openRoad.roles;
+    const traps: string[] = [];
     for (const u of this.units) {
       if (!u.active || u.destroyed || u.role === "rig") continue;
       /*
-       * Never a juggernaut. This picked whatever was furthest up the road,
+       * Never a parked unit. This picked whatever was furthest up the road,
        * and the furthest thing up the road was usually an ambusher waiting in its
        * alley - which was then teleported to the player's back as a plain chaser,
-       * ambush state wiped by the move. A juggernaut hunting you down from behind is
+       * ambush state wiped by the move. A trap hunting you down from behind is
        * the exact thing that class is no longer supposed to be.
        */
       if (traps.includes(u.role)) continue;
@@ -530,7 +490,7 @@ export class PoliceManager {
     for (const u of this.units) {
       u.boxSlot = null;
       if (!u.active || u.destroyed || u.disabled) continue;
-      if (u.role === "rig" || CONFIG.police.escalation.openRoad.roles.includes(u.role))
+      if (u.role === "rig")
         continue;
       // A unit lying in wait is not available for a station.
       if (u.ambushAt) continue;
@@ -828,7 +788,7 @@ export class PoliceManager {
     for (const unit of this.units) {
       if (unit.active || unit.destroyed) continue;
       // Each budget draws only from its own classes.
-      const isAmbusher = esc.openRoad.roles.includes(unit.role);
+      const isAmbusher = false;
       if (group === "ambush" ? !isAmbusher : isAmbusher) continue;
       if (section < (esc.unlock[unit.role] ?? 0)) continue;
       // Past its retirement the class is simply no longer dispatched. Headcount is
@@ -868,10 +828,7 @@ export class PoliceManager {
     this.aggro = aggro;
     for (const unit of this.units) {
       const base = CONFIG.police[unit.role].vehicle.maxSpeed;
-      // The returned juggernaut is deliberately detuned to half pace - the
-      // escalation bonus would quietly hand most of it back.
-      const b = unit.role === "juggernaut" ? 0 : bonus;
-      unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + b };
+      unit.vehicle.params = { ...unit.vehicle.params, maxSpeed: base + bonus };
       unit.aggro = aggro;
       unit.sectionKnown = section;
     }
@@ -908,17 +865,6 @@ export class PoliceManager {
      * - it turns a specialist into another tailgater. So they get one spawn mode, and if
      * there is no room at the side of the road they simply are not sent.
      */
-    /*
-     * The armoured pair go into a side alley or nowhere at all.
-     *
-     * Not "prefer the spur" - only the spur. Every other arrival put them on the road
-     * with you, and from there they behave like a heavy: they close, they trail, they end
-     * up in front. Waiting in a dead end is the entire class now, so a spawn that cannot
-     * find one is simply refused.
-     */
-    if (CONFIG.police.escalation.openRoad.roles.includes(unit.role)) {
-      return this.spawnInSpur(unit, ctx, playerProgress);
-    }
 
     // Try the preferred placement first, then fall through the rest: a spur may be out of
     // range, and a walled section has no run-off to sit in, but *something* has to spawn.
@@ -1015,10 +961,6 @@ export class PoliceManager {
        * The one chronic acceptance-test miss was a spur whose walls hid the player
        * until the launch was already late.
        */
-      if (CONFIG.police.escalation.openRoad.roles.includes(unit.role)) {
-        const sightNode = ctx.nav.nodeAtProgress(Math.max(0, spur.progress - 48));
-        if (!ctx.world.lineOfSight(mx, mz, sightNode.x, sightNode.z)) continue;
-      }
       /*
        * Seat depth is role-split. The FLEET keeps its proportional deep seat - the
        * player's verdict: they had it right, hidden in the back. The JUGGERNAUT
@@ -1027,7 +969,7 @@ export class PoliceManager {
        * one launch timing calibratable at all.
        */
       const len = Math.hypot(dx - mx, dz - mz);
-      const isArmoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
+      const isArmoured = false;
       const t = isArmoured ? Math.min(0.85, 16 / Math.max(1, len)) : pacing.ambushDepth;
       const x = mx + (dx - mx) * t;
       const z = mz + (dz - mz) * t;
@@ -1045,13 +987,6 @@ export class PoliceManager {
       unit.ambushAt = { x: mx, z: mz };
       const ol = Math.hypot(mx - x, mz - z) || 1;
       unit.ambushOut = { x: (mx - x) / ol, z: (mz - z) / ol };
-      if (isArmoured) {
-        const amb = CONFIG.police.escalation.openRoad.ambush;
-        unit.strikeMuff =
-          Math.random() < amb.muffChance
-            ? (Math.random() < 0.5 ? -1 : 1) * amb.muffLead
-            : 0;
-      }
       return true;
     }
     return false;
@@ -1076,7 +1011,7 @@ export class PoliceManager {
      * gets the most rungs, being the direction the player is not looking in.
      */
     const wide = this.effortSection >= pacing.effortFromSection;
-    const armoured = CONFIG.police.escalation.openRoad.roles.includes(unit.role);
+    const armoured = false;
     const offsets =
       mode === "behind"
         ? wide

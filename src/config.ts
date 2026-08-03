@@ -13,7 +13,6 @@ export type PoliceRole =
   | "blocker"
   | "heavy"
   | "elite"
-  | "juggernaut"
   | "rig";
 
 /** Terrain surface tuning. Every value is a plain multiplier so effects stay readable. */
@@ -818,7 +817,7 @@ export const CONFIG = {
      */
     charge: {
       /** Classes that can do it. */
-      roles: ["rammer", "heavy", "elite", "juggernaut"],
+      roles: ["rammer", "heavy", "elite"],
       /** Range band to start one in. */
       minRange: 8,
       maxRange: 58,
@@ -889,76 +888,6 @@ export const CONFIG = {
      * at your flank and put you into the scenery, and there is no version of trading paint
      * with one that ends well for you. Go round it, out-corner it, or spend the rocket.
      */
-    juggernaut: {
-      vehicle: policeVehicle({
-        maxSpeed: 36,
-        accel: 31,
-        steerRateMax: 1.95,
-        gripNormal: 9.2,
-        mass: 5.0,
-        /*
-         * Narrow at rest so it fits its alley and launches clean - the wide claw
-         * collider is applied ONLY from the moment it fires (see bladeHalfWidth):
-         * at 3.1 it scraped the alley walls on exit and arrived late behind the
-         * player every single time.
-         */
-        halfLength: 3.8,
-        halfWidth: 1.9,
-      }),
-      /** Shrugs off almost everything: hits barely slow it and shoves barely move it. */
-      impactResistance: 0.35,
-      pushResistance: 2.4,
-      /**
-       * It hits hard, but not *launchingly* hard.
-       *
-       * At 1.8 (and 4.1 through a charge) the thing punted you clear across the road,
-       * which sounds devastating and plays as mercy: you left the scrum with speed, and
-       * speed is the one thing that stops the arrest. Its mass already makes contact
-       * brutal. Its job is to be somewhere you cannot go, not to serve you.
-       */
-      contactBoost: 1.1,
-      /**
-       * Extra shove when the hit lands across the player's flank rather than fore or aft.
-       *
-       * `contactBoost` stays at 1.1 for the reason above — a big general shove threw you
-       * clear with speed still on, which is mercy dressed as violence. A broadside is the
-       * opposite: the impulse runs along the contact normal, so on a T-bone it carries
-       * you sideways into whatever is there rather than down the road. That is the hit
-       * this class is supposed to land, so it is the only one that gets amplified.
-       */
-      broadsideBoost: 5.5,
-      /**
-       * The broadside run: hold the flank until actually abeam, then drive *through*.
-       *
-       * Without this the class was not a T-bone specialist in any measurable sense — only
-       * 44% of its hits landed on a flank, against 65% for the plain heavy. The cause is
-       * `strikeRange`: at 34 units it abandoned the flank and drove straight at the player
-       * while still behind them, which is a rear-end. Nose-to-tail is the one hit that
-       * hands the player speed, so the class was spending its weight on the wrong contact.
-       *
-       * Two changes. It stays on the flank until its along-axis offset is inside
-       * `alongWindow`, however close it gets; and when it does commit it aims at a point
-       * `throughDepth` past the player's far side rather than at the player, so the
-       * approach vector is across their axis and the contact normal comes out lateral.
-       */
-      broadside: {
-        /** Fore-and-aft offset, in units, inside which it counts as abeam and may commit. */
-        alongWindow: 9,
-        /** How far past the player's far side to aim, so it drives through rather than at. */
-        throughDepth: 12,
-        /** Seconds of player travel to lead by while lining the run up. */
-        lead: 0.45,
-      },
-      /** Commits from further out than a rammer; it cannot correct late. */
-      flankRange: 58,
-      flankOffset: 9,
-      /** Wide: it closes to alongside and stays there rather than passing through. */
-      strikeRange: 34,
-      maxInterceptLead: 2.6,
-      /** Only a near-direct rocket hit wrecks one. */
-      rocketKillRadius: 8,
-      rocketDisableTime: 2.2,
-    },
 
     /** ELITE — fast, aggressive, used sparingly near the end. */
     elite: {
@@ -1338,7 +1267,7 @@ export const CONFIG = {
        * More weight plus a deeper ladder means a near-constant stream arriving from up
        * the road, every one of them spawned beyond sight-distance and driving in.
        */
-      // Every class ambushes from alleys - that is the design. The juggernaut is
+      // Every class ambushes from alleys - that is the design.
       // simply the one class that arrives no other way.
       spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 3.0 },
       /**
@@ -1513,7 +1442,7 @@ export const CONFIG = {
      *
      * Units are drawn from a pre-built pool as the run goes on. Two things ramp: how many
      * cars are on you, and which classes are allowed to show up. The first sections are
-     * patrol cars only; by section 5 heavies are routine; past 11 the juggernauts come out.
+     * patrol cars only; by section 5 heavies are routine; past 11 the elites come out.
      * The run always ends in a pile-up — the only question is when.
      */
     escalation: {
@@ -1536,7 +1465,7 @@ export const CONFIG = {
        */
       /*
        * Headcount for the *main fleet* only - patrol, rammer, interceptor, blocker, heavy
-       * and elite. The juggernaut and the rig are specialists and are budgeted
+       * and elite. The rig is a specialist and is budgeted
        * separately, so adding one never costs the chase a car. They used to share this
        * number, which meant every ambusher waiting in an alley was one fewer unit on the
        * road behind you.
@@ -1601,8 +1530,6 @@ export const CONFIG = {
         elite: 6,
         // BENCHED again at the player's request - 'the game is fine without
         // it.' All mechanics intact; restore by setting this to an unlock
-        // section and openRoad.roles back to ["juggernaut"].
-        juggernaut: 999,
         rig: 5,
       } as Record<PoliceRole, number>,
       /**
@@ -1621,10 +1548,9 @@ export const CONFIG = {
          *
          * They were the heaviest-weighted things in the table at exactly the point the
          * lighter classes retire, so the late mix became mostly them - and five metres of
-         * juggernaut in a corridor is not a threat you answer, it is a cork. Rare enough
+         * roadblock in a corridor is not a threat you answer, it is a cork. Rare enough
          * to be an event, and paid for with a broadside that actually hurts.
          */
-        juggernaut: 1.5,
         rig: 2.6,
       } as Record<PoliceRole, number>,
       /**
@@ -1639,161 +1565,12 @@ export const CONFIG = {
        * heavies. Living in the alleys is what makes them specialists, and never lingering
        * in one is what keeps the corridors clear — the width rule is gone with the rest.
        */
-      openRoad: {
-        roles: [] as PoliceRole[],
-        /**
-         * How many may be lying in wait at once, counted apart from the main fleet.
-         *
-         * One from the moment they unlock, a second past `secondAt`, a third past
-         * `thirdAt`. They are traps rather than pursuit, so the number stays tiny and
-         * grows slowly - and because the budget is separate, every one of them is an
-         * addition to the squad rather than a substitution for part of it.
-         */
-        maxActive: 3,
-        // Staged for the round-16 return: one trap at unlock, a second from
-        // round 19, a third from round 23 - the count grows as sections pass.
-        secondAt: 18,
-        thirdAt: 22,
-        ambush: {
-          /**
-           * Slack on the unit's own timing estimate, seconds.
-           *
-           * The shared value is -0.28, deliberately late so the hit lands on the flank
-           * rather than nose to nose. Same idea here, less slack, because these steer the
-           * run afterwards and can correct what the timing gets wrong.
-           */
-          /**
-           * POSITIVE now: the tamed launch (1.3x) spools up slower than the ETA
-           * estimate assumes, which made every miss fall to the rear - the player
-           * called it: uncalibrated. +0.22 fires that much earlier, centring the
-           * error; the homing absorbs both tails.
-           */
-          /**
-         * Was -0.458, rail-calibrated for the full-speed truck. At half pace
-         * the truck fires EARLY instead (+0.5) and the closed-loop exit does
-         * the timing: hold at the lip while early, lunge when the schedule
-         * says. Slow piston, same trap.
-         */
-        leadTime: 0,
-        /** Fire-early-and-hold mode for a crippled truck; off = ETA-matched. */
-        pistonMode: false,
-        muffChance: 0.1,
-        muffLead: 0.5,
-          /** Assumed fraction of top speed out of the spur. */
-          launchSpeedFactor: 0.95,
-          /** Reads your pace from further out, so the commitment is better informed. */
-          readRange: 300,
-          /**
-           * Re-aim at the player for this long after launching.
-           *
-           * The single biggest lever on whether the strike connects. The shared 95 lets a
-           * mistimed launch turn into a near miss; at 190 the run is steered essentially
-           * all the way onto the player, which is what "high percentage" costs.
-           */
-          homeDistance: 340,
-          /** Aim this far past the intercept, so the contact is across them, not alongside. */
-          strikeDepth: 15,
-          /** Extra pace while springing. It has to arrive with the weight behind it. */
-          launchSpeedBonus: 0.95,
-          /**
-           * The pin. Contact during the strike converts the run into a hold: the unit
-           * keeps its nose in the player and grinds them into whatever is behind for
-           * `pinTime` seconds, feeding the box-in meter, before standing down. Losing
-           * the player past `pinLostRange` ends it early. This is what makes the slam
-           * a sentence rather than a speed bump.
-           */
-          pinRange: 9.5,
-          pinTime: 7,
-          pinLostRange: 12,
-          /**
-           * Inside this range of the mouth the shot simply goes, whatever the timing
-           * math says. A weaving, braking player made the ETA gate flicker closed
-           * through its whole firing window and the unit died waiting for perfect.
-           */
-          /**
-           * Wide on purpose: springing is now *pre-positioning*, not firing. The unit
-           * noses up to the mouth early and sits poised there; `strikeGo` is the
-           * trigger. Decoupling the two is what makes it a missile on a rail instead
-           * of a truck accelerating from cold as the player arrives.
-           */
-          springRange: 28,
-          /**
-           * Hard cap on the burst, seconds. Short: the touch happens in the first two
-           * seconds or the geometry has moved on, and a long tail-chase grinding
-           * walls behind the player is the one look this class must never have.
-           */
-          /** Short: a piston fires once. If it fails, it fails - no second act. */
-          strikeTime: 5,
-          /** Collider half-width of the claw, applied at fire and removed at spent. */
-          bladeHalfWidth: 3.4,
-          /**
-           * The burst fires when the player's PREDICTED position - at the moment the
-           * truck's own nose will reach the road, solved from its actual depth in the
-           * alley - falls within this many units of the mouth. Point-blank timing:
-           * the prediction horizon is well under a second, too short to drift.
-           */
-          burstWindow: 9,
-          /**
-           * Top-speed multiplier bonus for the whole hunt. 0.7 puts it near 73 u/s -
-           * a clear edge over even the section-29 player at 58 - because the contract
-           * is contact EVERY time, and a chase without a speed edge is a coin flip.
-           */
-          chaseSpeed: 1.0,
-          /**
-           * The launch proper does not begin until the player is inside this range.
-           * An early spring - live timing fired optimistic, player braked - now means
-           * the unit noses up to the mouth and holds there, poised, instead of
-           * charging across an empty road into the far wall in front of an arriving
-           * player. Heat-seeking missiles wait on the rail.
-           */
-          strikeGo: 55,
-          /**
-           * Direct yaw assist while homing, rad/s^2 against the aim error. The chassis
-           * is deliberately slow to steer everywhere else; the strike gets rails, so
-           * swerving, braking and boosting all converge on the same contact.
-           */
-          turnAssist: 20,
-          /**
-           * Once the player is this far past, the shot is gone and so is the unit.
-           *
-           * No chase afterwards: a spent ambusher that joins the pursuit is just another
-           * heavy in the pack, which is exactly what these were taken out of.
-           */
-          giveUpPast: 55,
-          /**
-           * Never pull out just because the player is already past.
-           *
-           * The shared ambush does that at 90 units — better to join the chase than sit
-           * in a dead end. These do the opposite: a missed window is the end of the unit,
-           * because a juggernaut arriving behind you is the pursuit car this class was
-           * explicitly taken out of being.
-           */
-          releaseBehindRange: 0,
-          /** Long: it is waiting for one specific moment and nothing else. */
-          maxWait: 40,
-        },
-        /**
-         * Road half-width, in units, a stretch must hold throughout the window.
-         *
-         * At 7.6 this is the hills and the flats, and the earlier sections of everything
-         * else before tightening bites. The canyon and downtown floors (7.15) sit just
-         * under it, which is the intent: those two are the corridors the complaint was
-         * about.
-         */
-        minHalfWidth: 7.6,
-        /** Window ahead of the player that must be open for one to be sent. */
-        lookAhead: 165,
-        /** ...and behind, so it is not woken on the wrong side of a pinch. */
-        lookBehind: 45,
-        /** An active one this far from the player may be stood down out of a corridor. */
-        withdrawDistance: 55,
-      },
       /**
        * Section after which a class stops being sent at all.
        *
        * This is the escalation that costs nothing at runtime. Headcount has to be capped
        * for frame time, so past the cap the *mix* is the only thing left to turn — and
-       * "twenty cars" meaning juggernauts and rigs is a completely
+       * "twenty cars" meaning rigs is a completely
        * different section from "twenty cars" meaning eight patrols and some rammers.
        * Before this, nothing whatsoever changed after section 13.
        */
@@ -1809,7 +1586,6 @@ export const CONFIG = {
         interceptor: 13,
         heavy: 999,
         elite: 999,
-        juggernaut: 999,
         rig: 999,
       } as Record<PoliceRole, number>,
 
@@ -1911,7 +1687,6 @@ export const CONFIG = {
       blocker: 5,
       heavy: 17,
       elite: 17,
-      juggernaut: 9,
       rig: 4,
     } as Record<PoliceRole, number>,
   },
@@ -1981,7 +1756,7 @@ export const CONFIG = {
     /**
      * How much of that shove applies between two police cars.
      *
-     * Low, and this matters more than it sounds. A juggernaut charging into a scrum used
+     * Low, and this matters more than it sounds. A heavy charging into a scrum used
      * to scatter its own side as hard as it hit you — the heaviest unit in the game
      * arriving read as a *reset*, blowing the box open and handing you the gap. Police
      * hitting each other now mostly just jostle, so a pile-up stays a pile-up.

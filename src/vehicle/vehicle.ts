@@ -121,7 +121,7 @@ export class Vehicle {
   paceBonus = 0;
   /** Acceleration multiplier from the late-run switch (player only). */
   paceAccel = 1;
-  /** Striking juggernaut: police in its path take full, undamped impulses. */
+  /** Striking: police in its path take full, undamped impulses. */
   plow = false;
   /**
    * Jammed against the wall mid-pin: this body is machinery, not a car. Infinite

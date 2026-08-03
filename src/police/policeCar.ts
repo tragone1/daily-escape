@@ -171,10 +171,18 @@ export class PoliceCar {
   /** Convert threshold, sharpened by the run's progress (see box config). */
   private convertSpeedNow(): number {
     const b = CONFIG.police.shared.box;
-    return Math.min(
+    const deepCfg = CONFIG.police.escalation.deep;
+    const mid = Math.min(
       b.convertSpeedMax,
       b.convertSpeed + Math.max(0, this.sectionKnown - 9) * b.convertSpeedPerSection,
     );
+    /*
+     * Deep in, the pack stops chasing and starts closing from a higher speed -
+     * so the window in which a player can afford to be slow keeps narrowing
+     * long after the raw numbers have stopped moving.
+     */
+    const deep = Math.max(0, this.sectionKnown - deepCfg.fromSection);
+    return Math.min(deepCfg.convertSpeedDeepMax, mid + deep * deepCfg.convertSpeedPerSectionDeep);
   }
 
   /** The manager reads these to form two-rig walls beside a standing block. */
@@ -222,9 +230,19 @@ export class PoliceCar {
     // Roll this slide's execution: most are close to square, some overcook
     // past perpendicular toward backwards, some never get fully sideways.
     // Deep-section crews roll tighter.
+    /*
+     * Execution tightens with the run, and keeps tightening past the point the
+     * mid-game curve settles at - the deep game is the same move thrown better,
+     * not a different move.
+     */
+    const deepCfg = CONFIG.police.escalation.deep;
+    const deep = Math.max(0, this.sectionKnown - deepCfg.fromSection);
     const spread = Math.max(
-      cfg.execErrMin,
-      Math.min(cfg.execErrMax, cfg.execErrMax - this.sectionKnown * cfg.execErrPerSection),
+      deepCfg.execErrFloor,
+      Math.max(
+        cfg.execErrMin,
+        Math.min(cfg.execErrMax, cfg.execErrMax - this.sectionKnown * cfg.execErrPerSection),
+      ) - deep * deepCfg.execErrPerSectionDeep,
     );
     const rE = Math.random();
     this.slideExecErr = (Math.random() < 0.5 ? -1 : 1) * rE * rE * spread;

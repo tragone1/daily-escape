@@ -140,6 +140,9 @@ export class PoliceManager {
      */
     this.slideTimer -= dt;
     const sb = CONFIG.police.shared.slideBlock;
+    // Sections past the point where every other curve has flattened.
+    const deepCfg = CONFIG.police.escalation.deep;
+    const deep = Math.max(0, section - deepCfg.fromSection);
     if (section >= sb.fromSection && this.slideTimer <= 0) {
       this.slideTimer = 0.5;
       const player = ctx.player;
@@ -211,7 +214,11 @@ export class PoliceManager {
         const wantDouble =
           section >= sb.doubleFromSection &&
           candidates.length >= 2 &&
-          Math.random() < sb.doubleChance;
+          Math.random() <
+            Math.min(
+              deepCfg.doubleChanceMax,
+              sb.doubleChance + deep * deepCfg.doubleChancePerSection,
+            );
         if (wantDouble) {
           // Mirrored stages, split kill lanes: a formed two-car wall.
           candidates[0].startSlideBlock(1, stage, lineup, -sb.doubleLaneOffset);
@@ -220,7 +227,11 @@ export class PoliceManager {
           candidates[0].startSlideBlock(1, stage, lineup, 0);
         }
         this.slideTimer =
-          Math.max(sb.intervalMin, sb.intervalBase - section * sb.intervalPerSection) *
+          Math.max(
+            deepCfg.slideIntervalFloor,
+            Math.max(sb.intervalMin, sb.intervalBase - section * sb.intervalPerSection) -
+              deep * deepCfg.slideIntervalPerSection,
+          ) *
           (1 - this.aggro * 0.5);
       }
     }
@@ -543,7 +554,24 @@ export class PoliceManager {
         cfg.convertSpeedMax,
         cfg.convertSpeed + Math.max(0, this.sectionNow - 9) * cfg.convertSpeedPerSection,
       );
-    const slots = cfg.slots.slice(0, converting ? cfg.slots.length : cfg.maxAssigned);
+    /*
+     * THE BOX CLOSES.
+     *
+     * The same stations, held closer, once every other curve has flattened.
+     * The formation a player learns to read stays the formation - the gaps
+     * they thread through it just get narrower. Pulling the ring in beats
+     * adding cars to it: more cars was what made the mid-game read as a maze
+     * to be waded through rather than a shape to be beaten.
+     */
+    const deepCfg = CONFIG.police.escalation.deep;
+    const closeBy = Math.min(
+      deepCfg.boxTightenMax,
+      Math.max(0, this.sectionNow - deepCfg.fromSection) * deepCfg.boxTightenPerSection,
+    );
+    const ring = 1 - closeBy;
+    const slots = cfg.slots
+      .slice(0, converting ? cfg.slots.length : cfg.maxAssigned)
+      .map((sl) => (closeBy > 0 ? { x: sl.x * ring, z: sl.z * ring } : sl));
     /*
      * Late-game discipline: pure side stations fill FIRST (rank 0), then the
      * forward arc, then the rear. The pack stops being a mob that shoves from

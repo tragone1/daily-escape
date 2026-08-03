@@ -29,6 +29,17 @@ const MIN_RUN_MS = 3_000;
 const MAX_RUN_MS = 90 * 60_000;
 /** Submissions accepted per player per day. Generous; it is a spam bound, not a play limit. */
 const MAX_SUBMISSIONS_PER_DAY = 400;
+/**
+ * Highest section a submission may claim.
+ *
+ * The course used to end at forty, so five hundred was unreachable by a wide
+ * margin. It streams now and goes on as long as the player does - a section is
+ * roughly eleven seconds at full pace, so the longest run this endpoint accepts
+ * at all could cross four hundred and ninety of them, which is close enough to
+ * the old bound to have started rejecting real runs. Tied to the run-length
+ * limit instead, with room to spare, so the two cannot drift apart again.
+ */
+const MAX_SECTION = Math.ceil(MAX_RUN_MS / 1000 / 8) + 50;
 
 interface Body {
   playerId?: unknown;
@@ -58,7 +69,7 @@ export const onRequestPost = guarded(async ({ request, env }) => {
   if (!name) return bad("name must be 2-18 characters, letters and numbers");
 
   if (!isInt(score, 0, 10_000_000)) return bad("bad score");
-  if (!isInt(section, 1, 500)) return bad("bad section");
+  if (!isInt(section, 1, MAX_SECTION)) return bad("bad section");
   if (!isInt(distance, 0, 10_000_000)) return bad("bad distance");
   if (!isInt(elapsedMs, MIN_RUN_MS, MAX_RUN_MS)) return bad("bad elapsed");
 

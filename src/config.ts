@@ -1836,6 +1836,52 @@ export const CONFIG = {
        */
       aggroPerSection: 0.085,
       aggroMax: 1.0,
+
+      /**
+       * THE DEEP GAME.
+       *
+       * Everything above stops climbing by section twenty-six: speed at
+       * twenty-six, headcount at fifteen, aggro at twenty-two, and the player's
+       * own pace ramp at twenty-one. Beyond that the game was identical
+       * forever - survivable at section thirty means survivable at section
+       * three hundred, and the course no longer ends to hide it.
+       *
+       * What keeps climbing here is TECHNIQUE, never headcount and never raw
+       * speed. More cars is the thing that made the mid-game read as a maze,
+       * and outrunning is already impossible; what is left is how well the
+       * squad uses what it has. Each of these approaches a limit rather than
+       * running away, so the deep game gets sharper without becoming random.
+       */
+      deep: {
+        /** Where technique starts tightening. Past every other cap. */
+        fromSection: 22,
+        /**
+         * The box closes. Stations pull in by this fraction per section toward
+         * `boxTightenMax` - the same formation, held closer, so the gaps a
+         * good player threads get narrower rather than more numerous.
+         */
+        boxTightenPerSection: 0.011,
+        boxTightenMax: 0.3,
+        /**
+         * Blocking moves come round sooner, past the cadence floor the mid
+         * game settles at, and never faster than a player can read.
+         */
+        slideIntervalPerSection: 0.09,
+        slideIntervalFloor: 2.8,
+        /** And they are executed more precisely, toward a near-perfect line. */
+        execErrFloor: 0.015,
+        execErrPerSectionDeep: 0.004,
+        /** Two blockers at once becomes the norm rather than the exception. */
+        doubleChancePerSection: 0.018,
+        doubleChanceMax: 0.96,
+        /**
+         * They commit to the arrest from a higher speed, so a deep-run player
+         * has less room to be slow in before the pack stops chasing and starts
+         * closing.
+         */
+        convertSpeedPerSectionDeep: 0.3,
+        convertSpeedDeepMax: 34,
+      },
     },
 
     /**

@@ -22,9 +22,29 @@ import { Hud } from "./ui/hud";
 import { CarView, PLAYER_STYLE } from "./vehicle/carView";
 import { Vehicle } from "./vehicle/vehicle";
 import { RocketSystem } from "./weapons/rocket";
-import { buildWorld, type BuiltWorld } from "./world/courseBuilder";
+import type { BuiltWorld } from "./world/courseBuilder";
 import type { TerrainSample } from "./world/terrain";
-import { COURSE_START, SECTION_STARTS, START_HEADING, sectionIndexAt } from "./world/course";
+import {
+  COURSE_START,
+  START_HEADING,
+  activeSectionStarts,
+  buildCourseSegments,
+  makeCourse,
+  sectionIndexAt,
+} from "./world/course";
+import { seedForDay } from "./daily";
+import { Terrain } from "./world/terrain";
+import { NavGraph } from "./world/navGraph";
+import { WorldStream } from "./world/worldStream";
+
+/**
+ * Sections the world opens with.
+ *
+ * Enough that the opening is instant and the police have road to be dispatched
+ * onto, few enough that the first frame is not paying for eight minutes of
+ * course nobody may ever see.
+ */
+const STREAM_OPENING_SECTIONS = 8;
 import { PickupSystem } from "./world/pickups";
 
 
@@ -32,6 +52,8 @@ export class Game {
   private renderer: Renderer;
   private world: BuiltWorld;
   private collision: CollisionWorld;
+  /** Grows the course ahead of the player for as long as the run lasts. */
+  private stream: WorldStream;
 
   private player: Vehicle;
   private playerView: CarView;
@@ -74,8 +96,33 @@ export class Game {
     this.renderer.ground = [0.2, 0.21, 0.28];
     this.renderer.lightDir = [-0.42, -0.84, 0.29];
 
-    this.world = buildWorld(this.renderer);
+    /*
+     * The world is streamed, not built once.
+     *
+     * It opens with a handful of sections and grows ahead of the player for as
+     * long as they last. The objects below keep their identity for the whole
+     * run - the police context and every unit hold them - so the stream
+     * rebuilds their contents rather than handing out replacements.
+     */
+    const opening = makeCourse(seedForDay(), STREAM_OPENING_SECTIONS);
+    const openingSegments = buildCourseSegments(opening).segments;
+    this.world = {
+      segments: openingSegments,
+      terrain: new Terrain(openingSegments),
+      colliders: [],
+      nav: NavGraph.fromCourse(openingSegments),
+      blocksWithdrawn: 0,
+      update() {},
+    };
     this.collision = new CollisionWorld(this.world.colliders);
+    this.stream = new WorldStream(
+      this.renderer,
+      seedForDay(),
+      this.world,
+      this.collision,
+      STREAM_OPENING_SECTIONS,
+    );
+    this.stream.ensureBuiltThrough(0);
 
     const playerParams = CONFIG.player.vehicle;
     this.player = new Vehicle(playerParams, { ...CONFIG.player.boost });
@@ -179,8 +226,9 @@ export class Game {
    * the director repopulates around the new position within a couple of seconds.
    */
   jumpToSection(sectionIdx: number): void {
-    const idx = Math.max(0, Math.min(SECTION_STARTS.length - 1, sectionIdx));
-    const start = SECTION_STARTS[idx];
+    const starts = activeSectionStarts();
+    const idx = Math.max(0, Math.min(starts.length - 1, sectionIdx));
+    const start = starts[idx];
     const node = this.world.nav.nodeAtProgress(start + 25);
     const next = this.world.nav.nodeAtProgress(start + 65);
     this.player.x = node.x;
@@ -464,6 +512,20 @@ export class Game {
     this.state.update(dt, this.player.speed, boxedIn, progress, ground.onCourse);
 
     const section = sectionIndexAt(progress);
+
+    /*
+     * Keep road in front of the player.
+     *
+     * Done after the section is known and before anything is dispatched onto
+     * it. When it builds, the terrain and collision it rebuilt kept their
+     * identity, but the navigation graph is a new object - so the pursuit
+     * context, which holds one, is pointed at the new one here. A stale nav is
+     * a squad pathing along a road that no longer describes the world.
+     */
+    if (this.stream.ensureBuiltThrough(section)) {
+      this.ctx.nav = this.world.nav;
+    }
+
     const pace = CONFIG.player.lateSpeed;
     this.player.paceBonus = Math.min(
       pace.max,
@@ -650,7 +712,7 @@ export class Game {
 
   /** How far through the current section the player is, 0..1, for the HUD bar. */
   private sectionFraction(): number {
-    const starts = SECTION_STARTS;
+    const starts = activeSectionStarts();
     const i = this.state.section;
     const from = starts[i] ?? 0;
     const to = starts[i + 1] ?? from + 600;

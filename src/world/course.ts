@@ -439,8 +439,28 @@ export const SECTION_THEMES = DAILY.sectionThemes;
 /** The day's palette rolls, one per wall style. */
 export const WALL_ROLLS = DAILY.wallRolls;
 
+/**
+ * The course currently being played.
+ *
+ * A streamed course grows as the player advances, so the section boundaries
+ * are not fixed for the run - and several places ask which section a distance
+ * falls in without any way to be handed the course. They ask this instead, and
+ * the stream keeps it pointed at the latest generation. Same object for
+ * everyone, updated in one place.
+ */
+let activeCourse: Course = DAILY;
+
+export function setActiveCourse(course: Course): void {
+  activeCourse = course;
+}
+
+/** Section starts for the course being played. Grows with it. */
+export function activeSectionStarts(): number[] {
+  return activeCourse.sectionStarts;
+}
+
 /** Which section (0-based) a given distance along the course falls in. */
-export function sectionIndexAt(progress: number, course: Course = DAILY): number {
+export function sectionIndexAt(progress: number, course: Course = activeCourse): number {
   const starts = course.sectionStarts;
   let i = 0;
   while (i + 1 < starts.length && progress >= starts[i + 1]) i++;

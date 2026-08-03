@@ -446,7 +446,7 @@ export class Game {
         this.player.recoveryTimer = Math.max(this.player.recoveryTimer, rec.boostTime);
       }
       // THE FLOW MODEL: the hit itself is what arrests you.
-      this.state.registerImpact(severity, this.state.section);
+      this.state.registerImpact(severity);
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
       // Barely a flicker. Contact is now near-constant by design, and at the old weight
       // the screen sat under a permanent white veil for the whole back half of a run.

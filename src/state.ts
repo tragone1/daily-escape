@@ -93,17 +93,13 @@ export class GameState {
    * A hit landed: bank arrest progress proportional to how hard it was.
    * This is the flow model's core - mistakes cost, proximity does not.
    */
-  registerImpact(severity: number, section: number): void {
+  registerImpact(severity: number): void {
     const run = CONFIG.run;
     if (severity < run.hitFloor) return;
     if (this.elapsed - this.lastHitAt < run.hitGrace) return;
     this.lastHitAt = this.elapsed;
-    const scale = Math.min(
-      run.hitChunkMax,
-      run.hitChunk + Math.max(0, section - 9) * run.hitChunkPerSection,
-    );
     const span = Math.max(0.01, 1 - run.hitFloor);
-    const bite = ((severity - run.hitFloor) / span) * scale;
+    const bite = ((severity - run.hitFloor) / span) * run.hitChunk;
     this.captureProgress = clamp(this.captureProgress + bite, 0, 1);
     this.worstCapture = Math.max(this.worstCapture, this.captureProgress);
     if (this.captureProgress >= 1) {

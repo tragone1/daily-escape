@@ -2121,9 +2121,12 @@ export const CONFIG = {
      * driving stays clean forever; a handful of genuine mistakes ends you.
      */
     hitFloor: 0.38,
-    hitChunk: 0.2,
-    hitChunkMax: 0.3,
-    hitChunkPerSection: 0.008,
+    /**
+     * FLAT by design: impact severity is already speed-scaled, and cars get
+     * faster every section, so late hits land harder without any per-section
+     * multiplier on top. A solid hit costs about a third of the meter.
+     */
+    hitChunk: 0.34,
     /**
      * One mistake, one chunk. Without this a single error that bounces you
      * between three cars banked four chunks in a second - the flow model has

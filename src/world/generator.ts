@@ -245,12 +245,27 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
        */
       const move = opening || i === rampLeg ? "cruise" : rnd();
       /*
-       * No hard corners in the corridor themes: at fourteen units between rock faces a
-       * near-right-angle is not a corner, it is a wall with extra steps. The open themes
-       * have shoulder to slide into and keep them.
+       * No hard corners where there is nothing to run wide into: a
+       * near-right-angle between two solid walls is not a corner, it is a wall
+       * with extra steps. What decides that is the RUN-OFF, not the width - the
+       * test used to key off the minimum half-width, which caught the canyon and
+       * the downtown blocks but not the industrial fences, a theme with a solid
+       * wall each side and no shoulder at all. That is where the day's vicious
+       * corner became an eighty-eight-degree hairpin in a seventeen-unit road,
+       * arriving as a wall across the windscreen with no way to carry speed
+       * through it.
        */
-      const corridor = theme.minHalfWidth > 7;
-      const hardCorner = typeof move === "number" && move < 0.1 && s > 0 && !corridor;
+      const corridor = theme.shoulder < 1;
+      /*
+       * Never on a section's first or last leg either. A corner rolled on the
+       * boundary is entered or left in the NEXT theme, which may be one of the
+       * walled-in ones - and a hairpin that spits you into a fenced corridor is
+       * the same trap as one built inside it. Kept off the seams, a hard corner
+       * is always approached and exited on road with run-off.
+       */
+      const atSeam = i === 0 || i === LEGS_PER_SECTION - 1;
+      const hardCorner =
+        typeof move === "number" && move < 0.1 && s > 0 && !corridor && !atSeam;
       const flatStraight = typeof move === "number" && move >= 0.1 && move < 0.24;
       const steep = typeof move === "number" && move >= 0.24 && move < 0.36;
 

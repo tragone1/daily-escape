@@ -21,6 +21,8 @@ export interface BuiltWorld {
   terrain: Terrain;
   colliders: StaticCollider[];
   nav: NavGraph;
+  /** Blocks the racing-line check had to withdraw. Zero is the healthy number. */
+  blocksWithdrawn: number;
   update(elapsed: number): void;
 }
 
@@ -30,6 +32,14 @@ export interface BuiltWorld {
  * Both are positioned so their *top* face is the ground plane the terrain reports, which
  * is the only arrangement where the car looks like it is standing on the road.
  */
+/**
+ * The narrowest lane the finished course may leave anywhere, measured as the
+ * span of positions the car's own centre can hold. Roughly two cars abreast of
+ * clear tarmac - enough to be driven through under pressure rather than
+ * threaded. Enforced by `enforceRacingLine` after everything is built.
+ */
+const MIN_LANE_WIDTH = 7.5;
+
 const ROAD_THICKNESS = 0.5;
 const APRON_THICKNESS = 0.34;
 
@@ -129,6 +139,18 @@ const WALL_STYLE: Record<
   open: { color: [0.5, 0.46, 0.38], minHeight: 3.0, maxHeight: 3.4, chunk: 20, thickness: 2.0 },
 };
 
+/**
+ * A prop and the collider it owns, so a later pass can take it back out.
+ *
+ * Props are the only furniture that may be withdrawn. Walls are the edge of the
+ * world and the road has to keep them; a block on the carriageway is a
+ * decoration, and a decoration does not get to close the road.
+ */
+interface PlacedProp {
+  mesh: { dispose(): void };
+  collider: StaticCollider;
+}
+
 function addCollider(
   list: StaticCollider[],
   x: number,
@@ -137,19 +159,159 @@ function addCollider(
   halfWidth: number,
   heading: number,
   topY: number,
+  /** What built it. Diagnostic only - it is what makes a choke point traceable. */
+  source = "unknown",
 ): void {
   list.push({
     obb: { x, z, halfLength, halfWidth, heading },
     topY,
     radius: Math.hypot(halfLength, halfWidth),
     occludes: topY > 4.5,
+    source,
   });
+}
+
+/**
+ * NO CHOKEHOLDS - measured, not assumed.
+ *
+ * Every station along the spine has to leave a lane a car can actually take.
+ * The layout rules each guarantee that on their own, but they are written one
+ * prop at a time and cannot see a wall built afterwards, a second road
+ * crossing, or the particular width the day's seed happened to roll. A new map
+ * goes out every day and nobody gets to drive it first, so this has to be a
+ * measurement at build time rather than a property the rules are trusted to
+ * have. Where the lane comes up short the props responsible are withdrawn,
+ * biggest gain first, until it does not.
+ *
+ * Returns the number withdrawn - the figure worth watching. If a change to the
+ * layout rules starts costing dozens of props, the rules have regressed.
+ */
+function enforceRacingLine(
+  segments: CourseSegment[],
+  colliders: StaticCollider[],
+  props: PlacedProp[],
+): number {
+  const CAR = 1.05;
+  const MIN_LANE = MIN_LANE_WIDTH;
+  const STATION = 2;
+  const LATERAL = 0.25;
+
+  const propOf = new Map<StaticCollider, PlacedProp>();
+  for (const pr of props) propOf.set(pr.collider, pr);
+  const gone = new Set<StaticCollider>();
+
+  const CELL = 24;
+  const grid = new Map<string, StaticCollider[]>();
+  const key = (x: number, z: number) => Math.floor(x / CELL) + ":" + Math.floor(z / CELL);
+  for (const c of colliders) {
+    const k = key(c.obb.x, c.obb.z);
+    const cell = grid.get(k);
+    if (cell) cell.push(c);
+    else grid.set(k, [c]);
+  }
+
+  /*
+   * Circle against box, the same question the collision world answers - not box
+   * against box. Inflating the collider by the car's half-width instead treats
+   * its corners as square, and a lane this pass measured as exactly wide enough
+   * came up a quarter-unit short in the game.
+   */
+  const hits = (c: StaticCollider, x: number, z: number): boolean => {
+    const dx = x - c.obb.x;
+    const dz = z - c.obb.z;
+    const fx = Math.sin(c.obb.heading);
+    const fz = Math.cos(c.obb.heading);
+    const along = Math.abs(dx * fx + dz * fz) - c.obb.halfLength;
+    const across = Math.abs(dx * fz - dz * fx) - c.obb.halfWidth;
+    if (along <= 0 && across <= 0) return true;
+    const oa = Math.max(0, along);
+    const oc = Math.max(0, across);
+    return oa * oa + oc * oc <= CAR * CAR;
+  };
+
+  let withdrawn = 0;
+  for (const seg of segments) {
+    if (seg.branch || seg.overlay) continue;
+    const px = seg.dz;
+    const pz = -seg.dx;
+    for (let a = 0; a <= seg.length; a += STATION) {
+      const sx = seg.ax + seg.dx * a;
+      const sz = seg.az + seg.dz * a;
+      const hw = seg.halfWidth;
+
+      const near: StaticCollider[] = [];
+      for (let gx = -1; gx <= 1; gx++) {
+        for (let gz = -1; gz <= 1; gz++) {
+          const cell = grid.get(key(sx + gx * CELL, sz + gz * CELL));
+          if (!cell) continue;
+          for (const c of cell) if (!gone.has(c)) near.push(c);
+        }
+      }
+      if (near.length === 0) continue;
+
+      /** Widest run of lateral offsets the car's centre could occupy. */
+      const widest = (skip: StaticCollider | null): number => {
+        let best = 0;
+        let run = 0;
+        for (let o = -hw; o <= hw; o += LATERAL) {
+          const x = sx + px * o;
+          const z = sz + pz * o;
+          let blocked = false;
+          for (const c of near) {
+            if (c === skip) continue;
+            if (hits(c, x, z)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (blocked) run = 0;
+          else {
+            run += LATERAL;
+            if (run > best) best = run;
+          }
+        }
+        return best;
+      };
+
+      if (widest(null) >= MIN_LANE) continue;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let best: StaticCollider | null = null;
+        let bestGain = 0;
+        for (const c of near) {
+          if (!propOf.has(c) || gone.has(c)) continue;
+          const gain = widest(c);
+          if (gain > bestGain) {
+            bestGain = gain;
+            best = c;
+          }
+        }
+        // Nothing removable, or removing it would not help: the width here is
+        // the road's own, and that is the generator's business, not this pass's.
+        if (!best || bestGain <= widest(null)) break;
+        gone.add(best);
+        (propOf.get(best) as PlacedProp).mesh.dispose();
+        withdrawn++;
+        const at = near.indexOf(best);
+        if (at >= 0) near.splice(at, 1);
+        if (widest(null) >= MIN_LANE) break;
+      }
+    }
+  }
+
+  if (gone.size > 0) {
+    for (let i = colliders.length - 1; i >= 0; i--) {
+      if (gone.has(colliders[i])) colliders.splice(i, 1);
+    }
+  }
+  return withdrawn;
 }
 
 export function buildWorld(r: Renderer): BuiltWorld {
   const { segments } = buildCourseSegments();
   const terrain = new Terrain(segments);
   const colliders: StaticCollider[] = [];
+  /** Every withdrawable block, for the racing-line check once the world is whole. */
+  const props: PlacedProp[] = [];
 
   // Palette. The day's roll picks each style's variant; shades are shifted copies so a
   // run of chunks is not flat.
@@ -195,7 +357,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   // --- The spine: continuous ribbon ground + decor ------------------------
   const spineSlices = segments.filter((sg) => !sg.branch && !sg.overlay);
   buildSpineRibbons(r, spineSlices);
-  buildSpineDecor(r, spineSlices, colliders, segments);
+  buildSpineDecor(r, spineSlices, colliders, segments, props);
   buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
   cliffRailPass(r, spineSlices, colliders, terrain);
 
@@ -447,10 +609,16 @@ export function buildWorld(r: Renderer): BuiltWorld {
 
         if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments, terrain);
     if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades, terrain);
-    buildProps(r, seg, colliders, segments);
+    buildProps(r, seg, colliders, segments, props);
   }
 
   sealBoundary(r, segments, colliders, wallShades, terrain);
+
+  /*
+   * Last, once every wall, cap and block exists: prove the road is drivable end
+   * to end, and withdraw whatever is not.
+   */
+  const withdrawn = enforceRacingLine(segments, colliders, props);
 
   // No gate: endless mode has no finish to build.
 
@@ -461,6 +629,8 @@ export function buildWorld(r: Renderer): BuiltWorld {
     terrain,
     colliders,
     nav,
+    /** Blocks the racing-line check had to withdraw. Zero is the healthy number. */
+    blocksWithdrawn: withdrawn,
     update() {
       // Nothing animates in the static world any more.
     },
@@ -484,6 +654,49 @@ export function buildWorld(r: Renderer): BuiltWorld {
  * of the fence.
  */
 const JUNCTION_CLEARANCE = 1.5;
+
+/**
+ * Does a wall's FOOTPRINT land on another road?
+ *
+ * `onOtherRoad` answers for a point, and every wall builder used to ask about
+ * its centre line only. A canyon wall is ten units thick: a chunk whose centre
+ * sits comfortably off a crossing road still reaches four to six units onto its
+ * carriageway, and that is a wall standing in the road with nothing to explain
+ * it - the chokehold at an alley mouth. Asking with the corners and edge
+ * midpoints of the actual box costs eight point tests and cannot be fooled by
+ * thickness.
+ */
+function wallFootprintOnRoad(
+  segments: CourseSegment[],
+  self: CourseSegment,
+  cx: number,
+  cz: number,
+  halfLength: number,
+  halfWidth: number,
+  heading: number,
+  margin: number,
+  terrain?: Terrain,
+): boolean {
+  const fx = Math.sin(heading);
+  const fz = Math.cos(heading);
+  const rx = fz;
+  const rz = -fx;
+  // Sample density follows the box, not a fixed grid: a thirteen-unit chunk
+  // tested at its corners alone can straddle a road that fits between them.
+  const STRIDE = 1.5;
+  const nA = Math.max(2, Math.ceil((halfLength * 2) / STRIDE));
+  const nB = Math.max(2, Math.ceil((halfWidth * 2) / STRIDE));
+  for (let i = 0; i <= nA; i++) {
+    const a = -1 + (2 * i) / nA;
+    for (let j = 0; j <= nB; j++) {
+      const b = -1 + (2 * j) / nB;
+      const x = cx + fx * halfLength * a + rx * halfWidth * b;
+      const z = cz + fz * halfLength * a + rz * halfWidth * b;
+      if (onOtherRoad(segments, self, x, z, margin, terrain)) return true;
+    }
+  }
+  return false;
+}
 
 function onOtherRoad(
   segments: CourseSegment[],
@@ -863,6 +1076,7 @@ function buildSpineDecor(
   spine: CourseSegment[],
   colliders: StaticCollider[],
   segments: CourseSegment[],
+  props: PlacedProp[],
 ): void {
   const onBranchRoad = (x: number, z: number, margin: number): boolean => {
     for (const other of segments) {
@@ -919,7 +1133,7 @@ function buildSpineDecor(
       const pz = seg.az + (seg.bz - seg.az) * t;
       const groundY = seg.ay + seg.grade * seg.length * t;
       stationCount++;
-      placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad);
+      placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props);
       nextProp += spacing;
     }
     arc = end;
@@ -936,6 +1150,7 @@ function placePropStation(
   groundY: number,
   station: number,
   onBranchRoad: (x: number, z: number, margin: number) => boolean,
+  props: PlacedProp[],
 ): void {
   if (seg.ramp > 0) return;
   const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
@@ -951,7 +1166,8 @@ function placePropStation(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
-    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height);
+    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "spineProp");
+    props.push({ mesh, collider: colliders[colliders.length - 1] });
   };
 
   const roll = hash2(px * 1.31, pz * 0.73);
@@ -1043,9 +1259,23 @@ function buildSpineWallLines(
         const span = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
         if (span < 0.2) continue;
         const heading = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
-        if (onOtherRoad(segments, pts[i].seg, cx, cz, JUNCTION_CLEARANCE, terrain)) continue;
+        if (
+          wallFootprintOnRoad(
+            segments,
+            pts[i].seg,
+            cx,
+            cz,
+            span / 2 + 0.2,
+            halfT,
+            heading,
+            JUNCTION_CLEARANCE,
+            terrain,
+          )
+        ) {
+          continue;
+        }
         const groundY = heightAt(cx, cz, pts[i].seg.ay);
-        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight);
+        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight, "wallRail");
       }
     };
 
@@ -1219,7 +1449,7 @@ function cliffRailPass(
       );
       mesh.position.set(wx, midY + h / 2, wz);
       mesh.rotation.y = heading;
-      addCollider(colliders, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY + h);
+      addCollider(colliders, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY + h, "branchWall");
       placed.push({ x: wx, z: wz });
     }
   }
@@ -1267,10 +1497,20 @@ function buildWalls(
       // car shoved into it by the police could not get out again. Opening junctions
       // wider costs a little containment and removes a whole class of unfair capture.
       const clear = JUNCTION_CLEARANCE;
+      // The whole box, not its centre line: a thick style reaches onto a
+      // crossing road from a centre that is nowhere near it.
       if (
-        onOtherRoad(segments, seg, cx, cz, clear, terrain) ||
-        onOtherRoad(segments, seg, cx + seg.dx * halfChunk, cz + seg.dz * halfChunk, clear, terrain) ||
-        onOtherRoad(segments, seg, cx - seg.dx * halfChunk, cz - seg.dz * halfChunk, clear, terrain)
+        wallFootprintOnRoad(
+          segments,
+          seg,
+          cx,
+          cz,
+          halfChunk,
+          style.thickness / 2,
+          seg.heading,
+          clear,
+          terrain,
+        )
       ) {
         continue;
       }
@@ -1294,6 +1534,7 @@ function buildWalls(
         style.thickness / 2,
         seg.heading,
         groundY + height,
+        "branchWallChunk",
       );
     }
   }
@@ -1516,7 +1757,7 @@ function sealBoundary(
        * had touched a key. An invisible barrier contains identically and shows nothing;
        * the void behind the start never enters view once the car is moving.
        */
-      addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height);
+      addCollider(colliders, bx, bz, style.thickness / 2, width / 2, head.heading, groundY + height, "capHead");
     }
   }
 
@@ -1660,9 +1901,10 @@ function sealBoundary(
           0.75,
           Math.atan2(b.x - a.x, b.z - a.z),
           Math.max(a.top, b.top),
+          "sealLink",
         );
       }
-      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top);
+      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top, "sealLone");
     }
   }
 
@@ -1706,7 +1948,7 @@ function capDeadEnd(
   mesh.position.set(cx, seg.by + height / 2, cz);
   mesh.rotation.y = seg.heading;
 
-  addCollider(colliders, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by + height);
+  addCollider(colliders, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by + height, "capDeadEnd");
 
   // A hazard chevron on the cap, so a player who chases a unit in can see the wall coming.
   const sign = r.createMesh(
@@ -1726,6 +1968,7 @@ function buildProps(
   seg: CourseSegment,
   colliders: StaticCollider[],
   segments: CourseSegment[],
+  props: PlacedProp[],
 ): void {
   const spacing = PROP_SPACING[seg.section];
   // Spurs are narrow and exist to be driven out of at speed; props in one just wedge the
@@ -1757,7 +2000,8 @@ function buildProps(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
-    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height);
+    addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "branchProp");
+    props.push({ mesh, collider: colliders[colliders.length - 1] });
   };
 
   const mode =

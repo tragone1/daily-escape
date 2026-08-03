@@ -25,6 +25,8 @@ export interface StaticCollider {
   radius: number;
   /** Tall enough to block line of sight and the chase camera. */
   occludes: boolean;
+  /** Which builder placed it. Diagnostic: it is what makes a choke traceable. */
+  source?: string;
 }
 
 export interface Impact {

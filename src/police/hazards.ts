@@ -228,6 +228,22 @@ export class HazardField {
       const lead = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z) - playerProgress;
       if (lead < cfg.minLead || lead > cfg.maxLead) continue;
 
+      /*
+       * Never crowd another hazard: a strip you dodge into a second strip is
+       * not a test of skill, it is a corridor with no line through it.
+       */
+      const here = this.terrain.progressAt(unit.vehicle.x, unit.vehicle.z);
+      let crowded = false;
+      for (const h of this.items) {
+        if (!h.live) continue;
+        const need = h.kind === kind ? cfg.minSeparation : cfg.minSeparationCross;
+        if (Math.abs(this.terrain.progressAt(h.x, h.z) - here) < need) {
+          crowded = true;
+          break;
+        }
+      }
+      if (crowded) continue;
+
       const slot = this.items.find((h) => !h.live && h.kind === kind);
       if (!slot) continue;
 
@@ -276,7 +292,8 @@ export class HazardField {
          * not a hazard, it is just damage.
          */
         const usable = (band.hi - band.lo - cfg.minGap) * 0.5;
-        if (usable < 2.2) continue;
+        // The strip itself must still be worth laying AND leave the full gap.
+        if (usable < 2.6) continue;
         halfWidth = Math.max(2.2, Math.min(halfWidth, usable));
         // Flush to whichever end of the clear run the unit was already nearer.
         const lateral =

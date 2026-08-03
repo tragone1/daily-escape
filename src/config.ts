@@ -1163,7 +1163,26 @@ export const CONFIG = {
        * is a toll.
        */
       maxRoadShare: 0.62,
-      minGap: 5.5,
+      /**
+       * The lane a strip must leave. Raised with the flow model: a hazard is
+       * a dodge test, and the answer has to be comfortably drivable at
+       * speed, not threaded.
+       */
+      minGap: 7.5,
+      /**
+       * No second hazard within this far of a live one, along the road.
+       * Two strips a few lengths apart is not two dodges, it is a trap with
+       * no line through it - you commit to the gap in the first and the
+       * second is already on you.
+       */
+      minSeparation: 150,
+      /**
+       * A different hazard may sit closer than a twin, but not close enough
+       * to make dodging one mean eating the other. (Applying the full
+       * same-kind spacing across kinds starved spikes out entirely: the
+       * fleet's oil is everywhere.)
+       */
+      minSeparationCross: 65,
 
       /** Live hazards allowed on the course at once, per kind. */
       maxLive: 5,
@@ -1334,7 +1353,13 @@ export const CONFIG = {
        */
       // Every class ambushes from alleys - that is the design. The juggernaut is
       // simply the one class that arrives no other way.
-      spawnWeights: { ambush: 9, side: 1.5, behind: 2.5, ahead: 3.0 },
+      /**
+       * FLOW-MODEL TEST: alley ambushes disabled (was 9). They spring from
+       * concealment at point-blank range, which under the impact-driven
+       * meter is a near-unavoidable third of the bar - too effective to
+       * read and dodge. Restore the 9 to bring them back.
+       */
+      spawnWeights: { ambush: 0, side: 1.5, behind: 2.5, ahead: 3.0 },
       /**
        * Minimum live units *behind* the player. Below this the next spawn is forced to
        * the rear regardless of the weights.

@@ -201,6 +201,26 @@ export class Game {
      * glyphs apart. `stopPropagation` because the canvas below starts a run on
      * any pointer press - silencing the game should not also launch it.
      */
+    /*
+     * Mark the scrolling panels only while they actually scroll.
+     *
+     * The fade at their bottom edge is a hint that there is more below; on a
+     * panel that fits, it is just the last line of text going dim. Re-checked
+     * on resize because whether it fits depends entirely on the window.
+     */
+    const scrollHints = ["startScroll", "overlayScroll"];
+    const markScrollable = (): void => {
+      for (const id of scrollHints) {
+        const panel = document.getElementById(id);
+        if (!panel) continue;
+        panel.classList.toggle("scrolls", panel.scrollHeight > panel.clientHeight + 1);
+      }
+    };
+    markScrollable();
+    window.addEventListener("resize", markScrollable);
+    // The result card is populated after a run, which changes its height.
+    window.setInterval(markScrollable, 1000);
+
     const muteBtn = document.getElementById("muteBtn");
     const paintMute = (): void => {
       const muted = this.audio.isMuted;

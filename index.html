@@ -305,14 +305,24 @@
         background: var(--panel);
         border: 1px solid rgba(255, 255, 255, 0.14);
       }
+      /*
+       * The fade is a scroll hint, so it only exists while there is something
+       * to scroll. Applied unconditionally it dimmed the last fourteen pixels
+       * of a panel that fitted perfectly well - which is what cut the bottom
+       * off the controls row in an ordinary desktop window.
+       */
+      #startScroll.scrolls,
+      #overlayScroll.scrolls {
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+      }
+
       #overlayScroll {
         display: flex;
         flex-direction: column;
         gap: 6px;
         overflow: auto;
         min-height: 0;
-        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
-        mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
       }
       #overlayTitle {
         font-size: 44px;
@@ -400,8 +410,6 @@
          * dissolves - which is the truth, and the only cue a touch user gets
          * that the panel scrolls at all.
          */
-        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
-        mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
       }
       #startCard h2 {
         margin: 0;
@@ -475,14 +483,29 @@
       @media (min-width: 660px) {
         #startBeats { grid-template-columns: 1fr 1fr; }
       }
+      /*
+       * A wrapping row rather than a grid of equal columns.
+       *
+       * The grid assumed one key chip per entry and a short label. Now that
+       * driving lists both key sets, its entry is twice the width of the
+       * others and a fixed column carved it in half - chips ran into the
+       * labels beside them. Letting the entries size themselves and wrap keeps
+       * each one whole.
+       */
       #startKeys {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-        gap: 7px 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px 16px;
         font-size: 11px;
         color: #8b93a7;
       }
-      #startKeys span { display: flex; align-items: center; gap: 7px; }
+      #startKeys span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        /* An entry is one unit: its keys and its label never split across lines. */
+        white-space: nowrap;
+      }
       #startKeys b {
         background: rgba(255, 255, 255, 0.1);
         border-radius: 4px;
@@ -519,7 +542,13 @@
       /* Daily challenge + leaderboard                                      */
       /* ------------------------------------------------------------------ */
       #dayLine {
-        margin: -4px 0 0;
+        /*
+         * No negative top margin. It used to tuck this under the heading when
+         * the two were siblings in one flow; the heading now sits outside the
+         * scrolling middle, so the same -4px pulled this line above the scroll
+         * box and the browser clipped its top off.
+         */
+        margin: 0;
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
@@ -935,10 +964,10 @@
       </div>
 
       <div id="bottomRight" class="panel">
-        <kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse<br />
-        <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>Space</kbd> boost<br />
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> drive<br />
+        <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse &nbsp; <kbd>Space</kbd> boost<br />
         <kbd>F</kbd> fire rocket<br />
-        <kbd>P</kbd> restart &nbsp; <kbd>C</kbd> reset camera
+        <kbd>P</kbd> restart &nbsp; <kbd>C</kbd> recentre camera
       </div>
 
       <button id="restartBtn">RESTART (P)</button>
@@ -1024,13 +1053,12 @@
         </div>
 
         <div id="startKeys">
-          <span><b>W A S D</b> drive</span>
-          <span><b>&larr; &rarr;</b> steer</span>
-          <span><b>S</b> brake</span>
+          <span><b>W A S D</b> or <b>&uarr; &darr; &larr; &rarr;</b> drive</span>
+          <span><b>S</b> or <b>&darr;</b> brake</span>
           <span><b>Space</b> boost</span>
           <span><b>F</b> rocket</span>
           <span><b>P</b> restart</span>
-          <span><b>C</b> camera</span>
+          <span><b>C</b> recentre camera</span>
         </div>
 
         </div>

@@ -568,6 +568,8 @@ export class Game {
      */
     if (this.stream.ensureBuiltThrough(section)) {
       this.ctx.nav = this.world.nav;
+      // Ammunition has to keep appearing on road that did not exist a moment ago.
+      this.pickups.extendTo(this.renderer, this.world.terrain);
     }
 
     const pace = CONFIG.player.lateSpeed;

@@ -625,12 +625,21 @@ export const PICKUPS: PickupDef[] = MAIN_LEGS.flatMap((leg, i) => {
   // Safe every third one; the rest are out in the run-off, or hard against the kerb in
   // sections that have no run-off to gamble with.
   const risky = n % 3 !== 0;
-  const shoulder = leg.shoulder ?? 0;
-  const lateral = risky
-    ? shoulder > 6
-      ? leg.halfWidth + shoulder * 0.7
-      : leg.halfWidth - 1.6
-    : 0;
+  /*
+   * Off the racing line, but ON the road.
+   *
+   * This used to put the risky ones at `halfWidth + shoulder * 0.7` where
+   * there was run-off - which is past the kerb by up to seven units, out where
+   * the ground is not drivable and the pickup reads as half off the map - and
+   * hard against the kerb everywhere else. Both made it a question of whether
+   * you could reach the thing rather than whether the detour was worth it.
+   *
+   * A little over half the half-width is still clearly off the middle, so it
+   * still costs a line, and it is comfortably inside the tarmac at every
+   * width. The final position is snapped onto solid ground when the pickup is
+   * built, which is the part this cannot know.
+   */
+  const lateral = risky ? leg.halfWidth * 0.55 : 0;
 
   // Offset across the leg, not across world X: on a diagonal leg the two are nowhere near
   // the same thing, and the difference is the width of the road.

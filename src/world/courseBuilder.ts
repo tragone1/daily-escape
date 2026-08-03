@@ -209,10 +209,46 @@ export function buildWorld(r: Renderer): BuiltWorld {
     // Slope makes the ribbon longer than its ground-plane footprint.
     const ribbonLength = seg.length * Math.hypot(1, seg.grade);
 
+    /*
+     * TRIM THE MOUTH.
+     *
+     * A spur's slab is one box laid end to end, and its mouth end overlaps the
+     * carriageway it opens onto. The two surfaces sit at slightly different
+     * heights and pitches, so that end pokes up THROUGH the road as a flat
+     * jagged wedge - drivable, but it reads as broken geometry and throws a
+     * shadow across the lane. Walk in from whichever end is over the road and
+     * shorten the slab to where the road stops owning the ground; the main
+     * ribbon already covers everything trimmed away.
+     */
+    let trimA = 0;
+    let trimB = 0;
+    if (seg.branch && terrain) {
+      const overRoad = (x: number, z: number): boolean => {
+        const smp = terrain.sample(x, z);
+        return smp.onCourse && !smp.segment.branch && !smp.segment.overlay;
+      };
+      const STEP = 0.5;
+      if (overRoad(seg.ax, seg.az)) {
+        while (trimA < seg.length * 0.5 && overRoad(seg.ax + seg.dx * trimA, seg.az + seg.dz * trimA)) {
+          trimA += STEP;
+        }
+      }
+      if (overRoad(seg.bx, seg.bz)) {
+        while (trimB < seg.length * 0.5 && overRoad(seg.bx - seg.dx * trimB, seg.bz - seg.dz * trimB)) {
+          trimB += STEP;
+        }
+      }
+    }
+    const trimmedLength = Math.max(1, ribbonLength - trimA - trimB);
+    const shift = (trimA - trimB) / 2;
+    const slabX = midX + seg.dx * shift;
+    const slabZ = midZ + seg.dz * shift;
+    const slabY = midY + seg.grade * shift;
+
     const tint = SECTION_TINT[seg.section] ?? [1, 1, 1];
     const base = SURFACE_COLOR[seg.surface];
     const road = r.createMesh(
-      { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: ribbonLength },
+      { kind: "box", width: seg.halfWidth * 2, height: ROAD_THICKNESS, depth: trimmedLength },
       {
         color: [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
         emissive: 0.3,
@@ -227,7 +263,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
      * the surface the simulation puts the car on. The car sits correctly and looks sunk:
      * about half a wheel, everywhere, all the time.
      */
-    road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), midZ);
+    road.position.set(slabX, slabY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), slabZ);
     road.rotation.y = seg.heading;
     road.rotation.x = pitch;
 

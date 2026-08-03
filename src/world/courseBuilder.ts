@@ -825,7 +825,14 @@ function buildSpineWallLines(
         mesh.rotation.y = heading;
         mesh.rotation.x = -Math.atan((y1 - y0) / Math.max(0.001, span));
         // Colliders overlap a little past each joint: one unbroken rail to slide on.
-        addCollider(colliders, cx, cz, span / 2 + 0.35, style.thickness / 2, heading, groundY + height);
+        /*
+         * A SMOOTH RAIL, not a saw-tooth. Consecutive pieces on a curve are
+         * each rotated a little from the last, so their inner corners poke
+         * out into the road and a car sliding along catches the leading edge
+         * of the next one. Overlapping them further and shaving the inner
+         * face makes the union read as one continuous surface.
+         */
+        addCollider(colliders, cx, cz, span / 2 + 0.9, style.thickness / 2 - 0.18, heading, groundY + height);
       }
     };
 
@@ -1288,7 +1295,7 @@ function sealBoundary(
     mesh.position.set(px + ox * meshJitter, groundY + height / 2, pz + oz * meshJitter);
     mesh.rotation.y = heading;
     mesh.rotation.x = -Math.atan((yB - yA) / (2 * hl));
-    addCollider(colliders, px, pz, hl, 0.9, heading, groundY + height);
+    addCollider(colliders, px, pz, hl + 0.55, 0.75, heading, groundY + height);
   };
 
   /*

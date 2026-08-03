@@ -1918,6 +1918,13 @@ export const CONFIG = {
      */
     wallSlideAssist: 0.62,
     wallSlideAssistSpeed: 18,
+    /**
+     * Contact-normal spread (radians) below which the surface counts as one
+     * flat wall rather than a corner. ~40 degrees: a mitred joint or a gentle
+     * bend stays 'flat' and frees a caught car; driving into a real corner
+     * fans the normals well past this and holds you there.
+     */
+    wallCornerAngle: 0.7,
     /** Fraction of speed lost on a solid building hit. */
     buildingSpeedLoss: 0.42,
     /** Fraction of speed lost when cars trade paint. */

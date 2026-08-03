@@ -92,6 +92,12 @@ export class CollisionWorld {
     let deepest = 0;
     let hnx = 0;
     let hnz = 0;
+    // Widest angle between contact normals this frame: near zero along a flat
+    // wall, large in a genuine corner. It decides whether being stuck is the
+    // geometry catching the car or the car having driven into a trap.
+    let firstNx = 0;
+    let firstNz = 0;
+    let normalSpread = 0;
 
     for (let pass = 0; pass < 2; pass++) {
       for (const solid of candidates) {
@@ -113,6 +119,15 @@ export class CollisionWorld {
           deepest = hit.depth;
           hnx = hit.nx;
           hnz = hit.nz;
+        }
+        if (pass === 0) {
+          if (firstNx === 0 && firstNz === 0) {
+            firstNx = hit.nx;
+            firstNz = hit.nz;
+          } else {
+            const dot = clamp(firstNx * hit.nx + firstNz * hit.nz, -1, 1);
+            normalSpread = Math.max(normalSpread, Math.acos(dot));
+          }
         }
       }
     }
@@ -168,22 +183,24 @@ export class CollisionWorld {
            * back out along the contact normal - the same thing a player does
            * by reversing, without the player having to do it.
            */
-          // Reset only when genuinely driving again: the assist itself lifts
-          // speed just off zero, so a low threshold cleared the timer every
-          // frame and the escalation below never engaged.
-          v.wedgeTimer = after < 6 ? v.wedgeTimer + 1 / 60 : 0;
-          let boostAssist = 1;
+          /*
+           * CORNER-AWARE. Along a flat wall - every contact normal pointing
+           * much the same way - a car that has stopped is CAUGHT, and the
+           * assist escalates until it slides free. Where the normals fan out
+           * the car has driven into a genuine corner, and being stuck there
+           * is a fair consequence: no escalation, just the gentle slide.
+           */
+          const flatWall = normalSpread < c.wallCornerAngle;
+          v.wedgeTimer = after < 6 && flatWall ? v.wedgeTimer + 1 / 60 : 0;
+          let esc = 1;
           if (v.wedgeTimer > 0.4) {
-            // Alternate which way along the surface we try, and shove out
-            // along the normal - escalating with how long it has been stuck.
             if (Math.floor(v.wedgeTimer * 1.5) % 2 === 1) dir = -dir;
-            const esc = Math.min(3.5, 1.6 + v.wedgeTimer);
-            boostAssist = esc;
-            v.vx += hnx * c.wallSlideAssist * esc;
-            v.vz += hnz * c.wallSlideAssist * esc;
+            esc = Math.min(3.5, 1.6 + v.wedgeTimer);
+            v.vx += hnx * c.wallSlideAssist * esc * 0.5;
+            v.vz += hnz * c.wallSlideAssist * esc * 0.5;
           }
-          v.vx += tanX * dir * c.wallSlideAssist * fade * boostAssist;
-          v.vz += tanZ * dir * c.wallSlideAssist * fade * boostAssist;
+          v.vx += tanX * dir * c.wallSlideAssist * fade * esc;
+          v.vz += tanZ * dir * c.wallSlideAssist * fade * esc;
         }
 
         if (impactSpeed > c.minImpactSpeed) {

@@ -14,6 +14,7 @@
 
 import { API_VERSION, bad, dayKey, guarded, json, validPlayerId } from "./_shared";
 import { checkName } from "./names";
+import { checkRateLimit, sweepExpired } from "./rateLimit";
 
 /**
  * Fastest the game can physically bank score, per second.
@@ -76,6 +77,29 @@ export const onRequestPost = guarded(async ({ request, env }) => {
       409,
     );
   }
+
+  /*
+   * Rate limit before anything else is examined.
+   *
+   * Counts the attempt rather than the acceptance: a flood of malformed
+   * submissions costs the same to serve as valid ones, so validating first
+   * would leave the cheapest attack uncounted.
+   */
+  const limit = await checkRateLimit(env.DB, request, dayKey());
+  if (!limit.allowed) {
+    return new Response(
+      JSON.stringify({ error: "Too many submissions from this network. Try again shortly." }),
+      {
+        status: 429,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "retry-after": String(limit.retryAfter),
+        },
+      },
+    );
+  }
+  void sweepExpired(env.DB);
 
   const { playerId, score, section, distance, elapsedMs } = body;
   if (!validPlayerId(playerId)) return bad("bad playerId");

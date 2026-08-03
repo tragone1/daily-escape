@@ -197,7 +197,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
   buildSpineRibbons(r, spineSlices);
   buildSpineDecor(r, spineSlices, colliders, segments);
   buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, terrain);
-  cliffRailPass(r, spineSlices, segments, colliders, terrain);
+  cliffRailPass(r, spineSlices, colliders, terrain);
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
@@ -294,7 +294,7 @@ export function buildWorld(r: Renderer): BuiltWorld {
     }
 
         if (seg.wall !== "none") buildWalls(r, seg, colliders, wallShades, segments, terrain);
-    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades, segments, terrain);
+    if (seg.capEnd) capDeadEnd(r, seg, colliders, wallShades);
     buildProps(r, seg, colliders, segments);
   }
 
@@ -758,6 +758,32 @@ function buildSpineWallLines(
     let run: { x: number; z: number; seg: CourseSegment }[] = [];
     let runStyle: Exclude<WallStyle, "none"> | null = null;
 
+    /*
+     * THE SMOOTH RAIL - collision only, no mesh.
+     *
+     * One collider per segment of the wall's own polyline, centred on the
+     * line at its true thickness. However varied the blocks above are, the
+     * surface a car slides along is this: continuous, with no corner poking
+     * out of it anywhere.
+     */
+    const railRun = (
+      pts: { x: number; z: number; seg: CourseSegment }[],
+      styleName: Exclude<WallStyle, "none">,
+    ) => {
+      const style = WALL_STYLE[styleName];
+      const halfT = style.thickness / 2;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const cx = (pts[i].x + pts[i + 1].x) / 2;
+        const cz = (pts[i].z + pts[i + 1].z) / 2;
+        const span = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+        if (span < 0.2) continue;
+        const heading = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+        if (onOtherRoad(segments, pts[i].seg, cx, cz, JUNCTION_CLEARANCE, terrain)) continue;
+        const groundY = heightAt(cx, cz, pts[i].seg.ay);
+        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight);
+      }
+    };
+
     const flushRun = () => {
       const pts = run;
       const styleName = runStyle;
@@ -807,11 +833,6 @@ function buildSpineWallLines(
         const y0 = heightAt(P0.x, P0.z, seg.ay);
         const y1 = heightAt(P1.x, P1.z, seg.by);
         const groundY = (y0 + y1) / 2;
-        if (
-          blocksRoad(segments, terrain, cx, cz, span / 2 + 0.35, style.thickness / 2, heading, groundY, groundY + style.maxHeight)
-        ) {
-          continue;
-        }
         const rnd = hash2(cx, cz);
         const height = style.minHeight + rnd * (style.maxHeight - style.minHeight);
         const mesh = r.createMesh(
@@ -825,46 +846,12 @@ function buildSpineWallLines(
         mesh.position.set(cx, groundY + height / 2, cz);
         mesh.rotation.y = heading;
         mesh.rotation.x = -Math.atan((y1 - y0) / Math.max(0.001, span));
-        // Colliders overlap a little past each joint: one unbroken rail to slide on.
         /*
-         * A SMOOTH RAIL, not a saw-tooth. Consecutive pieces on a curve are
-         * each rotated a little from the last, so their inner corners poke
-         * out into the road and a car sliding along catches the leading edge
-         * of the next one. Overlapping them further and shaving the inner
-         * face makes the union read as one continuous surface.
+         * MESH ONLY. The blocks are the look and nothing else now - their
+         * corners were what a car caught on. Collision for this run is one
+         * continuous rail laid along the wall's own centre line, built in
+         * `railRun` below.
          */
-        /*
-         * MESH ONLY. The blocks are the look - varied heights, jitter, the
-         * skyline the game is known for - and they are no longer what the car
-         * touches. Collision comes from one continuous rail built along this
-         * same wall line below, so the surface stays smooth however jagged
-         * the silhouette is.
-         */
-      }
-    };
-
-    /*
-     * THE SMOOTH RAIL - collision only, no mesh.
-     *
-     * One collider per segment of the wall's own polyline, centred on the
-     * line at its true thickness. The decorative blocks above can jut and
-     * vary as much as they like; the surface a car slides along is this, and
-     * it has no corners poking out of it anywhere.
-     */
-    const railRun = (pts: { x: number; z: number; seg: CourseSegment }[], styleName: Exclude<WallStyle, "none">) => {
-      const style = WALL_STYLE[styleName];
-      const halfT = style.thickness / 2;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const cx = (pts[i].x + pts[i + 1].x) / 2;
-        const cz = (pts[i].z + pts[i + 1].z) / 2;
-        const span = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
-        if (span < 0.2) continue;
-        const heading = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
-        const groundY = heightAt(cx, cz, pts[i].seg.ay);
-        const top = groundY + style.minHeight;
-        if (blocksRoad(segments, terrain, cx, cz, span / 2, halfT, heading, groundY, top)) continue;
-        if (onOtherRoad(segments, pts[i].seg, cx, cz, JUNCTION_CLEARANCE, terrain)) continue;
-        addCollider(colliders, cx, cz, span / 2 + 0.2, halfT, heading, groundY + style.maxHeight);
       }
     };
 
@@ -919,7 +906,6 @@ function buildSpineWallLines(
 function cliffRailPass(
   r: Renderer,
   slices: CourseSegment[],
-  segments: CourseSegment[],
   colliders: StaticCollider[],
   terrain?: Terrain,
 ): void {
@@ -961,9 +947,6 @@ function cliffRailPass(
       if (guarded) continue;
       const span = Math.max(seg.length + 2, 8);
       const heading = Math.atan2(seg.dx, seg.dz);
-      if (blocksRoad(segments, terrain, wx, wz, span / 2 + 0.35, style.thickness / 2, heading, midY, midY + style.minHeight)) {
-        continue;
-      }
       const h = style.minHeight;
       const mesh = r.createMesh(
         { kind: "box", width: style.thickness, height: h, depth: span },
@@ -975,93 +958,6 @@ function cliffRailPass(
       placed.push({ x: wx, z: wz });
     }
   }
-}
-
-/*
- * THE ROAD IS SACRED.
- *
- * Whatever any wall rule decides, a piece may never stand on drivable road
- * at road height. Two independent bugs put wall chunks mid-carriageway - a
- * fence line and a barrier line, each let through by the grade-separation
- * check when the decks were not actually separated there - and the player
- * met them as blocks that 'a car can barely fit through'. This is the
- * backstop: sample the piece's footprint, and if any of it lands inside a
- * main road's drivable band within three units of that road's surface, the
- * piece is not built at all.
- */
-function blocksRoad(
-  _segments: CourseSegment[],
-  terrain: Terrain | undefined,
-  cx: number,
-  cz: number,
-  halfLength: number,
-  halfWidth: number,
-  heading: number,
-  groundY: number,
-  topY: number,
-): boolean {
-  if (!terrain) return false;
-  const fx = Math.sin(heading);
-  const fz = Math.cos(heading);
-  const rx = Math.cos(heading);
-  const rz = -Math.sin(heading);
-  /*
-   * Ask the TERRAIN, not the segment list. Hand-rolled band tests miss at the
-   * joints between the spine's four thousand micro-slices - exactly where
-   * inside-corner walls land - and that is how fence chunks ended up standing
-   * in the carriageway. `sample` is the same authority the car's own physics
-   * uses: if it says drivable road, it is road.
-   */
-  /*
-   * The whole FOOTPRINT, corners included, at a spacing no lane can hide
-   * between. A long chunk lying across a carriageway can have its centre
-   * off-course while its body spans the lane - centre-only sampling is how
-   * the fence chunks at section eight survived the first two attempts.
-   */
-  const pts: Array<[number, number]> = [];
-  const steps = Math.max(2, Math.ceil(halfLength / 1.5));
-  for (let a2 = -steps; a2 <= steps; a2++) {
-    const fa = (a2 / steps) * halfLength;
-    for (let b2 = -1; b2 <= 1; b2++) {
-      const fb = b2 * halfWidth;
-      pts.push([cx + fx * fa + rx * fb, cz + fz * fa + rz * fb]);
-    }
-  }
-  for (const [px, pz] of pts) {
-    const smp = terrain.sample(px, pz);
-    if (!smp.onCourse || smp.segment.branch) continue;
-    // Vertical overlap: a piece on a lower deck still pokes up through the
-    // road above it, and one on a higher deck hangs into it.
-    if (topY > smp.height - 0.4 && groundY < smp.height + 2.5) return true;
-  }
-  /*
-   * CROSSWAYS RULE. A wall that runs ALONG the road is a kerb, however close
-   * it sits; one lying ACROSS it is a barricade even when its own footprint
-   * technically falls outside the drivable band - the marker posts marching
-   * across a hairpin pinched the lane to two units that way. Judge by angle
-   * and lateral reach rather than overlap alone.
-   */
-  const smpC = terrain.sample(cx, cz);
-  const segC = smpC.segment;
-  if (!segC.branch) {
-    const dxC = cx - segC.ax;
-    const dzC = cz - segC.az;
-    const acrossC = Math.abs(dxC * segC.dz - dzC * segC.dx);
-    const alongC = dxC * segC.dx + dzC * segC.dz;
-    const parallel = Math.abs(fx * segC.dx + fz * segC.dz);
-    const reach = acrossC - halfLength * Math.sqrt(Math.max(0, 1 - parallel * parallel));
-    if (
-      alongC > -halfLength &&
-      alongC < segC.length + halfLength &&
-      parallel < 0.6 &&
-      reach < segC.halfWidth &&
-      topY > smpC.height - 0.4 &&
-      groundY < smpC.height + 2.5
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** Fence a segment in with themed chunks on both sides. */
@@ -1111,12 +1007,6 @@ function buildWalls(
         onOtherRoad(segments, seg, cx + seg.dx * halfChunk, cz + seg.dz * halfChunk, clear, terrain) ||
         onOtherRoad(segments, seg, cx - seg.dx * halfChunk, cz - seg.dz * halfChunk, clear, terrain)
       ) {
-        continue;
-      }
-
-      // The road is sacred: a spur's own side wall may not stand on the
-      // carriageway it opens onto.
-      if (blocksRoad(segments, terrain, cx, cz, chunkLen / 2, style.thickness / 2, seg.heading, groundY, groundY + style.maxHeight)) {
         continue;
       }
 
@@ -1253,8 +1143,8 @@ function sealBoundary(
    * rail, not as a fence post standing in open country.
    */
   const placed = new Set<string>();
-  /** Every patch piece laid, linked into a continuous barrier at the end. */
-  const sealPieces: { x: number; z: number; y: number; top: number }[] = [];
+  /** Patch pieces laid this build; linked into one barrier at the end. */
+  const sealPieces: { x: number; z: number; top: number }[] = [];
   const piece = (
     x: number,
     z: number,
@@ -1311,11 +1201,6 @@ function sealBoundary(
     const groundY = (yA + yB) / 2;
     const rnd = hash2(px, pz);
     const height = style.minHeight + rnd * (style.maxHeight - style.minHeight) * 0.5;
-    // The road is sacred here too: boundary sealing must never march a line
-    // of posts across the carriageway at a hairpin.
-    if (blocksRoad(segments, terrain, px, pz, hl, 0.9, Math.atan2(dxh, dzh), groundY, groundY + height)) {
-      return;
-    }
     const mesh = r.createMesh(
       { kind: "box", width: 1.8, height, depth: hl * 2 },
       { color: [...shades[Math.floor(rnd * 997) % shades.length]], emissive: 0.24, isStatic: true },
@@ -1330,13 +1215,12 @@ function sealBoundary(
     mesh.rotation.y = heading;
     mesh.rotation.x = -Math.atan((yB - yA) / (2 * hl));
     /*
-     * MESH ONLY - the patch pieces are scenery. Sixteen thousand separate
-     * boxes, each nudged outward by a different amount, formed a saw-toothed
-     * barrier full of pockets: a car grazing it at twelve degrees stopped
-     * dead. Their collision is built as ONE CHAINED RAIL after every piece is
-     * placed (see the linking pass at the end of sealBoundary).
+     * MESH ONLY. Thousands of patch pieces, each nudged outward by its own
+     * amount, made a saw-toothed barrier full of pockets - a graze at twelve
+     * degrees stopped a car dead. They are scenery now; the barrier a car
+     * touches is the chained rail built after every piece is placed.
      */
-    sealPieces.push({ x: px, z: pz, y: groundY, top: groundY + height });
+    sealPieces.push({ x: px, z: pz, top: groundY + height });
   };
 
   /*
@@ -1459,14 +1343,11 @@ function sealBoundary(
   }
 
   /*
-   * THE CHAINED BARRIER.
-   *
-   * Every patch piece is scenery; this is the collision. Each piece links to
-   * its nearest neighbours, and the collider spans the GAP between their
-   * centres - so instead of thousands of separate boxes at slightly
-   * different offsets (a saw-tooth full of pockets that stopped a car
-   * grazing at twelve degrees), the barrier a car touches is one connected
-   * chain with no teeth and nothing to catch on.
+   * THE CHAINED BARRIER. Each piece links to its nearest neighbours and the
+   * collider spans centre to centre, so the barrier is one connected chain
+   * rather than a row of separate teeth. Links may only run ALONG the
+   * boundary - a link more than about fifty degrees off the local road
+   * direction would cut across it and close a pocket.
    */
   {
     const CELL2 = 8;
@@ -1481,6 +1362,7 @@ function sealBoundary(
     const linked = new Set<string>();
     for (let i = 0; i < sealPieces.length; i++) {
       const a = sealPieces[i];
+      const segHere = terrain.sample(a.x, a.z).segment;
       const near: { j: number; d: number }[] = [];
       for (let gx = -1; gx <= 1; gx++) {
         for (let gz = -1; gz <= 1; gz++) {
@@ -1494,40 +1376,27 @@ function sealBoundary(
         }
       }
       near.sort((p1, p2) => p1.d - p2.d);
-      /*
-       * Links must run ALONG the boundary, never across it. Chaining to the
-       * two nearest pieces zigzagged at bends and closed pockets a car could
-       * drop into - which is how a graze at section five still ended in a
-       * dead stop. The local road direction is the reference: a link more
-       * than about fifty degrees off it is not part of this barrier.
-       */
-      const segHere = terrain.sample(a.x, a.z).segment;
       let made = 0;
       for (const nb of near) {
         if (made >= 2) break;
-        const b0 = sealPieces[nb.j];
-        const ldx = (b0.x - a.x) / (nb.d || 1);
-        const ldz = (b0.z - a.z) / (nb.d || 1);
+        const b = sealPieces[nb.j];
+        const ldx = (b.x - a.x) / (nb.d || 1);
+        const ldz = (b.z - a.z) / (nb.d || 1);
         if (Math.abs(ldx * segHere.dx + ldz * segHere.dz) < 0.64) continue;
         const key2 = i < nb.j ? i + "_" + nb.j : nb.j + "_" + i;
         if (linked.has(key2)) continue;
         linked.add(key2);
         made++;
-        const b = sealPieces[nb.j];
-        const cx = (a.x + b.x) / 2;
-        const cz = (a.z + b.z) / 2;
-        const heading = Math.atan2(b.x - a.x, b.z - a.z);
         addCollider(
           colliders,
-          cx,
-          cz,
+          (a.x + b.x) / 2,
+          (a.z + b.z) / 2,
           nb.d / 2 + 0.5,
           0.75,
-          heading,
+          Math.atan2(b.x - a.x, b.z - a.z),
           Math.max(a.top, b.top),
         );
       }
-      // A piece with no neighbour still has to seal on its own.
       if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top);
     }
   }
@@ -1545,8 +1414,6 @@ function capDeadEnd(
   seg: CourseSegment,
   colliders: StaticCollider[],
   wallShades: Record<string, Rgb[]>,
-  segments: CourseSegment[],
-  terrain?: Terrain,
 ): void {
   const style = WALL_STYLE[(seg.wall === "none" ? "fence" : seg.wall) as Exclude<WallStyle, "none">];
   const shades = wallShades[seg.wall === "none" ? "fence" : seg.wall];
@@ -1554,16 +1421,6 @@ function capDeadEnd(
   const height = style.minHeight + 0.5;
   const cx = seg.bx + seg.dx * (style.thickness / 2);
   const cz = seg.bz + seg.dz * (style.thickness / 2);
-
-  /*
-   * A cap belongs at the dead end of an alley, never across the road. When a
-   * spur's ends are recorded the wrong way round its 'far end' lands on the
-   * carriageway, and the cap becomes a wall the player has to squeeze past -
-   * the yellow slab that nearly closed section twenty-two.
-   */
-  if (blocksRoad(segments, terrain, cx, cz, style.thickness / 2, width / 2, seg.heading, seg.by, seg.by + height)) {
-    return;
-  }
 
   const mesh = r.createMesh(
     { kind: "box", width, height, depth: style.thickness },

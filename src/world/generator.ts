@@ -297,7 +297,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         x += Math.sin(heading) * stub;
         z += Math.cos(heading) * stub;
         y = Math.max(0, y + grade * stub);
-        legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
+        legs.push({ x, z, y, section: theme.id, sectionIndex: s, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
         // Turn across the current drift, so the corner also recentres the course.
         const sign = x / LATERAL_LIMIT + heading * 0.4 > 0 ? -1 : 1;
         heading += sign * (0.95 + rnd() * 0.4);
@@ -305,7 +305,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         const stub2 = 26 + rnd() * 10;
         x += Math.sin(heading) * stub2;
         z += Math.cos(heading) * stub2;
-        legs.push({ x, z, y, section: theme.id, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
+        legs.push({ x, z, y, section: theme.id, sectionIndex: s, surface: theme.surface, halfWidth, wall: theme.wall, shoulder });
         grade *= 0.4;
         length = 55 + rnd() * 45;
       } else if (!opening) {
@@ -354,6 +354,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
         z,
         y,
         section: theme.id,
+        sectionIndex: s,
         surface: theme.surface,
         halfWidth,
         wall: theme.wall,
@@ -374,6 +375,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
           z,
           y,
           section: theme.id,
+          sectionIndex: s,
           surface: theme.surface,
           halfWidth: halfWidth + 2,
           wall: theme.wall,
@@ -387,7 +389,7 @@ export function generateCourse(sections: number, seed = 20260728): GeneratedCour
 
       if (spurLegs.has(i)) {
         spurs.push(
-          makeSpur(rnd, theme, x, z, y, heading, halfWidth, shoulder, progress, spurs.length),
+          { ...makeSpur(rnd, theme, x, z, y, heading, halfWidth, shoulder, progress, spurs.length), sectionIndex: s },
         );
       }
     }
@@ -427,6 +429,8 @@ function makeSpur(
   const length = shoulder + 42 + rnd() * 26;
 
   return {
+    // Overwritten by the caller with the section this spur hangs off.
+    sectionIndex: 0,
     ax: x,
     az: z,
     ay: y,

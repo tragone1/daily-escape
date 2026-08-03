@@ -40,6 +40,8 @@ export interface PathNode {
 
 export interface LegDef extends PathNode {
   section: SectionId;
+  /** Which section this leg belongs to, by index. Streaming scopes by it. */
+  sectionIndex: number;
   surface: Surface;
   /** Half the drivable width. */
   halfWidth: number;
@@ -66,6 +68,8 @@ export interface LegDef extends PathNode {
  * that is not directly ahead or directly behind you.
  */
 export interface SpurDef {
+  /** Section this spur hangs off, by index. */
+  sectionIndex: number;
   ax: number;
   az: number;
   ay: number;
@@ -96,6 +100,8 @@ export interface StripDef {
 export interface CourseSegment {
   index: number;
   section: SectionId;
+  /** Which section this segment belongs to, by index. Streaming scopes by it. */
+  sectionIndex: number;
   surface: Surface;
   wall: WallStyle;
   ramp: number;
@@ -279,6 +285,7 @@ function makeSegment(
   return {
     index,
     section: to.section,
+    sectionIndex: to.sectionIndex,
     surface: to.surface,
     wall: to.wall,
     ramp: to.ramp ?? 0,
@@ -392,6 +399,7 @@ function smoothSpine(start: PathNode, legs: LegDef[]): { micro: LegDef[]; contro
         x,
         z,
         y,
+        sectionIndex: leg.sectionIndex,
         section: leg.section,
         surface: leg.surface,
         wall: leg.wall,
@@ -463,6 +471,7 @@ export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
           x: spur.bx,
           z: spur.bz,
           y: spur.by,
+          sectionIndex: spur.sectionIndex,
           section: spur.section,
           surface: spur.surface,
           halfWidth: spur.halfWidth,
@@ -499,6 +508,7 @@ export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
           x: strip.bx,
           z: strip.bz,
           y: strip.y,
+          sectionIndex: 0,
           section: strip.section,
           surface: strip.surface,
           halfWidth: strip.halfWidth,

@@ -1626,7 +1626,11 @@ export const CONFIG = {
         // it.' All mechanics intact; restore by setting this to an unlock
         // section and openRoad.roles back to ["juggernaut"].
         juggernaut: 999,
-        rig: 5,
+        // FLOW-MODEL TEST: the rig is out. A parked roadblock is the
+        // opposite of flow - it forces a slow thread through its gap, and
+        // the pack piles on while you do. Restore this to 5 to bring it
+        // back; all rig machinery is intact.
+        rig: 999,
       } as Record<PoliceRole, number>,
       /**
        * Once unlocked, how strongly a class is favoured when waking the next unit.

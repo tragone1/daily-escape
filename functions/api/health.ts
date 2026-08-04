@@ -21,12 +21,30 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   out.binding = "ok";
 
   try {
-    const row = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('players','scores')`,
-    ).first<{ n: number }>();
-    out.tables = row?.n ?? 0;
-    out.migrated = (row?.n ?? 0) === 2;
-    if (!out.migrated) out.hint = "Run: npm run db:remote";
+    /*
+     * Every table any migration creates, named individually.
+     *
+     * A count was not enough: this checked only `players` and `scores`, so a
+     * database missing `rate_limits` reported migrated:true while the rate
+     * limiter was silently disabled on every submission. The endpoint whose
+     * whole job is 'is this deployment wired up' must not be able to say yes
+     * when part of it is not - so it lists what it expects and reports what is
+     * actually missing.
+     */
+    const expected = ["players", "scores", "rate_limits"];
+    const rows = await env.DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?)`,
+    )
+      .bind(...expected)
+      .all<{ name: string }>();
+    const present = new Set((rows.results ?? []).map((r) => r.name));
+    const missing = expected.filter((t) => !present.has(t));
+    out.tables = present.size;
+    out.migrated = missing.length === 0;
+    if (missing.length > 0) {
+      out.missing = missing;
+      out.hint = "Run: npm run db:remote";
+    }
   } catch (err) {
     out.migrated = false;
     out.error = err instanceof Error ? err.message : String(err);

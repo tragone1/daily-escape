@@ -26,15 +26,20 @@ interface Body {
 }
 
 /**
- * Compared in constant time.
+ * Compared in constant time, genuinely.
  *
- * A plain `===` on a secret leaks its length and, in principle, its prefix
- * through timing. This costs nothing and removes the argument.
+ * The obvious version returns early when the lengths differ, which leaks the
+ * secret's length - so it is not constant time at all, whatever the comment
+ * above it says. Hashing both sides first gives two fixed-length digests, and
+ * the comparison below then takes the same time for every input including a
+ * wrong length.
  */
-function secretMatches(given: string, expected: string): boolean {
-  if (given.length !== expected.length) return false;
+async function secretMatches(given: string, expected: string): Promise<boolean> {
+  const digest = async (v: string): Promise<Uint8Array> =>
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)));
+  const [a, b] = await Promise.all([digest(given), digest(expected)]);
   let diff = 0;
-  for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ expected.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
 
@@ -45,7 +50,7 @@ export const onRequestPost = guarded(async ({ request, env }) => {
   }
 
   const offered = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!offered || !secretMatches(offered, secret)) {
+  if (!offered || !(await secretMatches(offered, secret))) {
     // Deliberately identical to the response for a well-formed but wrong key:
     // distinguishing them tells a prober which half they got right.
     return json({ error: "Not authorised." }, 401);

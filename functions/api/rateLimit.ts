@@ -96,12 +96,13 @@ export async function checkRateLimit(
     /*
      * FAIL OPEN, deliberately.
      *
-     * The table this writes to comes from migration 0002. If a deployment goes
-     * out before that migration is applied - which is exactly the kind of
-     * ordering mistake a launch produces - every write here throws, and a
-     * limiter that propagates its own failure would take down the score
-     * submission it exists to protect. Spam is a nuisance; a leaderboard that
-     * rejects every legitimate score is an outage.
+     * ANY failure here, not only the missing table that prompted it. The table
+     * comes from migration 0002, so a deployment that goes out before that
+     * migration is applied throws on every write - but a D1 timeout or a
+     * transient error would do the same, and the right answer is the same in
+     * all three cases. A limiter that propagates its own failure takes down the
+     * score submission it exists to protect: spam is a nuisance, a leaderboard
+     * that rejects every legitimate score is an outage.
      *
      * Logged so the gap is visible rather than silent.
      */

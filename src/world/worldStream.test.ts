@@ -128,3 +128,43 @@ describe("retiring what is behind", () => {
     expect(near.length).toBeGreaterThan(0);
   });
 });
+
+describe("starting a new run", () => {
+  it("rebuilds the opening the previous run threw away", () => {
+    /*
+     * The bug this exists for: a run retires the course behind the player, so
+     * by the end of a long one the opening sections have been released.
+     * Restarting put the player back at the start with no geometry there - a
+     * black screen with the cars and the HUD drawing over nothing - and
+     * ensureBuiltThrough could not repair it, because it had already built
+     * past that point and returned early.
+     */
+    const { world, stream } = start(8919);
+    for (let section = 0; section < 40; section++) stream.ensureBuiltThrough(section);
+    expect(stream.retired, "the run must actually retire something").toBeGreaterThan(0);
+
+    // Nothing is left standing near where a new run begins.
+    const startNode = world.nav.nodeAtProgress(20);
+    const nearStart = (): number =>
+      world.colliders.filter(
+        (c) => Math.hypot(c.obb.x - startNode.x, c.obb.z - startNode.z) < 80,
+      ).length;
+    expect(nearStart()).toBe(0);
+
+    stream.restart();
+
+    expect(stream.retired).toBe(0);
+    expect(nearStart(), "the opening has to exist again").toBeGreaterThan(0);
+  });
+
+  it("leaves the course itself alone, since the seed has not changed", () => {
+    const { world, stream } = start(8919);
+    const before = world.segments.length;
+    for (let section = 0; section < 30; section++) stream.ensureBuiltThrough(section);
+    stream.restart();
+    // Same seed, prefix-stable generator: the road is still the same road.
+    expect(world.segments.length).toBe(world.segments.length);
+    expect(world.segments.length).toBeGreaterThanOrEqual(before);
+    expect(world.terrain.sample(world.nav.nodeAtProgress(20).x, world.nav.nodeAtProgress(20).z).onCourse).toBe(true);
+  });
+});

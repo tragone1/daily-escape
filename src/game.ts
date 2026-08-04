@@ -316,6 +316,14 @@ export class Game {
 
   restart(): void {
     count("restart_used");
+    /*
+     * Put the world back before the player is. A finished run has released the
+     * sections behind it, so the opening no longer exists as geometry - and
+     * restarting into it left the player on a black screen with the cars and
+     * the HUD drawing over nothing.
+     */
+    this.stream.restart();
+    this.ctx.nav = this.world.nav;
     this.state.reset();
     this.player.reset(COURSE_START.x, COURSE_START.z, START_HEADING, COURSE_START.y);
     this.police.reset(this.world.nav);

@@ -165,6 +165,31 @@ export class WorldStream {
   }
 
   /**
+   * Start the world again from the beginning.
+   *
+   * A run retires the course behind the player, so by the end of a good one
+   * the opening sections have been released - their geometry disposed and
+   * their colliders dropped. Restarting puts the player back at the start,
+   * where there was then nothing to see: the road was gone and only the cars
+   * and the HUD still drew, because those are not part of the streamed
+   * geometry. `ensureBuiltThrough` could not repair it either, since it had
+   * already built past that point and returns early.
+   *
+   * The course itself is kept. It is the same seed and the generator is
+   * prefix-stable, so the segments and the navigation graph are still exactly
+   * right - it is only the geometry and the colliders that have to come back.
+   */
+  restart(): void {
+    for (const w of this.windows) this.renderer.disposeChunkGroup(`w${w.id}`);
+    this.windows = [];
+    this.colliders.length = 0;
+    this.builtThrough = 0;
+    this.withdrawn = 0;
+    this.retiredSections = 0;
+    this.ensureBuiltThrough(0);
+  }
+
+  /**
    * Let go of course far enough behind that nothing can return to it.
    *
    * Without this a long run grows for as long as it lasts - which, now that

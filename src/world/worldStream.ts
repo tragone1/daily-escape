@@ -130,6 +130,15 @@ export class WorldStream {
       const longer = Math.max(this.course.sectionCount + 20, wanted + WINDOW + 10);
       this.course = makeCourse(this.seed, longer);
       this.segments = buildCourseSegments(this.course).segments;
+      /*
+       * Reindex the terrain here, not only in `publish`. The build below is
+       * handed this same terrain to consult, and it asks it which ground is
+       * road - so a terrain that still describes the shorter course answers for
+       * sections that no longer end where it thinks. Measured: a couple of props
+       * per course landed differently at the growth seam. Only on a grow step,
+       * which is once every twenty sections, so it costs nothing per window.
+       */
+      this.world.terrain.reset(this.segments);
       // Section boundaries moved; everything that asks which section a distance
       // falls in has to be looking at this generation.
       setActiveCourse(this.course);

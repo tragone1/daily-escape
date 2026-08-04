@@ -53,8 +53,18 @@ const pick = (re, label) => {
 const styles = asciiHtml(pick(/<style>([\s\S]*?)<\/style>/, "<style> block"));
 const body = asciiHtml(
   pick(/<body>([\s\S]*?)<\/body>/, "<body> content")
-    // Drop the module script tag; the bundle is inlined below instead.
-    .replace(/<script[\s\S]*?<\/script>/g, "")
+    /*
+     * Drop only script tags with a SRC; the bundle is inlined below instead.
+     *
+     * This used to strip every script in the body on the assumption that the
+     * module tag was the only one there. Vite hoists that tag into <head>, so
+     * the body's one remaining script is the inline boot diagnostics - and this
+     * was deleting it: `window.__bootError`, the error and unhandledrejection
+     * handlers, and the watchdog that reports a bundle which never ran. The
+     * artifact could therefore fail with a blank screen and no way to say so,
+     * which is the one situation those diagnostics exist for.
+     */
+    .replace(/<script\b[^>]*\bsrc=[^>]*><\/script>/gi, "")
     .trim(),
 );
 
@@ -76,10 +86,6 @@ ${styles}
 
 ${body.replace('id="buildStamp">', `id="buildStamp">${stamp}`)}
 
-
-
-<script>
-
 <script>
 ${safeJs}
 </script>
@@ -93,6 +99,30 @@ ${safeJs}
  * enough to break the invariant the whole fragment relies on, and nothing else would have
  * caught it, so assert on the actual bytes going out.
  */
+/*
+ * The bundle must actually be able to run, and the boot diagnostics must have
+ * survived.
+ *
+ * Both of these shipped broken and neither was noticed: a duplicated opening
+ * tag meant the parser read `<script>` as the first characters of the script
+ * itself and threw a SyntaxError, and the body strip above removed the only
+ * code that could have reported it. Structural mistakes in this template are
+ * invisible in a diff and silent at runtime, so they are asserted here.
+ */
+const opens = (out.match(/<script\b/gi) ?? []).length;
+const closes = (out.match(/<\/script>/gi) ?? []).length;
+if (opens !== closes) {
+  throw new Error(`Unbalanced script tags in the artifact: ${opens} open, ${closes} close.`);
+}
+for (const needle of ["__bootError", "The game code did not run"]) {
+  if (!out.includes(needle)) {
+    throw new Error(
+      `The artifact lost its boot-error surface (missing ${JSON.stringify(needle)}). ` +
+        "Without it a failed load is a blank screen with no message.",
+    );
+  }
+}
+
 const stray = out.match(/[^\x00-\x7F]/);
 if (stray) {
   const at = out.indexOf(stray[0]);

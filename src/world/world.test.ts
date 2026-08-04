@@ -112,6 +112,64 @@ describe("every generated course", () => {
   });
 });
 
+/**
+ * A barrier has to lie along the thing it is closing.
+ *
+ * The boundary is sealed by short blocks, chained to their neighbours where
+ * they have one. Any piece that runs across the boundary instead of along it
+ * leaves a stub poking out of an otherwise flush face, and beside the smooth
+ * wall rail that is a corner with two prongs and a pocket between them - a car
+ * that clips it wedges instead of sliding off. The chained pieces already
+ * refuse to form more than about fifty degrees off the road; a piece that never
+ * found a partner was exempt from that rule and was laid pointing at world
+ * north regardless of which way its wall ran, which put the median one 46
+ * degrees across its own boundary and the worst of them 90.
+ */
+describe("the boundary seal", () => {
+  it("lays its lone pieces along their walls, not across them", () => {
+    /*
+     * A POPULATION, not a worst case, and deliberately so.
+     *
+     * A lone piece is one that found nobody to chain to, so a handful of them
+     * genuinely do sit by themselves against a wall they meet at a right angle -
+     * at an alley mouth that is the correct place for one to be, and no bar on
+     * the worst single piece can tell that apart from a stub. What the defect
+     * did was tilt EVERY piece, so it shows up in the middle of the
+     * distribution and nowhere else: measured over these seeds the median piece
+     * sat 32.8 degrees across the nearest wall that agreed with it best, and
+     * with the heading taken from the boundary it was built on that falls to
+     * 1.4. The top of the distribution is almost unchanged - 89.7 to 84.3 -
+     * which is exactly the signature of a fix that moved the rule and not the
+     * geometry of the odd genuine corner.
+     */
+    const off: number[] = [];
+    for (const seed of SEEDS) {
+      const { colliders } = build(seed);
+      const lone = colliders.filter((c) => c.source === "sealLone");
+      const fence = colliders.filter(
+        (c) => c.source === "wallRail" || c.source === "sealLink" || c.source === "sealLone",
+      );
+      for (const c of lone) {
+        let best = Infinity;
+        for (const f of fence) {
+          if (f === c) continue;
+          if (Math.hypot(f.obb.x - c.obb.x, f.obb.z - c.obb.z) > 6) continue;
+          // A block is symmetric about its long axis, so half a turn is no turn.
+          let d = Math.abs(wrap(c.obb.heading - f.obb.heading));
+          if (d > Math.PI / 2) d = Math.PI - d;
+          if (d < best) best = d;
+        }
+        // Nothing within reach to form a corner with, so nothing to snag on.
+        if (Number.isFinite(best)) off.push(best * (180 / Math.PI));
+      }
+    }
+    // If these stop being emitted the test must not quietly pass on nothing.
+    expect(off.length).toBeGreaterThan(500);
+    off.sort((a, b) => a - b);
+    expect(off[off.length >> 1]).toBeLessThan(10);
+  });
+});
+
 describe("the course as a whole", () => {
   it("is deterministic for a given seed", () => {
     const a = makeCourse(4242);

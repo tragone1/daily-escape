@@ -116,9 +116,17 @@ function chase(steps: number, startSection = 0): ChaseRun {
  * player. That is a deliberate behaviour change, so the value moved with it -
  * the cars really do go somewhere different now. Anything that moves this
  * value WITHOUT intending to has changed the pursuit by accident.
+ *
+ * Re-taken again when the lone boundary seal was turned to lie along its own
+ * wall instead of pointing at world north. That moves collision geometry, so
+ * the chase was always going to land somewhere slightly different - and it did,
+ * for exactly one car of the seven, by half a unit, at an identical speed. The
+ * other six are unchanged to the digit, which is the shape a one-collider fix
+ * should have; a rotation that had disturbed the pursuit itself would not have
+ * left six cars sitting on their old coordinates.
  */
 const BASELINE =
-  "7|patrol:-10.4:81.7:21.4,patrol:-159.4:152.7:45.6,patrol:-20.6:20.5:23.9," +
+  "7|patrol:-10.4:81.7:21.4,patrol:-158.9:152.4:45.6,patrol:-20.6:20.5:23.9," +
   "patrol:-45.0:25.0:35.8,patrol:-62.1:70.4:21.6,patrol:-71.2:59.9:35.7," +
   "patrol:-76.7:98.6:21.9";
 

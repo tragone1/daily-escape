@@ -2047,7 +2047,15 @@ function sealBoundary(
    */
   const placed = new Set<string>();
   /** Patch pieces laid this build; linked into one barrier at the end. */
-  const sealPieces: { x: number; z: number; top: number }[] = [];
+  /*
+   * `heading` is the direction the boundary runs at this piece, which is the
+   * one thing a lone piece needs later and cannot recover on its own: the
+   * segment nearest a point out on the boundary is not reliably the segment
+   * whose edge put it there - at a spur mouth it is the spur, square across the
+   * wall - so re-deriving it from position produced pieces laid at right angles
+   * to the fence they belong to.
+   */
+  const sealPieces: { x: number; z: number; top: number; heading: number }[] = [];
   const piece = (
     x: number,
     z: number,
@@ -2123,7 +2131,7 @@ function sealBoundary(
      * degrees stopped a car dead. They are scenery now; the barrier a car
      * touches is the chained rail built after every piece is placed.
      */
-    sealPieces.push({ x: px, z: pz, top: groundY + height });
+    sealPieces.push({ x: px, z: pz, top: groundY + height, heading });
   };
 
   /*
@@ -2307,7 +2315,24 @@ function sealBoundary(
           Math.min(a.top, b.top) - 14,
         );
       }
-      if (made === 0) addCollider(colliders, a.x, a.z, 1.9, 0.75, 0, a.top, "sealLone", a.top - 14);
+      /*
+       * A piece with no neighbour to chain to still has to lie ALONG the
+       * boundary, which is the one thing this used to get wrong: the heading
+       * was a hard zero, so a 3.8-long block landed pointing down world north
+       * whatever direction the wall beside it ran. Measured across a built
+       * course, the median lone piece sat 46 degrees across its own wall and
+       * the worst sat 90 - a stub jutting nearly two units out of an otherwise
+       * flush face. Beside the smooth rail that is what a corner with two
+       * prongs and a pocket between them is made of, and a car that clips it
+       * does not slide off, it wedges.
+       *
+       * The links a line above already refuse to form more than about fifty
+       * degrees off the road direction, for exactly this reason. This is the
+       * same rule applied to the pieces that never found a partner.
+       */
+      if (made === 0) {
+        addCollider(colliders, a.x, a.z, 1.9, 0.75, a.heading, a.top, "sealLone", a.top - 14);
+      }
     }
   }
 

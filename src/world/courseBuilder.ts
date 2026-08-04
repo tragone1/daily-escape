@@ -237,8 +237,21 @@ function enforceRacingLine(
 ): number {
   const CAR = 1.05;
   const MIN_LANE = MIN_LANE_WIDTH;
-  const STATION = 2;
-  const LATERAL = 0.25;
+  /*
+   * Sampling resolution.
+   *
+   * This sweep was half the cost of building a streamed window - 19.6ms of a
+   * 38ms build, against a 16.7ms frame - because it tested every two units
+   * along the road by every quarter unit across it, about forty-two thousand
+   * points per window.
+   *
+   * Coarsened deliberately. The figure it produces is compared against a
+   * minimum lane of 7.5 units, so half-unit resolution is far finer than the
+   * decision needs, and a station every three units cannot hide an obstacle:
+   * nothing this removes is smaller than a car.
+   */
+  const STATION = 3;
+  const LATERAL = 0.5;
 
   const propOf = new Map<StaticCollider, PlacedProp>();
   for (const pr of props) propOf.set(pr.collider, pr);
@@ -410,9 +423,32 @@ export function buildWorld(
   into?: StaticCollider[],
   /** Namespace for this build's geometry, so a window can be released later. */
   chunkPrefix = "world",
+  /**
+   * Segments and terrain that already exist, to be consulted rather than rebuilt.
+   *
+   * A streamed build emits two sections but has to CONSULT the whole course,
+   * and it used to obtain that by rebuilding all of it: every segment, then a
+   * fresh terrain grid over them, on every window. That is O(whole course) work
+   * to produce O(two sections) of geometry - and it grew as the course did, so
+   * the hitch got worse the longer the run lasted. Measured at 37ms of CPU per
+   * window against a 16.7ms frame.
+   *
+   * The streamer already holds both, and they are the same objects this would
+   * have produced, so handing them over is not a shortcut - it is not doing
+   * the work twice.
+   */
+  reuse?: { segments: CourseSegment[]; terrain: Terrain },
 ): BuiltWorld {
-  const { segments } = buildCourseSegments(course);
-  const terrain = new Terrain(segments);
+  const PROF = (globalThis as unknown as { __profBuild?: Record<string, number> }).__profBuild;
+  let _t = performance.now();
+  const mark = (k: string): void => {
+    if (!PROF) return;
+    PROF[k] = (PROF[k] ?? 0) + (performance.now() - _t);
+    _t = performance.now();
+  };
+  const segments = reuse?.segments ?? buildCourseSegments(course).segments;
+  const terrain = reuse?.terrain ?? new Terrain(segments);
+  mark("segments+terrain");
   const colliders: StaticCollider[] = into ?? [];
   /** Every withdrawable block, for the racing-line check once the world is whole. */
   const props: PlacedProp[] = [];
@@ -467,9 +503,13 @@ export function buildWorld(
   // --- The spine: continuous ribbon ground + decor ------------------------
   const spineSlices = segments.filter((sg) => !sg.branch && !sg.overlay);
   buildSpineRibbons(r, spineSlices, scope);
+  mark("ribbons");
   buildSpineDecor(r, spineSlices, colliders, segments, props, scope);
+  mark("decor");
   buildSpineWallLines(r, spineSlices, colliders, wallShades, segments, scope, terrain);
+  mark("wallLines");
   cliffRailPass(r, spineSlices, colliders, scope, terrain);
+  mark("cliffRails");
 
   // --- Branches and overlays: short straight pieces, box-built as before ---
   for (const seg of segments) {
@@ -724,12 +764,14 @@ export function buildWorld(
   }
 
   sealBoundary(r, segments, colliders, wallShades, terrain, scope);
+  mark("sealBoundary");
 
   /*
    * Last, once every wall, cap and block exists: prove the road is drivable end
    * to end, and withdraw whatever is not.
    */
   const withdrawn = enforceRacingLine(segments, colliders, props, scope);
+  mark("racingLine");
 
   // No gate: endless mode has no finish to build.
 
@@ -745,6 +787,7 @@ export function buildWorld(
    * release, which is what streaming needs.
    */
   bakeInChunks(r, segments, chunkPrefix);
+  mark("bake");
 
   return {
     segments,

@@ -35,13 +35,14 @@ import type { Terrain } from "./terrain";
 /**
  * Sections built in one go.
  *
- * This is a frame budget, and four was too many: a window build measured 168ms
- * in the long-run test, which is a visible stutter roughly every thirteen
- * seconds of play. Two halves the hitch for twice the frequency, which is the
- * better trade - a small regular cost is far less noticeable than an
- * occasional large one, and the work per section is the same either way.
+ * This is a frame budget, and it has been cut twice. Four measured 168ms; two
+ * measured 38ms once the sweep inside it was profiled and coarsened; one puts
+ * the build under a single 16.7ms frame, which is the only figure that
+ * actually matters - a hitch you cannot see is not a hitch. The work per
+ * section is identical either way, so the only cost of going smaller is doing
+ * it more often.
  */
-const WINDOW = 2;
+const WINDOW = 1;
 /**
  * How far ahead of the player the road must already exist.
  *
@@ -152,6 +153,8 @@ export class WorldStream {
       emitSections(from, to),
       this.colliders,
       `w${id}`,
+      // Consult the course we already have rather than rebuilding all of it.
+      { segments: this.segments, terrain: this.world.terrain },
     );
     // Tag what this window added, so releasing it takes its own and no more.
     for (let i = before; i < this.colliders.length; i++) this.colliders[i].window = id;

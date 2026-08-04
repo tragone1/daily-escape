@@ -377,6 +377,45 @@ export class CollisionWorld {
       (friendly ? c.policeImpulseScale : 1) *
       (settling ? c.pinShoveScale : 1);
     const bounce = jammed ? 0 : settling ? c.pinRestitution : c.restitution;
+
+    /*
+     * THE SCRAPE - what a glancing blow costs.
+     *
+     * Everything below the elastic response is charged against `vn`, the speed
+     * closing along the contact normal. In a side-swipe that normal points
+     * across the road while both cars are travelling along it, so `vn` is
+     * almost zero: a graze cost nothing at all and the two cars slid through
+     * each other. This charges for the other component - the speed sliding
+     * ALONG the contact, which is precisely what a graze is.
+     *
+     * Applied on any overlap, whether the pair is closing or separating, and
+     * scaled by how deep the contact is so a kiss is not a crash. Damped while
+     * a pin is settling, for the same reason the shove is: a stationary player
+     * should be held, not scrubbed.
+     */
+    if (!jammed) {
+      const tx = -hit.nz;
+      const tz = hit.nx;
+      const vt = rvx * tx + rvz * tz;
+      /*
+       * How much of the car is actually in it. Measured against a fixed half
+       * metre rather than the car's own width: a clip of a third of a unit is
+       * two thirds of a car's width of overlap on nothing, but it is a solid
+       * hit on a corner, and scaling by the full width made every edge contact
+       * read as a graze worth almost nothing.
+       */
+      const bite = Math.min(1, hit.depth / c.grazeBiteDepth);
+      const scrape =
+        c.carScrapeLoss * bite * (friendly ? c.policeImpulseScale : 1) * (settling ? c.pinShoveScale : 1);
+      // Take it off the sliding component only, so a head-on is unchanged -
+      // its relative motion is along the normal, not across it.
+      const dvt = vt * clamp(scrape, 0, 1);
+      a.vx -= tx * dvt * shareA;
+      a.vz -= tz * dvt * shareA;
+      b.vx += tx * dvt * shareB;
+      b.vz += tz * dvt * shareB;
+    }
+
     if (vn < 0) {
       const j = (-vn * (1 + bounce) + shove) / total;
       a.vx += hit.nx * j * mb;
@@ -410,12 +449,24 @@ export class CollisionWorld {
         };
       }
     } else {
-      // Already separating but still overlapping — just push apart gently.
-      const j = shove * 0.3;
+      /*
+       * Overlapping without closing - the side-swipe. It used to be a polite
+       * nudge that left both cars at full speed; now it throws you off the
+       * car you touched, which is the difference between clipping a police
+       * cruiser and driving through one.
+       */
+      const j = (jammed ? shove * 0.3 : Math.max(shove * 0.3, c.carGrazeShove)) *
+        (settling ? c.pinShoveScale : 1);
       a.vx += hit.nx * j * shareA;
       a.vz += hit.nz * j * shareA;
       b.vx -= hit.nx * j * shareB;
       b.vz -= hit.nz * j * shareB;
+
+      // A scrape is still a hit: it deserves the sound, the shake and the shove.
+      const slide = Math.abs(rvx * -hit.nz + rvz * hit.nx);
+      if (!jammed && !settling && slide > c.minImpactSpeed) {
+        return { speed: slide, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, kind: "car" };
+      }
     }
 
     return null;

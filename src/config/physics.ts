@@ -33,6 +33,37 @@ export const PHYSICS_CONFIG = {
     /** Fraction of speed lost when cars trade paint. */
     carSpeedLoss: 0.3,
     /**
+     * What a GLANCE costs.
+     *
+     * The elastic response only ever charged for the closing speed along the
+     * contact normal - and in a side-swipe that normal points across the road
+     * while both cars travel along it, so the normal component is near zero.
+     * Measured: a head-on at any offset up to 1.5 cost 34% of the player's
+     * speed, and at 1.8 - still a real overlap - it cost exactly nothing and
+     * the cars slid through each other. This is the missing half: the speed
+     * lost to scraping ALONG the contact, which is what a graze actually is.
+     *
+     * Deliberately punchy. Touching a police car at speed should be a thing
+     * you drive to avoid, not a thing you shrug off.
+     */
+    carScrapeLoss: 1.0,
+    /**
+     * The shove a graze gets even when nothing is closing.
+     *
+     * Without it a car can rest inside your flank contributing nothing. This
+     * is what makes you bounce off rather than merge.
+     */
+    carGrazeShove: 11,
+    /**
+     * Overlap at which a scrape counts for everything it can.
+     *
+     * Half a unit, not a car width. A corner clip is a shallow overlap by
+     * definition, and measuring it against the whole car meant the contacts a
+     * player actually makes - the ones on the edge - were scored as almost
+     * nothing.
+     */
+    grazeBiteDepth: 0.5,
+    /**
      * Below this player speed, car-on-car contact settles instead of bouncing.
      *
      * The fixed shove exists so that contact during a chase reads as forceful. Against a

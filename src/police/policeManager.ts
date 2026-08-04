@@ -47,6 +47,8 @@ export class PoliceManager {
   private speedBonus = -1;
   private aggro = 0;
   private boxTimer = 0;
+  /** Seconds of encirclement urgency left after the player was last hit. */
+  private pounce = 0;
   /** Section the director last ran for; gates how hard placement tries. */
   private effortSection = 0;
 
@@ -228,6 +230,7 @@ export class PoliceManager {
     }
 
     this.boxTimer -= dt;
+    this.pounce = Math.max(0, this.pounce - dt);
     const boxCfg = CONFIG.police.shared.box;
     // Converting a stop: reassign continuously so the seal tracks the scrum.
     // Both the trigger speed and the cadence sharpen with the sections.
@@ -486,6 +489,55 @@ export class PoliceManager {
    * Rigs, traps and anything mid-charge are left out: they have jobs that a station
    * would only interrupt.
    */
+  /**
+   * Close the angles nobody is covering.
+   *
+   * The arrest is measured as directions blocked around the player, and a
+   * pursuit naturally occupies one of them - everybody is behind you. This
+   * finds the compass wedges that are empty and sends the nearest cars to
+   * them, which is the difference between a queue and a box.
+   *
+   * Returns player-relative stations so the rest of the box machinery drives
+   * them exactly as it drives any other, and returns null when there is
+   * nothing to do so the ordinary formation takes over untouched.
+   */
+  private encircleSlots(ctx: PursuitContext): Array<{ x: number; z: number }> | null {
+    const enc = CONFIG.police.shared.box.encircle;
+    const run = CONFIG.run;
+    const player = ctx.player;
+    const speed = Math.hypot(player.vx, player.vz);
+    if (speed > enc.fromSpeed && this.pounce <= 0) return null;
+
+    // Which wedges already have somebody in them, by the same measure the
+    // arrest itself uses - so this closes the gaps that actually count.
+    const sectors = run.enclosureSectors;
+    const covered = new Array<boolean>(sectors).fill(false);
+    const r2 = run.enclosureRadius * run.enclosureRadius;
+    for (const u of this.units) {
+      if (!u.active || u.destroyed) continue;
+      const dx = u.vehicle.x - player.x;
+      const dz = u.vehicle.z - player.z;
+      if (dx * dx + dz * dz > r2) continue;
+      let a = Math.atan2(dx, dz) / (Math.PI * 2);
+      a -= Math.floor(a);
+      covered[Math.min(sectors - 1, Math.floor(a * sectors))] = true;
+    }
+
+    const right = rightOf(player.heading);
+    const fwd = forwardOf(player.heading);
+    const slots: Array<{ x: number; z: number }> = [];
+    for (let i = 0; i < sectors && slots.length < enc.maxUnits; i++) {
+      if (covered[i]) continue;
+      // Middle of the empty wedge, at a radius inside the one the pin is judged at.
+      const bearing = ((i + 0.5) / sectors) * Math.PI * 2;
+      const wx = Math.sin(bearing) * enc.radius;
+      const wz = Math.cos(bearing) * enc.radius;
+      // World offset back into the player-relative frame the stations use.
+      slots.push({ x: wx * right.x + wz * right.z, z: wx * fwd.x + wz * fwd.z });
+    }
+    return slots.length > 0 ? slots : null;
+  }
+
   private assignBox(ctx: PursuitContext): void {
     const cfg = CONFIG.police.shared.box;
     const player = ctx.player;
@@ -572,6 +624,35 @@ export class PoliceManager {
       return 8;
     };
     const taken = new Set<PoliceCar>();
+
+    /*
+     * A slowed player gets the empty angles closed FIRST.
+     *
+     * These are filled before the ordinary formation so the cars nearest to a
+     * gap go to it; whatever is left over then takes the usual stations, which
+     * is what keeps the chase from emptying out behind you.
+     */
+    const encircle = this.encircleSlots(ctx);
+    if (encircle) {
+      for (const slot of encircle) {
+        const wx = player.x + right.x * slot.x + fwd.x * slot.z;
+        const wz = player.z + right.z * slot.x + fwd.z * slot.z;
+        let best: PoliceCar | null = null;
+        let bestD = Infinity;
+        for (const u of available) {
+          if (taken.has(u)) continue;
+          const d = Math.hypot(u.vehicle.x - wx, u.vehicle.z - wz);
+          if (d < bestD) {
+            bestD = d;
+            best = u;
+          }
+        }
+        if (!best) break;
+        taken.add(best);
+        best.boxSlot = slot;
+      }
+    }
+
     for (const slot of order) {
       const wx = player.x + right.x * slot.x + fwd.x * slot.z;
       const wz = player.z + right.z * slot.x + fwd.z * slot.z;
@@ -1226,6 +1307,23 @@ export class PoliceManager {
    * `wallAssist`, which exist because the naive version of this made every narrow street
    * an arrest.
    */
+  /**
+   * The player just took a hit from a car.
+   *
+   * Opens the pounce window: for the next few seconds the squad closes the
+   * angles around them rather than chasing. Nothing reacted to a hit before
+   * this, which is exactly why taking one did not matter - your speed dropped
+   * and the pursuit carried on unchanged.
+   */
+  notePlayerHit(): void {
+    this.pounce = CONFIG.police.shared.box.encircle.pounceTime;
+  }
+
+  /** True while the squad is actively trying to close the box. */
+  get encircling(): boolean {
+    return this.pounce > 0;
+  }
+
   enclosure(x: number, z: number, collision?: CollisionWorld): number {
     const run = CONFIG.run;
     const sectors = run.enclosureSectors;

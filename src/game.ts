@@ -539,6 +539,12 @@ export class Game {
         }
         this.player.recoveryTimer = Math.max(this.player.recoveryTimer, rec.boostTime);
       }
+      /*
+       * Tell the squad. A hit is the moment the player is slowest and most
+       * out of shape, and until now nothing acted on it - which is why taking
+       * one did not matter.
+       */
+      if (strongest.kind === "car") this.police.notePlayerHit();
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
       // Barely a flicker. Contact is now near-constant by design, and at the old weight
       // the screen sat under a permanent white veil for the whole back half of a run.

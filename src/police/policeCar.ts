@@ -11,7 +11,7 @@
 import type { Renderer } from "../gfx/renderer";
 
 import { CONFIG, type PoliceRole } from "../config";
-import { clamp, dist, forwardOf, headingOf, wrapAngle } from "../math";
+import { clamp, dist, forwardOf, headingOf, rightOf, wrapAngle } from "../math";
 import { CarView, policeStyle } from "../vehicle/carView";
 import { Vehicle, type VehicleInput } from "../vehicle/vehicle";
 import type { NavGraph, NavNode } from "../world/navGraph";
@@ -1226,9 +1226,21 @@ export class PoliceCar {
        * along from the rear. Until it is in position it runs free — overtaking is the job.
        */
       const f = forwardOf(ctx.player.heading);
-      const lead = (v.x - ctx.player.x) * f.x + (v.z - ctx.player.z) * f.z;
+      const r = rightOf(ctx.player.heading);
       const wantsFront = this.boxSlot.z > 0;
-      const inPosition = wantsFront ? lead > this.boxSlot.z * 0.6 : lead < this.boxSlot.z * 0.6 + 2;
+      /*
+       * ...and reaching it means reaching it, not merely drawing level.
+       *
+       * The along-road test alone had the same fault one axis over: a unit
+       * given a SIDE station counted as in position the moment its lead was
+       * right, however far out to the side it still was - and the pace cap
+       * then stopped it ever closing that gap. It trailed alongside at 1.12x
+       * the player's speed indefinitely, which is why a slowed player was
+       * never actually surrounded.
+       */
+      const sx = ctx.player.x + r.x * this.boxSlot.x + f.x * this.boxSlot.z;
+      const sz = ctx.player.z + r.z * this.boxSlot.x + f.z * this.boxSlot.z;
+      const inPosition = dist(v.x, v.z, sx, sz) < box.inPositionRadius;
       // The floor never exceeds the player's own pace by more than a little, so against
       // a stopped player the box comes to rest around them instead of milling through.
       const floor = Math.min(box.minPace, ctx.player.speed + box.paceOverrun);

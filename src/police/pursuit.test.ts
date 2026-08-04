@@ -112,16 +112,15 @@ function chase(steps: number, startSection = 0): ChaseRun {
 /*
  * A fingerprint of the chase, to refactor against.
  *
- * Re-taken when the harness was corrected: it had been feeding the director
- * the DAILY course's alleys while running a different course, so no car ever
- * seated an ambush and the whole alley path went unexercised. That is the same
- * blind spot that let a broken alley launch through during the juggernaut
- * deletion, so the value moved deliberately and the coverage is asserted below.
+ * Re-taken when the squad was taught to close the angles around a slowed
+ * player. That is a deliberate behaviour change, so the value moved with it -
+ * the cars really do go somewhere different now. Anything that moves this
+ * value WITHOUT intending to has changed the pursuit by accident.
  */
 const BASELINE =
-  "7|patrol:-159.4:152.7:45.6,patrol:-19.2:23.0:23.9,patrol:-44.5:38.7:21.8," +
-  "patrol:-46.5:27.4:34.4,patrol:-65.2:72.5:21.7,patrol:-74.2:64.4:35.3," +
-  "patrol:-77.4:99.0:22.1";
+  "7|patrol:-10.4:81.7:21.4,patrol:-159.4:152.7:45.6,patrol:-20.6:20.5:23.9," +
+  "patrol:-45.0:25.0:35.8,patrol:-62.1:70.4:21.6,patrol:-71.2:59.9:35.7," +
+  "patrol:-76.7:98.6:21.9";
 
 describe("the pursuit", () => {
   it("is unchanged by refactoring", () => {

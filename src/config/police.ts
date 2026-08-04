@@ -284,7 +284,13 @@ export const POLICE_CONFIG = {
          * from behind. This is what turns a successful drift-stop into a box
          * instead of an escape.
          */
-        convertSpeed: 12,
+        /*
+         * Raised from 12. This is the speed below which the pack stops chasing
+         * and starts arresting - and at twelve it only ever engaged on a player
+         * who had already almost stopped, which is the thing it was supposed to
+         * cause. Being knocked to twenty now counts.
+         */
+        convertSpeed: 26,
         convertInterval: 0.25,
         /**
          * The MENACING UPTICK, from section ten on: the arrest reflex fires at
@@ -293,7 +299,7 @@ export const POLICE_CONFIG = {
          * player off. Solid from round one; frightening deep.
          */
         convertSpeedPerSection: 0.65,
-        convertSpeedMax: 22,
+        convertSpeedMax: 34,
         convertIntervalMin: 0.12,
         /**
          * From this section (0-indexed; 9 = round ten) the box fills its pure
@@ -367,6 +373,52 @@ export const POLICE_CONFIG = {
          * seconds afterwards, while everything that was chasing you gets to arrive and
          * stand somewhere you needed to be.
          */
+        /**
+         * ENCIRCLEMENT.
+         *
+         * The pack strings out behind a fleeing player, and cars in a line all
+         * share one compass bearing - so eight chasers can be a single blocked
+         * direction while the arrest needs four. Measured: held at 18 u/s with
+         * the full squad on you, the average was 1.5 directions and the meter
+         * never moved. No threshold tuning fixes that, because the cars are
+         * simply not there; tried, and stacking four dials still peaked the
+         * meter at 0.21.
+         *
+         * So when you are slowed, the nearest units stop chasing and go to the
+         * directions nobody is covering. Being slow is what makes it dangerous,
+         * not driving hard - keep your speed up and none of this engages.
+         */
+        encircle: {
+          /** At or below this speed the pack starts closing the empty angles. */
+          fromSpeed: 26,
+          /**
+           * Seconds of maximum urgency after the player is hit.
+           *
+           * Nothing used to react to a hit at all: a head-on or a slide block
+           * shaved your speed and the squad carried on as before, which is why
+           * taking one did not matter. Now it opens the window in which they
+           * try hardest to close the box.
+           */
+          pounceTime: 4,
+          /** How far out an encircling car sits. Inside the pin radius of 15. */
+          radius: 11.5,
+          /** Most units pulled onto this at once, so the chase does not empty out. */
+          maxUnits: 6,
+        },
+
+        /**
+         * How close a unit must be to its station before it paces off you.
+         *
+         * Judged on the whole distance, not just the along-road part. That was
+         * a real bug with the same shape as the one the comment in policeCar
+         * describes: a car given a SIDE station counted as in position the
+         * moment it drew level, however far out it was, and its speed was then
+         * capped at 1.12x yours - so it trailed alongside forever and never
+         * closed. Measured at a held 16 u/s, stations sat 20 to 85 units away
+         * and shrank by about 6 u/s over nine seconds.
+         */
+        inPositionRadius: 5.5,
+
         slowPlayerSpeed: 22,
         slowPressBonus: 0.55,
         /**

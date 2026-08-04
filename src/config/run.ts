@@ -69,7 +69,19 @@ export const RUN_CONFIG = {
      */
     enclosureRadius: 15,
     enclosureSectors: 8,
-    minSectorsToPin: 3,
+    /*
+     * Three directions, not four.
+     *
+     * Four of eight world-space wedges is close to unreachable against a
+     * player who is still moving: the road is under twenty units wide, so the
+     * side wedges at this radius are inside the barriers, and a pursuit
+     * naturally occupies one bearing behind you. Measured at a held 18 u/s
+     * with the whole squad engaged, the average was under two. At three the
+     * curve is the one this is meant to have - stopped is fatal in seven
+     * seconds, crawling in fifteen, and anything above about twenty-five is
+     * still completely free.
+     */
+    minSectorsToPin: 2,
     /**
      * Wedges at which the meter runs flat out.
      *
@@ -117,7 +129,20 @@ export const RUN_CONFIG = {
        * full seal keeps the fix aimed at its actual case — nowhere left to go — instead
        * of at ordinary driving near a building.
        */
-      escapeArc: 0,
+      /*
+       * One wedge, not zero.
+       *
+       * At zero this never fired at all: it demanded that all eight wedges be
+       * blocked before geometry counted, and if all eight are blocked the cars
+       * have already won without help. So the case it exists for - held
+       * against a building by three cars, which is three wedges and a wall -
+       * scored three and drained. One open wedge is still a pin: at fifteen
+       * units that is a gap about a car and a half wide, flanked on both
+       * sides, which is a thing to be threaded under pressure rather than a
+       * road. Two or more remains a way out, so an ordinary narrow street with
+       * the way ahead clear still counts for nothing.
+       */
+      escapeArc: 1,
       /**
        * Most wedges walls may ever contribute.
        *
@@ -127,7 +152,13 @@ export const RUN_CONFIG = {
        */
       maxSectors: 2,
     },
-    captureSpeed: 17,
+    /*
+     * Raised from 17. Being knocked to twenty is being slowed, and the meter
+     * could not move at all above the old figure however surrounded you were -
+     * so the speeds a hit actually leaves you at were exactly the speeds the
+     * arrest ignored.
+     */
+    captureSpeed: 23,
     /**
      * Cars inside the radius before the threshold starts rising at all.
      *
@@ -143,7 +174,13 @@ export const RUN_CONFIG = {
      * wipes out four seconds of being buried. 1.6: fighting out of a half-built box
      * should visibly rewind the meter, or the fight never feels worth having.
      */
-    captureRecovery: 1.6,
+    /*
+     * Lowered from 1.6. Escaping drained the meter faster than being pinned
+     * filled it, so a brief box then a squeeze out erased the whole episode -
+     * pressure never accumulated across a bad patch. Breaking free still
+     * relieves it, just not retroactively.
+     */
+    captureRecovery: 1.1,
     /**
      * Inward acceleration applied to a player outside the ribbon, u/s^2. The physical
      * guarantee behind the wall geometry - see `Game.pushBackOnCourse`.

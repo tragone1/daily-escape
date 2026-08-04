@@ -267,10 +267,22 @@ export class CarView {
     this.root.rotation.x = this.groundPitch;
     this.root.rotation.z = this.groundRoll;
 
-    // The contact shadow stays on the ground when the car leaves it, and stays flat.
+    /*
+     * The contact shadow stays on the ground when the car leaves it, and lies
+     * on the slope rather than level with the world.
+     *
+     * It used to cancel the attitude just applied to the root, which left the
+     * plane horizontal in world space - and a horizontal plane five units deep
+     * clips straight through a road that is not. On a gradient one end of the
+     * shadow sank into the tarmac and the other floated off it, on the very
+     * surface it is supposed to be lying against. Inheriting the root's
+     * attitude is what puts it ON the road: `climb` and `bank` are the terrain
+     * gradient along the car's own axes, so the root is already carrying the
+     * surface's tilt and the shadow only has to stop undoing it.
+     */
     this.shadow.position.y = groundY - vehicle.y + 0.12;
-    this.shadow.rotation.x = -this.groundPitch;
-    this.shadow.rotation.z = -this.groundRoll;
+    this.shadow.rotation.x = 0;
+    this.shadow.rotation.z = 0;
 
     if (this.wrecked) {
       // Sunk to the sills: the player can drive through a hulk, so it has to read as

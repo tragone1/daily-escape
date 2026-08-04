@@ -73,7 +73,8 @@ export class PickupSystem {
       const z = seg.az + seg.dz * along - seg.dx * lateral;
       // Height sampled AT the final point, not at the one it started from -
       // which is what left one half buried in the side of an uphill ramp.
-      const y = terrain.heightAt(x, z);
+      const ground = terrain.sample(x, z);
+      const y = ground.height;
 
       const mesh = buildRocketMesh(r, 2.1, 0.8);
       mesh.position.set(x, y + 3.0, z);
@@ -84,6 +85,22 @@ export class PickupSystem {
         { color: [1, 0.5, 0.15], emissive: 1, alpha: 0.22 },
       );
       halo.position.set(x, y + 0.25, z);
+      /*
+       * Lie the ring ON the road. It is twelve units across and was held level
+       * with the world, so on a slope it cut straight into the tarmac: at a
+       * gradient of 0.24 the uphill rim sat a full unit under the surface and
+       * about half the glow was inside the road.
+       *
+       * The spike strip solves the same problem at hazards.ts, but its formula
+       * cannot be copied here - it is written in the strip's own yawed frame and
+       * only works because the strip sets rotation.y first. The ring never sets
+       * a yaw, and a disc has no meaningful one, so the tilt is taken straight
+       * from the world-axis gradients instead. With the composed rotation being
+       * Ry*Rx*Rz and no yaw, these two put the disc's axis exactly on the
+       * surface normal (-gradX, 1, -gradZ).
+       */
+      halo.rotation.x = -Math.atan(ground.gradZ);
+      halo.rotation.z = Math.atan(ground.gradX / Math.hypot(1, ground.gradZ));
 
       this.items.push({ kind: "rocket", x, z, y, taken: false, mesh, halo });
       return;

@@ -128,6 +128,29 @@ describe("per-address rate limiting", () => {
     }
   });
 
+  it("lets scores through if its own table is missing", async () => {
+    /*
+     * Migration 0002 creates the table this writes to. If a deployment goes out
+     * before that migration is applied, the limiter must not take the score
+     * submission down with it: spam is a nuisance, a leaderboard that rejects
+     * every legitimate score is an outage.
+     */
+    const noTable = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          first(): Promise<never> {
+            return Promise.reject(new Error("D1_ERROR: no such table: rate_limits"));
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const v = await checkRateLimit(noTable, from("203.0.113.5"), "2026-08-03");
+    expect(v.allowed).toBe(true);
+  });
+
   it("counts a burst exactly once each, with no double-spend", async () => {
     /*
      * The upsert has to be atomic. Written as a SELECT then an UPDATE, a burst

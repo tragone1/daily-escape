@@ -82,14 +82,38 @@ export async function checkRateLimit(
    * atomically; doing this as a SELECT then an UPDATE is the classic way to
    * make a limiter that lets a burst straight through.
    */
-  const row = await db
-    .prepare(
-      `INSERT INTO rate_limits (bucket, hits, expires_at) VALUES (?, 1, ?)
-         ON CONFLICT(bucket) DO UPDATE SET hits = hits + 1
-       RETURNING hits`,
-    )
-    .bind(key, expiresAt)
-    .first<{ hits: number }>();
+  let row: { hits: number } | null = null;
+  try {
+    row = await db
+      .prepare(
+        `INSERT INTO rate_limits (bucket, hits, expires_at) VALUES (?, 1, ?)
+           ON CONFLICT(bucket) DO UPDATE SET hits = hits + 1
+         RETURNING hits`,
+      )
+      .bind(key, expiresAt)
+      .first<{ hits: number }>();
+  } catch (err) {
+    /*
+     * FAIL OPEN, deliberately.
+     *
+     * The table this writes to comes from migration 0002. If a deployment goes
+     * out before that migration is applied - which is exactly the kind of
+     * ordering mistake a launch produces - every write here throws, and a
+     * limiter that propagates its own failure would take down the score
+     * submission it exists to protect. Spam is a nuisance; a leaderboard that
+     * rejects every legitimate score is an outage.
+     *
+     * Logged so the gap is visible rather than silent.
+     */
+    console.log(
+      JSON.stringify({
+        t: "error",
+        name: "rate_limit_unavailable",
+        detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+      }),
+    );
+    return { allowed: true, retryAfter: 0 };
+  }
 
   const hits = row?.hits ?? 1;
   if (hits > MAX_PER_WINDOW) {

@@ -52,6 +52,31 @@ const RIBBON_BLOCK = 420;
 
 const ROAD_THICKNESS = 0.5;
 const APRON_THICKNESS = 0.34;
+/** How far an overlay deck is raised above the height its segment reports. */
+const OVERLAY_RAISE = 0.09;
+
+/**
+ * How high painted markings sit above the surface they are painted on.
+ *
+ * Measured to the CENTRE of the box, so each value is the object's half-height
+ * plus however far it is meant to bed into the road. Both bed in slightly on
+ * purpose. Backface culling is off - see the note in the renderer, the ground
+ * planes need to be visible from either side - so the underside of a marking is
+ * really drawn, and one landed exactly flush would have that face coplanar with
+ * the road and shimmer against it, which is the failure these numbers are
+ * chosen to avoid.
+ *
+ * They were 0.3 and 0.4, and that was correct while the road was a half-unit
+ * slab *centred* on the height the segment reports: its top face stood at +0.25
+ * and the paint landed on it. "unsink every car" dropped the slab so that its
+ * top face lands on that height instead, and re-based the skirt, the apron and
+ * the joint patches to match - but not these two, which have been hovering a
+ * quarter of a unit above the tarmac ever since. Driving on the flat you never
+ * see it. At the crest of a hill you are looking straight down the surface, and
+ * the gap of shadow under every dash is the first thing you notice.
+ */
+const DASH_LIFT = 0.05; // 0.12 tall: 0.01 bedded in, 0.11 proud.
+const RAMP_LIP_LIFT = 0.15; // 0.5 tall: 0.10 bedded in, 0.40 proud.
 
 /** Deterministic hash so the course is identical on every run. */
 function hash2(x: number, z: number): number {
@@ -710,12 +735,20 @@ export function buildWorld(
        * the surface the simulation puts the car on. The car sits correctly and looks sunk:
        * about half a wheel, everywhere, all the time.
        */
-      road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? 0.09 : 0), midZ);
+      road.position.set(midX, midY - ROAD_THICKNESS / 2 + (seg.overlay ? OVERLAY_RAISE : 0), midZ);
       road.rotation.y = seg.heading;
       road.rotation.x = pitch;
     }
 
-    // Centre line on sealed roads only.
+    /*
+     * Centre line on sealed roads only.
+     *
+     * Only overlays reach this: the loop has already skipped the spine, and a
+     * branch is excluded here. Nothing generates an overlay today, so none of
+     * the offsets below are on screen - they are kept correct rather than
+     * merely unchanged, since an offset nobody can see is exactly the kind that
+     * gets left behind when the surface under it moves.
+     */
     if (seg.surface === "asphalt" && !seg.branch) {
       const dashes = Math.max(1, Math.floor(seg.length / 11));
       for (let i = 0; i < dashes; i++) {
@@ -726,7 +759,7 @@ export function buildWorld(
         );
         dash.position.set(
           seg.ax + (seg.bx - seg.ax) * t,
-          seg.ay + (seg.by - seg.ay) * t + 0.3,
+          seg.ay + (seg.by - seg.ay) * t + OVERLAY_RAISE + DASH_LIFT,
           seg.az + (seg.bz - seg.az) * t,
         );
         dash.rotation.y = seg.heading;
@@ -740,7 +773,11 @@ export function buildWorld(
         { kind: "box", width: seg.halfWidth * 2, height: 0.5, depth: 2.2 },
         { color: [0.95, 0.75, 0.1], emissive: 0.6, isStatic: true },
       );
-      lip.position.set(seg.bx, seg.by + 0.4, seg.bz);
+      lip.position.set(
+        seg.bx,
+        seg.by + (seg.overlay ? OVERLAY_RAISE : 0) + RAMP_LIP_LIFT,
+        seg.bz,
+      );
       lip.rotation.y = seg.heading;
     }
 
@@ -1413,7 +1450,7 @@ function buildSpineDecor(
         { kind: "box", width: seg.halfWidth * 2, height: 0.5, depth: 2.2 },
         { color: [0.95, 0.75, 0.1], emissive: 0.6, isStatic: true },
       );
-      lip.position.set(seg.bx, seg.by + 0.4, seg.bz);
+      lip.position.set(seg.bx, seg.by + RAMP_LIP_LIFT, seg.bz);
       lip.rotation.y = seg.heading;
     }
 
@@ -1428,7 +1465,7 @@ function buildSpineDecor(
         );
         dash.position.set(
           seg.ax + (seg.bx - seg.ax) * t,
-          seg.ay + seg.grade * seg.length * t + 0.3,
+          seg.ay + seg.grade * seg.length * t + DASH_LIFT,
           seg.az + (seg.bz - seg.az) * t,
         );
         dash.rotation.y = seg.heading;

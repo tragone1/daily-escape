@@ -425,19 +425,34 @@ function smoothSpine(start: PathNode, legs: LegDef[]): { micro: LegDef[]; contro
  */
 export const DAILY: Course = makeCourse(seedForDay());
 
-export const MAIN_LEGS: LegDef[] = DAILY.legs;
-/** Ambush spurs, in course order. */
-export const SPURS: SpurDef[] = DAILY.spurs;
-/** Distance along the spine where each section starts. */
-export const SECTION_STARTS = DAILY.sectionStarts;
-/**
- * Theme per section. These drive surfacing, walls and props only — sections are numbered,
- * not named. A run has no destination, so "FINAL APPROACH" was a promise the game does not
- * keep, and a number is the honest label for how far you have got.
+/*
+ * The day's alleys. Module-private: see `buildCourseSegments` for why this
+ * still exists and why nothing outside this file may have it. Everything that
+ * needs the alleys of the course being PLAYED asks `activeSpurs()`.
  */
-export const SECTION_THEMES = DAILY.sectionThemes;
-/** The day's palette rolls, one per wall style. */
-export const WALL_ROLLS = DAILY.wallRolls;
+const SPURS: SpurDef[] = DAILY.spurs;
+
+/*
+ * The snapshot constants that used to live here are gone.
+ *
+ * MAIN_LEGS, SPURS, SECTION_STARTS, SECTION_THEMES, WALL_ROLLS and SMOOTH_LEGS
+ * were all `DAILY.something`, captured at import. That is a description of the
+ * course as it stood when the module loaded, and the world streams: it keeps
+ * generating, and `setActiveCourse` moves everything else onto the new
+ * generation while a captured array stays behind.
+ *
+ * Every one of them was a bug waiting for a reader, and two of them found one.
+ * `SPURS` was the first - the director looked for an alley to ambush from,
+ * found none past the sections that existed at startup, and quietly stopped
+ * placing them; `activeSpurs()` exists because of it. `SECTION_THEMES` was the
+ * second, and it was subtler because it was indexed by `sectionIndexAt`, which
+ * reads the ACTIVE course - so the lookup ran off the end of the snapshot and
+ * returned undefined rather than throwing, and the rig's ban on blocking a
+ * canyon, a downtown or the final run silently stopped applying.
+ *
+ * They are deleted rather than fixed. Nothing outside this file needs a course
+ * it cannot name, and the accessors below hand out the one being played.
+ */
 
 /**
  * The course currently being played.
@@ -472,6 +487,20 @@ export function activeSpurs(): SpurDef[] {
   return activeCourse.spurs;
 }
 
+/**
+ * Section themes for the course being played, for the same reason as the spurs.
+ *
+ * The exported `SECTION_THEMES` is a snapshot of the daily course taken at
+ * import, and it was being indexed with `sectionIndexAt` - which reads the
+ * ACTIVE course. Two different courses, one index: past the length the daily
+ * course happened to have at startup the lookup simply ran off the end and
+ * returned undefined, so the rig's ban on blocking a canyon, a downtown or the
+ * final run quietly stopped applying exactly where the run gets hardest.
+ */
+export function activeSectionThemes(): SectionId[] {
+  return activeCourse.sectionThemes;
+}
+
 /** Which section (0-based) a given distance along the course falls in. */
 export function sectionIndexAt(progress: number, course: Course = activeCourse): number {
   const starts = course.sectionStarts;
@@ -480,7 +509,6 @@ export function sectionIndexAt(progress: number, course: Course = activeCourse):
   return i;
 }
 
-export const SMOOTH_LEGS: LegDef[] = DAILY.smoothLegs;
 
 export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
   const segments: CourseSegment[] = [];
@@ -493,8 +521,29 @@ export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
     spine.push({ x: leg.x, z: leg.z, y: leg.y });
   }
 
-  // Ambush spurs. Marked as branches so they never contribute spine progress: driving
-  // down one must never look like making ground.
+  /*
+   * Ambush spurs. Marked as branches so they never contribute spine progress:
+   * driving down one must never look like making ground.
+   *
+   * KNOWN WRONG, and left alone deliberately. These come from the day's
+   * snapshot rather than from `course`, so the spine is built from one course
+   * and its alleys from another: past the length the daily course had at
+   * startup the streamed world builds no spur road at all, while the director -
+   * which reads the ACTIVE course through `activeSpurs()` - goes on seating
+   * ambushes in alleys that were never built. It also grafts today's alleys
+   * onto any course built from another seed, which is every course the tests
+   * check.
+   *
+   * Changing it to `course.spurs` is a one-word fix and it is correct, but it
+   * moves every spur on every seeded course, and the invariant sweep then finds
+   * a canyon on seed 24757 where the drivable lane comes to 5.75 against a
+   * floor of 6.5. That chokepoint is real and it is not caused by the fix - it
+   * is a seam in the windowed build that the wrong alleys were hiding: a prop
+   * is swept for the racing line before the next window's wall exists, and a
+   * window cannot withdraw a prop that an earlier window placed. Fixing that
+   * means keeping props withdrawable across windows, which is a change to how
+   * the world is generated and wants its own careful pass.
+   */
   for (const spur of SPURS) {
     segments.push(
       makeSegment(
@@ -609,49 +658,9 @@ export interface PickupDef {
   z: number;
 }
 
-/**
- * Rocket ammunition.
- *
- * Two out of every three sit out in the run-off, well off the racing line — you have to
- * leave the tarmac, lose grip and lose time to take one, with the squad on you. The rest
- * sit mid-road and are simply free. That mix is the point: most rockets should cost you
- * something, but a player who never gambles should still see one occasionally.
+/*
+ * The PICKUPS constant that stood here is gone with the rest of the snapshot
+ * family. It was built from the day's legs and nothing read it: rockets are
+ * placed by progress along whatever road now exists, in PickupSystem, which is
+ * what lets them keep appearing in a run that has no end.
  */
-export const PICKUPS: PickupDef[] = MAIN_LEGS.flatMap((leg, i) => {
-  // Regularly spaced, so ammo keeps turning up across a run that has no end.
-  if (i < 4 || i % 7 !== 0) return [];
-  const n = Math.floor(i / 7);
-  const side = n % 2 === 0 ? 1 : -1;
-  // Safe every third one; the rest are out in the run-off, or hard against the kerb in
-  // sections that have no run-off to gamble with.
-  const risky = n % 3 !== 0;
-  /*
-   * Off the racing line, but ON the road.
-   *
-   * This used to put the risky ones at `halfWidth + shoulder * 0.7` where
-   * there was run-off - which is past the kerb by up to seven units, out where
-   * the ground is not drivable and the pickup reads as half off the map - and
-   * hard against the kerb everywhere else. Both made it a question of whether
-   * you could reach the thing rather than whether the detour was worth it.
-   *
-   * A little over half the half-width is still clearly off the middle, so it
-   * still costs a line, and it is comfortably inside the tarmac at every
-   * width. The final position is snapped onto solid ground when the pickup is
-   * built, which is the part this cannot know.
-   */
-  const lateral = risky ? leg.halfWidth * 0.55 : 0;
-
-  // Offset across the leg, not across world X: on a diagonal leg the two are nowhere near
-  // the same thing, and the difference is the width of the road.
-  const prev = i === 0 ? COURSE_START : MAIN_LEGS[i - 1];
-  const dx = leg.x - prev.x;
-  const dz = leg.z - prev.z;
-  const len = Math.hypot(dx, dz) || 1;
-  return [
-    {
-      kind: "rocket" as const,
-      x: leg.x + (dz / len) * lateral * side,
-      z: leg.z - (dx / len) * lateral * side,
-    },
-  ];
-});

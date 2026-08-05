@@ -25,7 +25,7 @@ import { CONFIG, type PoliceRole } from "../config";
 import { dist, forwardOf, headingOf, rightOf } from "../math";
 import {
   POLICE_LOOKAHEAD,
-  SECTION_THEMES,
+  activeSectionThemes,
   activeSpurs,
   sectionIndexAt,
   type SpurDef,
@@ -712,7 +712,8 @@ export class PoliceManager {
     };
 
     const themeOk = (progress: number) => {
-      const theme = SECTION_THEMES[sectionIndexAt(progress)];
+      // From the ACTIVE course, which is what sectionIndexAt just indexed into.
+      const theme = activeSectionThemes()[sectionIndexAt(progress)];
       return !(cfg.bannedThemes as readonly string[]).includes(theme);
     };
 

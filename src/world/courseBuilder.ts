@@ -1515,6 +1515,20 @@ function placePropStation(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
+    /*
+     * Stand it on the slope, not level with the world.
+     *
+     * The block is 1.4 times as deep as it is wide, so held upright on a
+     * gradient its uphill bottom edge cuts under the tarmac by half the depth
+     * times the grade - measured across four courses, up to 0.885 - while the
+     * downhill edge lifts off it by the same. That is the "partly in the road"
+     * look, and it is worst exactly where a block matters most.
+     *
+     * MESH ONLY, like the seal pieces. The collider is a vertical box and stays
+     * one, so nothing a car can hit moves a millimetre: this changes what the
+     * block looks like and nothing about what it does.
+     */
+    mesh.rotation.x = -Math.atan(seg.grade);
     addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "spineProp", groundY);
     props.push({ mesh, collider: colliders[colliders.length - 1] });
   };
@@ -2428,6 +2442,8 @@ function buildProps(
     );
     mesh.position.set(cx, groundY + height / 2, cz);
     mesh.rotation.y = seg.heading;
+    // On the slope, mesh only - see the spine station's block for why.
+    mesh.rotation.x = -Math.atan(seg.grade);
     addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "branchProp", groundY);
     props.push({ mesh, collider: colliders[colliders.length - 1] });
   };

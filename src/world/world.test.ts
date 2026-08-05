@@ -11,11 +11,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { makeCourse } from "./course";
+import { makeCourse, buildCourseSegments } from "./course";
 import type { CourseSegment } from "./course";
 import { buildWorld } from "./courseBuilder";
 import type { StaticCollider } from "../physics/collisionWorld";
 import { stubRenderer } from "./testRenderer";
+import type { Renderer } from "../gfx/renderer";
 import { narrowestLane, worstWallBite, CAR } from "./invariants";
 
 /** Narrowest lane the course may leave, as a span of centre positions. */
@@ -183,5 +184,138 @@ describe("the course as a whole", () => {
     const a = makeCourse(1);
     const b = makeCourse(2);
     expect(a.legs[30]).not.toEqual(b.legs[30]);
+  });
+});
+
+/**
+ * The blocks in the road have to sit on it.
+ *
+ * A station block is 1.4 times as deep as it is wide, and it was stood upright
+ * whatever the road was doing underneath. On a gradient that buries its uphill
+ * bottom edge by half its depth times the grade and lifts the downhill edge off
+ * the surface by the same - which is why they looked right on the flat and
+ * partly sunk on every hill.
+ *
+ * Measured against the ribbon that is actually DRAWN rather than against
+ * `terrain.heightAt`: the sampler blends heights across segment ownership and
+ * the ribbon does not, so the sampler is the wrong thing to hold the geometry
+ * to. The two disagree by more than the defect being measured.
+ */
+interface PropBox {
+  w: number;
+  h: number;
+  d: number;
+  x: number;
+  y: number;
+  z: number;
+  ry: number;
+  rx: number;
+}
+
+/** A renderer that keeps the boxes, which is the only way to see a rotation. */
+function boxRecorder(): { renderer: Renderer; boxes: PropBox[] } {
+  const boxes: PropBox[] = [];
+  const make = (spec: Record<string, unknown>) => {
+    const rotation = { x: 0, y: 0, z: 0 };
+    const entry: PropBox = { w: 0, h: 0, d: 0, x: 0, y: 0, z: 0, ry: 0, rx: 0 };
+    if (spec.kind === "box") {
+      entry.w = spec.width as number;
+      entry.h = spec.height as number;
+      entry.d = spec.depth as number;
+      // Written after the position, so read them back lazily.
+      Object.defineProperty(entry, "ry", { get: () => rotation.y });
+      Object.defineProperty(entry, "rx", { get: () => rotation.x });
+      boxes.push(entry);
+    }
+    const position = {
+      x: 0,
+      y: 0,
+      z: 0,
+      set(x: number, y: number, z: number) {
+        entry.x = x;
+        entry.y = y;
+        entry.z = z;
+      },
+    };
+    return {
+      position,
+      rotation,
+      parent: null,
+      isStatic: false,
+      alpha: 1,
+      scaling: { x: 1, y: 1, z: 1, set() {} },
+      dispose() {},
+      isEnabled: () => true,
+      setEnabled() {},
+    };
+  };
+  const renderer = {
+    createMesh: (s: Record<string, unknown>) => make(s),
+    createNode: () => make({ kind: "node" }),
+    bake: () => {},
+    bakeGrouped: () => {},
+    disposeChunk: () => {},
+    disposeChunkGroup: () => 0,
+    forgetBaked: () => {},
+  };
+  return { renderer: renderer as unknown as Renderer, boxes };
+}
+
+/** Height of the drawn ribbon: planar along each segment, flat across its width. */
+function ribbonHeight(segments: CourseSegment[], x: number, z: number): number {
+  let best = -Infinity;
+  for (const sg of segments) {
+    if (sg.branch || sg.overlay) continue;
+    const rx = x - sg.ax;
+    const rz = z - sg.az;
+    const along = rx * sg.dx + rz * sg.dz;
+    if (along < 0 || along > sg.length) continue;
+    if (Math.abs(rx * sg.dz - rz * sg.dx) > sg.halfWidth) continue;
+    const y = sg.ay + sg.grade * along;
+    if (y > best) best = y;
+  }
+  return best;
+}
+
+describe("the blocks in the road", () => {
+  it("stand on the surface rather than sunk into it", () => {
+    const buried: number[] = [];
+    for (const seed of [1000, 8919, 24757, 40595]) {
+      const course = makeCourse(seed);
+      const { segments } = buildCourseSegments(course);
+      const { renderer, boxes } = boxRecorder();
+      buildWorld(renderer, course);
+      // A station block is the box whose depth is exactly 1.4x its width.
+      const props = boxes.filter((b) => Math.abs(b.d - b.w * 1.4) < 1e-9 && b.w > 1);
+      expect(props.length).toBeGreaterThan(50);
+      for (const b of props) {
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            const lx = (sx * b.w) / 2;
+            const ly = -b.h / 2;
+            const lz = (sz * b.d) / 2;
+            // The composed rotation is Ry*Rx*Rz, and a block takes no roll.
+            const y1 = ly * Math.cos(b.rx) - lz * Math.sin(b.rx);
+            const z1 = ly * Math.sin(b.rx) + lz * Math.cos(b.rx);
+            const wx = b.x + lx * Math.cos(b.ry) + z1 * Math.sin(b.ry);
+            const wz = b.z - lx * Math.sin(b.ry) + z1 * Math.cos(b.ry);
+            const road = ribbonHeight(segments, wx, wz);
+            // A corner overhanging the kerb has no road under it to sink into.
+            if (Number.isFinite(road)) buried.push(road - (b.y + y1));
+          }
+        }
+      }
+    }
+    expect(buried.length).toBeGreaterThan(2000);
+    buried.sort((a, b) => a - b);
+    /*
+     * A percentile, because the tail is honest. A block straddling a sharp
+     * change of grade cannot lie flat on both sides of it, and no single tilt
+     * will make it - the worst corner is 0.35 and that is geometry, not a bug.
+     * What the defect did was tilt every block on every hill, so it shows up
+     * across the whole population: p99 was 0.512 upright and is 0.073 lying on
+     * the slope, with p90 going from 0.183 to 0.015.
+     */
+    expect(buried[Math.floor(buried.length * 0.99)]).toBeLessThan(0.2);
   });
 });

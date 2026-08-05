@@ -162,6 +162,7 @@ function ringRecorder(): { renderer: Renderer; rings: Ring[] } {
 function worstBurial(rings: Ring[], terrain: Terrain, radius: number): number {
   let worst = 0;
   for (const ring of rings) {
+    const centre = terrain.sample(ring.x, ring.z);
     for (let i = 0; i < 32; i++) {
       const phi = (i / 32) * Math.PI * 2;
       const a = radius * Math.cos(phi);
@@ -171,7 +172,23 @@ function worstBurial(rings: Ring[], terrain: Terrain, radius: number): number {
       const y1 = a * Math.sin(ring.rz);
       const y2 = y1 * Math.cos(ring.rx) - b * Math.sin(ring.rx);
       const z2 = y1 * Math.sin(ring.rx) + b * Math.cos(ring.rx);
-      const buried = terrain.heightAt(ring.x + x1, ring.z + z2) - (ring.y + y2);
+      /*
+       * Only where there is ROAD under the rim, which is what this is about.
+       *
+       * Two things otherwise get counted as burial and are not. The course
+       * crosses over itself, so a rim point can sample a deck thirty-five units
+       * overhead - a bridge above the pickup, not tarmac it is sunk into. And
+       * the ring is twelve units across while the road can be fifteen, so on a
+       * narrow section the rim genuinely overhangs the verge and reads the
+       * grass bank beyond the kerb. The ring being wider than some roads is a
+       * real thing, but it is a different thing from the ring not lying flat.
+       */
+      const smp = terrain.sample(ring.x + x1, ring.z + z2);
+      if (!smp.onCourse || Math.abs(smp.height - ring.y) > 2) continue;
+      // And only the road the pickup is ON: a spur mouth can carry its own deck
+      // more than a unit above the spine, which the rim overlaps at the join.
+      if (smp.segment.branch !== centre.segment.branch) continue;
+      const buried = smp.height - (ring.y + y2);
       if (buried > worst) worst = buried;
     }
   }

@@ -327,32 +327,3 @@ describe("the blocks in the road", () => {
     expect(buried[Math.floor(buried.length * 0.99)]).toBeLessThan(0.1);
   });
 });
-
-/**
- * Nothing may stand in the shadow of a jump.
- *
- * A ramp lip is a raised bar with a drop behind it: a block within a few
- * car-lengths of one is hidden until the lip is crossed, at which point the
- * player is airborne and committed. One daily course put a block six point
- * eight units past a lip - reported as "a block sunk in the road", experienced
- * as a wall materialising mid-flight. The builder now refuses those stations;
- * this holds it to that.
- */
-describe("ramp landings", () => {
-  it.each(SEEDS)("seed %i keeps its landings clear of blocks", (seed) => {
-    const { segments, colliders } = build(seed);
-    const lips = segments.filter((s) => !s.branch && !s.overlay && s.ramp > 0);
-    const props = colliders.filter((c) => c.source === "spineProp");
-    for (const lip of lips) {
-      for (const p of props) {
-        const dx = p.obb.x - lip.bx;
-        const dz = p.obb.z - lip.bz;
-        // Only the landing side. A block short of the lip is met on the
-        // ground, seen the whole way in, and steered around before the jump.
-        if (dx * lip.dx + dz * lip.dz <= 0) continue;
-        const d = Math.hypot(dx, dz);
-        expect(d, `block ${d.toFixed(1)} past the lip at seg${lip.index}`).toBeGreaterThan(25);
-      }
-    }
-  });
-});

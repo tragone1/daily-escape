@@ -1499,8 +1499,6 @@ function buildSpineDecor(
   let nextDash = 6;
   let nextProp = 40;
   let stationCount = 0;
-  /** Arc of the most recent ramp lip, so nothing stands in a jump's shadow. */
-  let lastLipArc = -Infinity;
   for (const seg of spine) {
     /*
      * The marches advance over EVERY segment; only wanted ones emit.
@@ -1515,7 +1513,6 @@ function buildSpineDecor(
      */
     if (!scope.wants(seg)) {
       const end = arc + seg.length;
-      if (seg.ramp > 0) lastLipArc = end;
       while (nextDash <= end) nextDash += 12;
       const spacing = PROP_SPACING[seg.section];
       while (spacing && nextProp <= end) {
@@ -1526,7 +1523,6 @@ function buildSpineDecor(
       continue;
     }
     // Ramp lip marker, exactly as before.
-    if (seg.ramp > 0) lastLipArc = arc + seg.length;
     if (seg.ramp > 0) {
       const lip = r.createMesh(
         { kind: "box", width: seg.halfWidth * 2, height: 0.5, depth: 2.2 },
@@ -1580,61 +1576,7 @@ function buildSpineDecor(
         }
         return seg.ay + seg.grade * ((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz);
       };
-      /*
-       * A BLOCK MAY ONLY STAND WHERE ITS BASE CAN BE SEEN ON APPROACH.
-       *
-       * The road rolls, the camera rides low behind the car, and a block just
-       * past a convex grade break - a crest, or a ramp lip - has its lower
-       * half hidden by the road bulge in between. The road's silhouette line
-       * then cuts across the block mid-height, which reads exactly as "the
-       * block is sunk into the road": every report of sunken blocks on slopes
-       * was this, and the blocks themselves were seated to the hundredth. It
-       * is also simply unfair - an obstacle whose base is hidden until the
-       * last moment, sometimes until after a jump has committed you to the
-       * landing, is not a decision, it is a trap.
-       *
-       * The test walks the road profile from an approach eye twenty-two units
-       * upstream to the station's base and skips the station if the road rises
-       * through that sight line. The marches still advance, so every OTHER
-       * station keeps its exact place and the daily layout stays deterministic.
-       */
-      const baseVisibleOnApproach = (): boolean => {
-        const EYE_BACK = 22;
-        const EYE_UP = 2.0;
-        // Road height at an arc offset behind the station, walking the spine.
-        const roadYBack = (back: number): number => {
-          let remaining = back;
-          let inSeg = nextProp - arc; // arc position of this station within seg
-          for (let k = si; k >= 0; k--) {
-            const sg = spine[k];
-            const local = k === si ? inSeg : sg.length;
-            if (remaining <= local) return sg.ay + sg.grade * (local - remaining);
-            remaining -= local;
-            inSeg = 0;
-          }
-          return spine[0].ay;
-        };
-        const eyeY = roadYBack(EYE_BACK) + EYE_UP;
-        const targetY = groundY + 0.3;
-        for (let back = 2; back < EYE_BACK; back += 2.5) {
-          const t = back / EYE_BACK;
-          const sightY = targetY + (eyeY - targetY) * t;
-          if (roadYBack(back) > sightY + 0.05) return false;
-        }
-        return true;
-      };
-      /*
-       * And never in the shadow of a jump. A ramp lip is a raised bar with a
-       * drop behind it: a block within a few car-lengths of one is hidden
-       * until the lip is crossed - at which point the player is airborne and
-       * committed. Today's course had one six units past a lip, which is what
-       * a player reports as "a block sunk in the road" and experiences as a
-       * wall materialising mid-flight. Thirty-five units clears the landing.
-       */
-      const inJumpShadow = nextProp - lastLipArc < 35;
-      if (!inJumpShadow && baseVisibleOnApproach()) {
-        placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props, roadYNear);
-      }
+      placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props, roadYNear);
       nextProp += spacing;
     }
     arc = end;

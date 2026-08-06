@@ -1560,7 +1560,23 @@ function buildSpineDecor(
       const pz = seg.az + (seg.bz - seg.az) * t;
       const groundY = seg.ay + seg.grade * seg.length * t;
       stationCount++;
-      placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props);
+      /*
+       * The drawn road's height near this station, for seating the block on a
+       * CHORD of the surface rather than on its tangent. Walks the couple of
+       * neighbouring slices the block can actually reach; falls back to this
+       * segment's own plane past the spine's ends.
+       */
+      const si = spine.indexOf(seg);
+      const roadYNear = (x: number, z: number): number => {
+        for (let k = Math.max(0, si - 2); k < Math.min(spine.length, si + 3); k++) {
+          const sg = spine[k];
+          const along = (x - sg.ax) * sg.dx + (z - sg.az) * sg.dz;
+          if (along < 0 || along > sg.length) continue;
+          return sg.ay + sg.grade * along;
+        }
+        return seg.ay + seg.grade * ((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz);
+      };
+      placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props, roadYNear);
       nextProp += spacing;
     }
     arc = end;
@@ -1578,6 +1594,7 @@ function placePropStation(
   station: number,
   onBranchRoad: (x: number, z: number, margin: number) => boolean,
   props: PlacedProp[],
+  roadYNear?: (x: number, z: number) => number,
 ): void {
   if (seg.ramp > 0) return;
   const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
@@ -1591,22 +1608,31 @@ function placePropStation(
       { kind: "box", width: w, height, depth: w * 1.4 },
       { color: [...style.color], emissive: 0.45, isStatic: true },
     );
-    mesh.position.set(cx, groundY + height / 2, cz);
-    mesh.rotation.y = seg.heading;
     /*
-     * Stand it on the slope, not level with the world.
+     * Seat it on a CHORD of the road, not on the world and not on a tangent.
      *
-     * The block is 1.4 times as deep as it is wide, so held upright on a
-     * gradient its uphill bottom edge cuts under the tarmac by half the depth
-     * times the grade - measured across four courses, up to 0.885 - while the
-     * downhill edge lifts off it by the same. That is the "partly in the road"
-     * look, and it is worst exactly where a block matters most.
+     * Upright on a gradient, the block's uphill bottom edge cut under the
+     * tarmac by half its depth times the grade - up to 0.885 measured - which
+     * was the original "partly in the road" look. Pitched to its own segment's
+     * grade it was far better, but a block is 1.4 times as deep as it is wide
+     * and the grade keeps changing underneath it: at a crest or a dip the road
+     * bends across the block's footprint and a tangent fit still dug an end in
+     * by up to 0.35. So the block is fitted to the heights where its front and
+     * back edges actually LAND: the two visible edges sit flush by
+     * construction, and the curvature error hides under the middle of the
+     * block instead of showing at its ends.
      *
-     * MESH ONLY, like the seal pieces. The collider is a vertical box and stays
-     * one, so nothing a car can hit moves a millimetre: this changes what the
-     * block looks like and nothing about what it does.
+     * MESH ONLY, like the seal pieces. The collider is a vertical box on the
+     * station's own ground and stays one, so nothing a car can hit moves at
+     * all: this changes what the block looks like and nothing about what it
+     * does.
      */
-    mesh.rotation.x = -Math.atan(seg.grade);
+    const halfD = (w * 1.4) / 2;
+    const yF = roadYNear ? roadYNear(cx + seg.dx * halfD, cz + seg.dz * halfD) : groundY + seg.grade * halfD;
+    const yB = roadYNear ? roadYNear(cx - seg.dx * halfD, cz - seg.dz * halfD) : groundY - seg.grade * halfD;
+    mesh.position.set(cx, (yF + yB) / 2 + height / 2, cz);
+    mesh.rotation.y = seg.heading;
+    mesh.rotation.x = -Math.atan((yF - yB) / (2 * halfD));
     addCollider(colliders, cx, cz, w * 0.7, w / 2, seg.heading, groundY + height, "spineProp", groundY);
     props.push({ mesh, collider: colliders[colliders.length - 1] });
   };

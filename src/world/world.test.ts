@@ -316,6 +316,14 @@ describe("the blocks in the road", () => {
      * across the whole population: p99 was 0.512 upright and is 0.073 lying on
      * the slope, with p90 going from 0.183 to 0.015.
      */
-    expect(buried[Math.floor(buried.length * 0.99)]).toBeLessThan(0.2);
+    /*
+     * Re-baselined for the chord fit. Pitched to its own segment's grade a
+     * block was already close - p99 0.073, worst 0.349, the tail being blocks
+     * straddling a change of grade. Seated on the heights where its front and
+     * back edges actually land, the same population measures p90 0.012,
+     * p99 0.046, worst 0.253: the visible edges are flush by construction and
+     * what error remains hides under the middle of the block.
+     */
+    expect(buried[Math.floor(buried.length * 0.99)]).toBeLessThan(0.1);
   });
 });

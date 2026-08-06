@@ -28,7 +28,7 @@ import {
   type Course,
   type CourseSegment,
 } from "./course";
-import { buildWorld, emitSections } from "./courseBuilder";
+import { buildWorld, emitSections, type PlacedProp } from "./courseBuilder";
 import { NavGraph } from "./navGraph";
 import type { Terrain } from "./terrain";
 
@@ -88,6 +88,14 @@ export class WorldStream {
   private course: Course;
   private segments: CourseSegment[];
   private colliders: StaticCollider[] = [];
+  /**
+   * Every block standing on the road, across every live window.
+   *
+   * Handed to each build so the racing-line sweep can withdraw a block the
+   * PREVIOUS window placed - the seam case, where this window's wall stands
+   * beside a block that was swept before the wall existed.
+   */
+  private props: PlacedProp[] = [];
   private withdrawn = 0;
 
   constructor(
@@ -155,7 +163,13 @@ export class WorldStream {
      * world - which is where blocked roads came from before.
      */
     const id = this.nextWindowId++;
-    const before = this.colliders.length;
+    /*
+     * By identity, not by index. The sweep inside this build may WITHDRAW a
+     * collider an earlier window placed, which shifts everything after it -
+     * "new colliders start where the list used to end" stops being true the
+     * moment anything is spliced out from the middle.
+     */
+    const had = new Set(this.colliders);
     const built = buildWorld(
       this.renderer,
       this.course,
@@ -164,9 +178,10 @@ export class WorldStream {
       `w${id}`,
       // Consult the course we already have rather than rebuilding all of it.
       { segments: this.segments, terrain: this.world.terrain },
+      this.props,
     );
     // Tag what this window added, so releasing it takes its own and no more.
-    for (let i = before; i < this.colliders.length; i++) this.colliders[i].window = id;
+    for (const c of this.colliders) if (!had.has(c)) c.window = id;
     this.windows.push({ id, from, to });
     this.builtThrough = to;
     this.withdrawn += built.blocksWithdrawn;
@@ -193,6 +208,11 @@ export class WorldStream {
    */
   restart(): void {
     for (const w of this.windows) this.renderer.disposeChunkGroup(`w${w.id}`);
+    // The newest window's blocks are not in any chunk yet - they ride unbaked
+    // until the window beside them is built. Disposed here, or they would keep
+    // drawing at positions the rebuild is about to fill again.
+    for (const pr of this.props) pr.mesh.dispose();
+    this.props.length = 0;
     this.windows = [];
     this.colliders.length = 0;
     this.builtThrough = 0;
@@ -222,6 +242,18 @@ export class WorldStream {
     const kept = this.colliders.filter((c) => c.window === undefined || !ids.has(c.window));
     this.colliders.length = 0;
     this.colliders.push(...kept);
+    /*
+     * The props list goes with them. Their meshes were baked into a chunk one
+     * window on and go with that chunk; dispose() is a safe no-op on a baked
+     * mesh and removes a live one, so calling it either way costs nothing and
+     * guarantees no orphan is left drawing.
+     */
+    const keptProps = new Set(
+      this.props.filter((pr) => pr.collider.window === undefined || !ids.has(pr.collider.window)),
+    );
+    for (const pr of this.props) if (!keptProps.has(pr)) pr.mesh.dispose();
+    this.props.length = 0;
+    this.props.push(...keptProps);
     this.windows = this.windows.filter((w) => !ids.has(w.id));
     this.retiredSections += dead.reduce((n, w) => n + (w.to - w.from), 0);
   }

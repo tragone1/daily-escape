@@ -426,13 +426,6 @@ function smoothSpine(start: PathNode, legs: LegDef[]): { micro: LegDef[]; contro
 export const DAILY: Course = makeCourse(seedForDay());
 
 /*
- * The day's alleys. Module-private: see `buildCourseSegments` for why this
- * still exists and why nothing outside this file may have it. Everything that
- * needs the alleys of the course being PLAYED asks `activeSpurs()`.
- */
-const SPURS: SpurDef[] = DAILY.spurs;
-
-/*
  * The snapshot constants that used to live here are gone.
  *
  * MAIN_LEGS, SPURS, SECTION_STARTS, SECTION_THEMES, WALL_ROLLS and SMOOTH_LEGS
@@ -525,26 +518,21 @@ export function buildCourseSegments(course: Course = DAILY): BuiltCourse {
    * Ambush spurs. Marked as branches so they never contribute spine progress:
    * driving down one must never look like making ground.
    *
-   * KNOWN WRONG, and left alone deliberately. These come from the day's
-   * snapshot rather than from `course`, so the spine is built from one course
-   * and its alleys from another: past the length the daily course had at
-   * startup the streamed world builds no spur road at all, while the director -
-   * which reads the ACTIVE course through `activeSpurs()` - goes on seating
-   * ambushes in alleys that were never built. It also grafts today's alleys
-   * onto any course built from another seed, which is every course the tests
-   * check.
+   * From the course being BUILT. These used to come from the day's snapshot,
+   * so the spine was built from one course and its alleys from another: past
+   * the length the daily course had at startup the streamed world built no
+   * spur road at all, while the director - which reads the ACTIVE course
+   * through `activeSpurs()` - went on seating ambushes in alleys that were
+   * never built. It also grafted today's alleys onto any course built from
+   * another seed, which was every course the tests checked: every invariant
+   * this suite had ever measured was measured against the wrong alleys.
    *
-   * Changing it to `course.spurs` is a one-word fix and it is correct, but it
-   * moves every spur on every seeded course, and the invariant sweep then finds
-   * a canyon on seed 24757 where the drivable lane comes to 5.75 against a
-   * floor of 6.5. That chokepoint is real and it is not caused by the fix - it
-   * is a seam in the windowed build that the wrong alleys were hiding: a prop
-   * is swept for the racing line before the next window's wall exists, and a
-   * window cannot withdraw a prop that an earlier window placed. Fixing that
-   * means keeping props withdrawable across windows, which is a change to how
-   * the world is generated and wants its own careful pass.
+   * Fixed by taking them from `course`, and the seam it exposed - a prop swept
+   * for the racing line before the neighbouring window's wall existed, which
+   * no later window could withdraw - is fixed alongside it in `courseBuilder`,
+   * where props now stay withdrawable across windows.
    */
-  for (const spur of SPURS) {
+  for (const spur of course.spurs) {
     segments.push(
       makeSegment(
         segments.length,

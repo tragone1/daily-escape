@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { makeCourse, buildCourseSegments } from "./course";
-import { buildWorld, emitSections, EMIT_ALL } from "./courseBuilder";
+import { buildWorld, emitSections, EMIT_ALL, type PlacedProp } from "./courseBuilder";
 import { stubRenderer } from "./testRenderer";
 import { narrowestLane, worstWallBite, CAR } from "./invariants";
 import type { StaticCollider } from "../physics/collisionWorld";
@@ -23,8 +23,15 @@ const MIN_LANE = 6.5;
 function buildWindowed(seed: number, step: number): StaticCollider[] {
   const course = makeCourse(seed);
   const into: StaticCollider[] = [];
+  /*
+   * Shared across windows, exactly as the stream shares it. This is half the
+   * point of the harness: a block placed by one window and narrowed by the
+   * next window's wall can only be withdrawn if the later sweep can reach it,
+   * and it reaches it through this list.
+   */
+  const props: PlacedProp[] = [];
   for (let from = 0; from < course.sectionCount; from += step) {
-    buildWorld(stubRenderer(), course, emitSections(from, from + step), into);
+    buildWorld(stubRenderer(), course, emitSections(from, from + step), into, "world", undefined, props);
   }
   return into;
 }

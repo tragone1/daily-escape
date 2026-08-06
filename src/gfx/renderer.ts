@@ -401,8 +401,17 @@ export class Renderer {
     chunkCount: number,
     /** Namespace for the chunk ids, so windows cannot overwrite each other's. */
     prefix = "chunk",
+    /**
+     * Meshes to leave out of this bake. Baking is permanent - the mesh is
+     * copied into a chunk's buffer and forgotten - so anything that might
+     * still be withdrawn (a streamed window's road blocks, until the next
+     * window's sweep has run) is excluded here and baked by a later call.
+     */
+    exclude?: ReadonlySet<unknown>,
   ): void {
-    const statics = this.meshes.filter((m) => m.isStatic && !this.batched.has(m));
+    const statics = this.meshes.filter(
+      (m) => m.isStatic && !this.batched.has(m) && !exclude?.has(m),
+    );
     if (statics.length === 0) return;
     const groups: Mesh[][] = Array.from({ length: chunkCount }, () => []);
     for (const mesh of statics) {

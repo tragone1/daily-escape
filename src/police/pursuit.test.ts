@@ -125,10 +125,21 @@ function chase(steps: number, startSection = 0): ChaseRun {
  * should have; a rotation that had disturbed the pursuit itself would not have
  * left six cars sitting on their old coordinates.
  */
+/*
+ * Re-taken when the world stopped grafting the DAILY course's alleys onto every
+ * other course. The fingerprint's world is built from seed 8919, but its spur
+ * roads used to come from a snapshot of whatever course TODAY happened to be -
+ * so the geometry this hash certified contained another day's alleys, and the
+ * pursuit threaded a world no player of seed 8919 would ever drive. With the
+ * course's own alleys in place the ambush seat moved and two cars settled a
+ * fraction differently; three of the seven still sit on identical coordinates
+ * to the tenth of a unit. This is also the change that made the hash honest:
+ * until it, the value here silently depended on the date the suite ran.
+ */
 const BASELINE =
-  "7|patrol:-10.4:81.7:21.4,patrol:-158.9:152.4:45.6,patrol:-20.6:20.5:23.9," +
-  "patrol:-45.0:25.0:35.8,patrol:-62.1:70.4:21.6,patrol:-71.2:59.9:35.7," +
-  "patrol:-76.7:98.6:21.9";
+  "7|patrol:-149.6:148.2:45.9,patrol:-20.6:20.5:23.9,patrol:-39.0:35.2:21.5," +
+  "patrol:-45.0:25.0:35.8,patrol:-62.1:70.4:21.6,patrol:-71.4:59.8:35.8," +
+  "patrol:-77.0:99.0:21.6";
 
 describe("the pursuit", () => {
   it("is unchanged by refactoring", () => {

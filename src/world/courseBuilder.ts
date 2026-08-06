@@ -207,7 +207,7 @@ export function emitSections(from: number, to: number): EmitScope {
   return { wants: (seg) => seg.sectionIndex >= from && seg.sectionIndex < to };
 }
 
-interface PlacedProp {
+export interface PlacedProp {
   mesh: { dispose(): void };
   collider: StaticCollider;
 }
@@ -311,16 +311,37 @@ function enforceRacingLine(
     return oa * oa + oc * oc <= CAR * CAR;
   };
 
+  /*
+   * This window's stations, plus a strip just BEHIND its first seam.
+   *
+   * The sweep checks its stations against every collider present, so a block
+   * over the seam narrows a station here exactly as it should. But the
+   * narrowest point of a seam pinch can itself sit a few units behind the
+   * seam - a block at the previous window's tail against a wall at this one's
+   * head - where neither window's own stations reach: the previous sweep ran
+   * before this wall existed, and this sweep did not look back. Fifteen units
+   * covers it; wall chunks and blocks influence a lane for single-digit units,
+   * and a whole-course build wants everything anyway so the margin adds
+   * nothing there.
+   */
+  const mains = segments.filter((sg) => !sg.branch && !sg.overlay);
+  const swept = new Set<CourseSegment>();
+  {
+    let distToWindow = Infinity;
+    for (let i = mains.length - 1; i >= 0; i--) {
+      if (scope.wants(mains[i])) {
+        swept.add(mains[i]);
+        distToWindow = 0;
+      } else {
+        if (distToWindow < 15) swept.add(mains[i]);
+        distToWindow += mains[i].length;
+      }
+    }
+  }
+
   let withdrawn = 0;
-  for (const seg of segments) {
-    if (seg.branch || seg.overlay) continue;
-    /*
-     * Only this window's stations are checked, but against every collider
-     * present - a block just over a seam narrows the lane exactly as much as
-     * one beside it, and checking a window in isolation is how a seam becomes
-     * the one place nobody measured.
-     */
-    if (!scope.wants(seg)) continue;
+  for (const seg of mains) {
+    if (!swept.has(seg)) continue;
     const px = seg.dz;
     const pz = -seg.dx;
     for (let a = 0; a <= seg.length; a += STATION) {
@@ -391,6 +412,11 @@ function enforceRacingLine(
     for (let i = colliders.length - 1; i >= 0; i--) {
       if (gone.has(colliders[i])) colliders.splice(i, 1);
     }
+    // And out of the props list, which now outlives this call: a withdrawn
+    // block must not come back as a candidate for the next window's sweep.
+    for (let i = props.length - 1; i >= 0; i--) {
+      if (gone.has(props[i].collider)) props.splice(i, 1);
+    }
   }
   return withdrawn;
 }
@@ -402,7 +428,12 @@ function enforceRacingLine(
  * a band of progress is a compact region, and it is also the unit a streamed
  * world adds and drops.
  */
-function bakeInChunks(r: Renderer, segments: CourseSegment[], prefix: string): void {
+function bakeInChunks(
+  r: Renderer,
+  segments: CourseSegment[],
+  prefix: string,
+  exclude?: ReadonlySet<unknown>,
+): void {
   const mains = segments.filter((sg) => !sg.branch && !sg.overlay);
   let acc = 0;
   const bounds: Array<{ upto: number; x: number; z: number }> = [];
@@ -430,7 +461,7 @@ function bakeInChunks(r: Renderer, segments: CourseSegment[], prefix: string): v
     }
     return Math.min(chunkCount - 1, Math.floor(bounds[best].upto / CHUNK_SPAN));
   };
-  r.bakeGrouped(chunkOf, chunkCount, prefix);
+  r.bakeGrouped(chunkOf, chunkCount, prefix, exclude);
 }
 
 export function buildWorld(
@@ -463,6 +494,17 @@ export function buildWorld(
    * the work twice.
    */
   reuse?: { segments: CourseSegment[]; terrain: Terrain },
+  /**
+   * Props already standing, for a window to consult and WITHDRAW FROM.
+   *
+   * The racing-line sweep runs once every wall this window owns exists - but a
+   * wall at the head of a window stands beside blocks the PREVIOUS window
+   * placed, and that window's sweep ran before this wall was born. Handed only
+   * its own blocks, a window could measure the narrowing and be unable to do
+   * anything about it: the block over the seam was not in its list. This is
+   * the list that spans the seams. A one-shot build passes nothing.
+   */
+  intoProps?: PlacedProp[],
 ): BuiltWorld {
   const PROF = (globalThis as unknown as { __profBuild?: Record<string, number> }).__profBuild;
   let _t = performance.now();
@@ -476,7 +518,8 @@ export function buildWorld(
   mark("segments+terrain");
   const colliders: StaticCollider[] = into ?? [];
   /** Every withdrawable block, for the racing-line check once the world is whole. */
-  const props: PlacedProp[] = [];
+  const props: PlacedProp[] = intoProps ?? [];
+  const propsBefore = props.length;
 
   // Palette. The day's roll picks each style's variant; shades are shifted copies so a
   // run of chunks is not flat.
@@ -823,7 +866,22 @@ export function buildWorld(
    * near enough to see is drawn - and a chunk is a unit the world can later
    * release, which is what streaming needs.
    */
-  bakeInChunks(r, segments, chunkPrefix);
+  /*
+   * A streamed window's own blocks are NOT baked here - they are handed to the
+   * next window's bake instead. Baking copies a mesh into a chunk's buffer and
+   * forgets the mesh, which makes it permanent: the next window's sweep could
+   * still take the block's collider away, but the block would stay on screen.
+   * Deferring one window keeps a block disposable for exactly as long as
+   * anything can still withdraw it - nothing beyond the adjacent window can,
+   * because collider interactions reach a few units and a window spans a whole
+   * section. The handful of meshes ride unbatched for one build and then land
+   * in the neighbouring window's chunks, which retire a section later than
+   * their own - behind the player either way.
+   */
+  const deferred = intoProps
+    ? new Set<unknown>(props.slice(propsBefore).map((pr) => pr.mesh))
+    : undefined;
+  bakeInChunks(r, segments, chunkPrefix, deferred);
   mark("bake");
 
   return {
@@ -1442,8 +1500,28 @@ function buildSpineDecor(
   let nextProp = 40;
   let stationCount = 0;
   for (const seg of spine) {
-    // Consulted for arc bookkeeping either way; only emitted for this window.
-    if (!scope.wants(seg)) continue;
+    /*
+     * The marches advance over EVERY segment; only wanted ones emit.
+     *
+     * The comment here used to say exactly that while the code did the
+     * opposite - it skipped unwanted segments before touching the arc, so
+     * every window restarted the dash phase and the prop-station march at its
+     * own first segment. A streamed world therefore placed its blocks at
+     * entirely different stations than a whole-course build of the same seed -
+     * and the whole-course build is the one every invariant sweeps. The maps
+     * being played were never the maps being tested.
+     */
+    if (!scope.wants(seg)) {
+      const end = arc + seg.length;
+      while (nextDash <= end) nextDash += 12;
+      const spacing = PROP_SPACING[seg.section];
+      while (spacing && nextProp <= end) {
+        stationCount++;
+        nextProp += spacing;
+      }
+      arc = end;
+      continue;
+    }
     // Ramp lip marker, exactly as before.
     if (seg.ramp > 0) {
       const lip = r.createMesh(

@@ -309,6 +309,15 @@ describe("the blocks in the road", () => {
     expect(buried.length).toBeGreaterThan(2000);
     buried.sort((a, b) => a - b);
     /*
+     * BOTH tails. This started as a burial-only bound, and that one-sidedness
+     * hid a real regression: the chord fit's height helper picked the wrong
+     * segment on bends, blocks on winding stretches FLOATED a third of a unit,
+     * and this test stayed green because a float is a negative number sorted
+     * harmlessly to the front. A block hovering over the road is exactly as
+     * unseated as one sunk into it.
+     */
+    expect(-buried[0]).toBeLessThan(0.1);
+    /*
      * A percentile, because the tail is honest. A block straddling a sharp
      * change of grade cannot lie flat on both sides of it, and no single tilt
      * will make it - the worst corner is 0.35 and that is geometry, not a bug.

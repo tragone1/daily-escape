@@ -1567,14 +1567,32 @@ function buildSpineDecor(
        * segment's own plane past the spine's ends.
        */
       const si = spine.indexOf(seg);
+      /*
+       * The drawn road's height near this station, for seating the block on a
+       * chord of the surface. The candidate is chosen by LATERAL distance, not
+       * by which segment's along-range happens to contain the point first: on
+       * a bend, a probe a couple of units ahead of the station projects into
+       * the along-range of several neighbouring slices at once, and the first
+       * one checked could be the wrong side of the curve - its plane,
+       * extrapolated sideways, sat a third of a unit off the road that is
+       * actually drawn under the block. Every block on a winding stretch
+       * floated or sank by that error, which is how a seating fix made the
+       * bendiest sections worse while measuring clean on straight ones.
+       */
       const roadYNear = (x: number, z: number): number => {
+        let bestLat = Infinity;
+        let bestY = groundY;
         for (let k = Math.max(0, si - 2); k < Math.min(spine.length, si + 3); k++) {
           const sg = spine[k];
           const along = (x - sg.ax) * sg.dx + (z - sg.az) * sg.dz;
-          if (along < 0 || along > sg.length) continue;
-          return sg.ay + sg.grade * along;
+          if (along < -0.5 || along > sg.length + 0.5) continue;
+          const lat = Math.abs((x - sg.ax) * sg.dz - (z - sg.az) * sg.dx);
+          if (lat < bestLat) {
+            bestLat = lat;
+            bestY = sg.ay + sg.grade * Math.max(0, Math.min(sg.length, along));
+          }
         }
-        return seg.ay + seg.grade * ((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz);
+        return bestY;
       };
       placePropStation(r, seg, colliders, px, pz, groundY, stationCount, onBranchRoad, props, roadYNear);
       nextProp += spacing;
@@ -1597,7 +1615,7 @@ function placePropStation(
   roadYNear?: (x: number, z: number) => number,
 ): void {
   if (seg.ramp > 0) return;
-  const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
+  const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.6 };
   const size = style.size;
   const height = style.height;
   const rx = seg.dz;
@@ -2524,7 +2542,7 @@ function buildProps(
   const count = Math.floor(seg.length / spacing);
   const rx = seg.dz;
   const rz = -seg.dx;
-  const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.0 };
+  const style = PROP_STYLE[seg.section] ?? { color: [0.9, 0.42, 0.08] as Rgb, size: 3.0, height: 2.6 };
 
   /*
    * Layout mode, per leg, from the same position hash that drives everything else - so
@@ -2633,13 +2651,24 @@ const PROP_SPACING: Partial<Record<SectionId, number>> = {
   final: 42,
 };
 
-/** Obstacle look per section, so a hazard tells you where you are. */
+/**
+ * Obstacle look per section, so a hazard tells you where you are.
+ *
+ * Heights are bound to widths, and deliberately: a block reads as SITTING on
+ * the road only when it is at least about four-fifths as tall as it is wide.
+ * Below that, the long top face dominates from the chase camera and the short
+ * front reads as the exposed top of something buried - the canyon and offroad
+ * blocks (0.81-0.83) always looked planted while downtown (0.67), final and
+ * construction (0.73) kept being reported as "sunk into the road" when every
+ * corner of them measured flush against the drawn surface to the hundredth.
+ * The proportion was doing the sinking, not the placement.
+ */
 const PROP_STYLE: Partial<Record<SectionId, { color: Rgb; size: number; height: number }>> = {
-  downtown: { color: [0.9, 0.42, 0.08], size: 3.0, height: 2.0 },
-  construction: { color: [0.95, 0.72, 0.1], size: 3.0, height: 2.2 },
+  downtown: { color: [0.9, 0.42, 0.08], size: 3.0, height: 2.6 },
+  construction: { color: [0.95, 0.72, 0.1], size: 3.0, height: 2.6 },
   canyon: { color: [0.36, 0.33, 0.3], size: 3.6, height: 3.0 },
   industrial: { color: [0.2, 0.5, 0.55], size: 3.2, height: 2.6 },
   offroad: { color: [0.55, 0.4, 0.22], size: 4.2, height: 3.4 },
-  final: { color: [0.9, 0.3, 0.2], size: 3.0, height: 2.2 },
+  final: { color: [0.9, 0.3, 0.2], size: 3.0, height: 2.6 },
 };
 

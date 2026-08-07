@@ -564,7 +564,9 @@ export function buildWorld(
      * bounding box and could never be culled - taking seventeen thousand real
      * triangles along with it. Drawn on its own it costs one call.
      */
-    { color: [0.12, 0.06, 0.045], emissive: 0.34, isStatic: false },
+    // Tied to the evening: the drop below the road reads as land in haze,
+    // not as a hole in the render.
+    { color: [0.14, 0.12, 0.17], emissive: 0.3, isStatic: false },
   );
   floor.position.set((minX + maxX) / 2, -8, (minZ + maxZ) / 2);
 

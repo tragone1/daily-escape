@@ -116,8 +116,20 @@ export class ChaseCamera {
     this.renderer.camera.position.set(this.pos.x + ox, this.pos.y + oy, this.pos.z);
     this.renderer.camera.target.copyFrom(this.target);
 
+    /*
+     * Speed is a lens, not just a number. The field of view opens with pace -
+     * a few degrees between walking and flat out - and kicks wider under
+     * boost, which is most of why boost FEELS like ignition rather than a
+     * stat change. The lean is one more whisper: a degree and a half of roll
+     * into a hard corner, from the same smoothed input the body uses, so the
+     * horizon banks with you and never twitches.
+     */
+    const speedRatio = clamp(vehicle.speed / vehicle.params.maxSpeed, 0, 1);
     const boostT = vehicle.boosting ? 1 : 0;
-    const fovTarget = c.fov + c.fovBoostBonus * boostT;
+    const fovTarget = c.fov + speedRatio * speedRatio * 0.1 + c.fovBoostBonus * boostT;
     this.renderer.camera.fov += (fovTarget - this.renderer.camera.fov) * damp(6, dt);
+
+    const rollTarget = vehicle.airborne ? 0 : -vehicle.leanRoll * 0.028 * speedRatio;
+    this.renderer.camera.roll += (rollTarget - this.renderer.camera.roll) * damp(5, dt);
   }
 }

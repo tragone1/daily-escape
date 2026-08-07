@@ -155,6 +155,17 @@ export class Game {
     this.fxField = new EffectsField();
     this.renderer.particles = this.fxField;
     FX.field = this.fxField;
+
+    /*
+     * The one quality fork. A phone gets the same art direction at half the
+     * shadow resolution and half the particle budget - the two costs that
+     * actually scale with the pixel and the frame - and nothing else changes,
+     * so the game looks the same everywhere and only sharpness varies.
+     */
+    if (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches) {
+      this.renderer.shadowSize = 1024;
+      this.fxField.budget = 1024;
+    }
     this.camera.reset(this.player);
     // Bake the static world into one draw call now that everything is placed.
     // Scenery is already baked into position chunks by the world builder;

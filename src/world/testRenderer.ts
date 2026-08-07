@@ -13,6 +13,7 @@ import type { Renderer } from "../gfx/renderer";
 interface StubMesh {
   position: { set(x: number, y: number, z: number): void; x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
+  scaling: { x: number; y: number; z: number; set(x: number, y: number, z: number): void };
   parent: unknown;
   isStatic: boolean;
   alpha: number;
@@ -35,6 +36,7 @@ function stubMesh(): StubMesh {
   return {
     position,
     rotation: { x: 0, y: 0, z: 0 },
+    scaling: { x: 1, y: 1, z: 1, set() {} },
     parent: null,
     isStatic: true,
     alpha: 1,

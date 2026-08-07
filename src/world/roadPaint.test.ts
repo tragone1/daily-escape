@@ -65,6 +65,7 @@ function recordingRenderer(): { renderer: Renderer; placed: Placed[] } {
     return {
       position,
       rotation: { x: 0, y: 0, z: 0 },
+      scaling: { x: 1, y: 1, z: 1, set() {} },
       parent: null,
       isStatic: true,
       alpha: 1,

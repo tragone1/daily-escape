@@ -1390,10 +1390,13 @@ export class PoliceManager {
     return Math.min(sectors, byPolice + Math.min(byWall, wall.maxSectors));
   }
 
+  /** Bound once: the per-wheel suspension sampler handed to every view. */
+  private readonly groundAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
+
   syncViews(dt: number, elapsed: number): void {
     for (const u of this.units) {
       if (!u.active) continue;
-      u.syncView(dt, elapsed, this.terrain.heightAt(u.vehicle.x, u.vehicle.z));
+      u.syncView(dt, elapsed, this.terrain.heightAt(u.vehicle.x, u.vehicle.z), this.groundAt);
     }
   }
 }

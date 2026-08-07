@@ -384,6 +384,7 @@ export class Game {
       this.controller.braking,
       false,
       this.world.terrain.heightAt(this.player.x, this.player.z),
+      this.groundAt,
     );
     this.police.syncViews(dt, this.elapsed);
     this.updateHud(dt);
@@ -788,6 +789,9 @@ export class Game {
     const to = starts[i + 1] ?? from + 600;
     return (this.state.progress - from) / Math.max(1, to - from);
   }
+
+  /** Bound once for the player view's per-wheel suspension. */
+  private readonly groundAt = (x: number, z: number): number => this.world.terrain.heightAt(x, z);
 
   private updateHud(dt: number): void {
 

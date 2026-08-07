@@ -124,8 +124,10 @@ void main() {
   if (uSpec.x > 0.001) {
     vec3 h = normalize(view - uLightDir);
     float spec = pow(max(dot(n, h), 0.0), uSpec.y) * uSpec.x * shadow;
-    float fres = pow(1.0 - max(dot(n, view), 0.0), 3.0) * uSpec.x;
-    lit += uSunColor * spec + uSky * fres * 0.6 + pointLit * spec * 2.0;
+    // Fifth power and a quarter strength: a rim, not a wash. At cubic strength
+    // the police glass read as a lit dome from every glancing angle.
+    float fres = pow(1.0 - max(dot(n, view), 0.0), 5.0) * uSpec.x;
+    lit += uSunColor * spec + uSky * fres * 0.25 + pointLit * spec * 0.8;
   }
 
   float fog = clamp((vDepth - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0);

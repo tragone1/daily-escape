@@ -315,9 +315,20 @@ export class PoliceCar {
      * meant side latches gripped visibly empty air. The physics params are
      * untouched - this is purely what the mesh looks like.
      */
+    /*
+     * Which body the factory builds for this role. The silhouette is doing
+     * real communication: an interceptor reads sleek before it reads fast,
+     * the heavy reads tall before it reads slow, and the rig is a wall on
+     * wheels from any distance.
+     */
+    const variant =
+      role === "rig" ? ("rig" as const)
+      : role === "heavy" ? ("suv" as const)
+      : role === "interceptor" || role === "elite" ? ("interceptor" as const)
+      : ("sedan" as const);
     this.view = new CarView(
       r,
-      policeStyle(ROLE_ACCENT[role], role === "rig"),
+      policeStyle(ROLE_ACCENT[role], role === "rig", variant),
       params.halfLength,
       params.halfWidth,
       false,
@@ -1953,7 +1964,7 @@ export class PoliceCar {
     this.dodgeSign = 0;
   }
 
-  syncView(dt: number, elapsed: number, groundY = 0): void {
-    this.view.sync(this.vehicle, dt, elapsed, this.input.brake > 0, this.disabled, groundY);
+  syncView(dt: number, elapsed: number, groundY = 0, groundAt?: (x: number, z: number) => number): void {
+    this.view.sync(this.vehicle, dt, elapsed, this.input.brake > 0, this.disabled, groundY, groundAt);
   }
 }

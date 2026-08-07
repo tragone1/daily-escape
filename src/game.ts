@@ -4,6 +4,7 @@
  */
 
 import { Renderer } from "./gfx/renderer";
+import { EffectsField, FX } from "./gfx/particles";
 
 import { GameAudio } from "./audio";
 import { ChaseCamera } from "./camera/chaseCamera";
@@ -149,6 +150,11 @@ export class Game {
     this.pickups = new PickupSystem(this.renderer, this.world.terrain);
     this.rockets = new RocketSystem(this.renderer);
     this.camera = new ChaseCamera(this.renderer, this.collision, this.world.terrain);
+
+    // The shared particle and skid field: the renderer draws it, everything emits into it.
+    this.fxField = new EffectsField();
+    this.renderer.particles = this.fxField;
+    FX.field = this.fxField;
     this.camera.reset(this.player);
     // Bake the static world into one draw call now that everything is placed.
     // Scenery is already baked into position chunks by the world builder;
@@ -371,6 +377,7 @@ export class Game {
 
     this.elapsed += dt;
     this.world.update(this.elapsed);
+    this.fxField.update(dt);
 
     if (this.started && !this.state.over) {
       this.simulate(dt);
@@ -564,11 +571,33 @@ export class Game {
        * one did not matter.
        */
       if (strongest.kind === "car") this.police.notePlayerHit();
+      // Sparks fly from the actual contact point, sized by how hard it was.
+      {
+        const n = Math.min(14, 3 + Math.floor(severity * 16));
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 5 + Math.random() * 16 * (0.4 + severity);
+          this.fxField.spawn({
+            x: strongest.x, y: this.player.y + 0.7 + Math.random() * 0.5, z: strongest.z,
+            vx: Math.sin(a) * sp, vy: 2 + Math.random() * 5, vz: Math.cos(a) * sp,
+            life: 0.25 + Math.random() * 0.25, size0: 0.22, size1: 0.05,
+            r: 1.3, g: 0.85, b: 0.4, additive: true, gravity: -30, drag: 1.5,
+          });
+        }
+      }
       this.camera.addShake(strongest.speed * CONFIG.collision.shakePerSpeed);
       // Barely a flicker. Contact is now near-constant by design, and at the old weight
       // the screen sat under a permanent white veil for the whole back half of a run.
       this.hud.punch(severity * 0.05);
       this.audio.impact(severity);
+    }
+
+    // --- Transient effects -------------------------------------------------
+    this.emitVehicleFX(this.player, dt, true, this.controller.braking);
+    for (const unit of this.police.units) {
+      if (!unit.active || unit.destroyed) continue;
+      const d2 = (unit.vehicle.x - this.player.x) ** 2 + (unit.vehicle.z - this.player.z) ** 2;
+      if (d2 < 90 * 90) this.emitVehicleFX(unit.vehicle, dt, false, false);
     }
 
     // --- Containment -------------------------------------------------------
@@ -792,6 +821,109 @@ export class Game {
 
   /** Bound once for the player view's per-wheel suspension. */
   private readonly groundAt = (x: number, z: number): number => this.world.terrain.heightAt(x, z);
+
+  private fxField!: EffectsField;
+  /** Last skid points per rear wheel, so marks connect into ribbons. */
+  private skidLast: Array<{ x: number; z: number } | null> = [null, null];
+  /** Fractional particle emission accumulator, so rates survive any frame rate. */
+  private fxCarry = 0;
+
+  /**
+   * Everything a moving car sheds: smoke when the tires argue with asphalt,
+   * dust when the surface is loose, a burst on landing, a jet while boosting.
+   * Called for the player every frame and for nearby police, with the skid
+   * ribbons reserved for the player - they are the story of YOUR line.
+   */
+  private emitVehicleFX(v: import("./vehicle/vehicle").Vehicle, dt: number, isPlayer: boolean, braking: boolean): void {
+    const fx = this.fxField;
+    const sinH = Math.sin(v.heading);
+    const cosH = Math.cos(v.heading);
+    const halfL = v.params.halfLength;
+    const halfW = v.params.halfWidth;
+
+    if (v.justLanded && v.landingImpact > 4) {
+      const n = Math.min(12, 4 + v.landingImpact * 0.4);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 3 + Math.random() * 6;
+        fx.spawn({
+          x: v.x + Math.sin(a) * halfW, y: v.y + 0.3, z: v.z + Math.cos(a) * halfW,
+          vx: Math.sin(a) * sp, vy: 1 + Math.random() * 2, vz: Math.cos(a) * sp,
+          life: 0.5 + Math.random() * 0.4, size0: 0.9, size1: 2.4,
+          r: 0.42, g: 0.36, b: 0.3, alpha: 0.4, drag: 2.5,
+        });
+      }
+    }
+
+    if (isPlayer && v.boostTime > 0) {
+      // The jet: hot core streaking back from the tail, and a light to match.
+      for (let i = 0; i < 3; i++) {
+        const back = 0.4 + Math.random() * 0.5;
+        fx.spawn({
+          x: v.x - sinH * (halfL + back) + (Math.random() - 0.5) * 0.5,
+          y: v.y + 0.55 + (Math.random() - 0.5) * 0.3,
+          z: v.z - cosH * (halfL + back),
+          vx: -sinH * 14 + (Math.random() - 0.5) * 3, vy: 0.4, vz: -cosH * 14 + (Math.random() - 0.5) * 3,
+          life: 0.22 + Math.random() * 0.12, size0: 0.7, size1: 0.15,
+          r: 0.55, g: 0.85, b: 1.25, additive: true, drag: 2,
+        });
+      }
+      this.renderer.lights.push({
+        x: v.x - sinH * (halfL + 1), y: v.y + 0.7, z: v.z - cosH * (halfL + 1),
+        radius: 11, r: 0.35, g: 0.7, b: 1.1,
+      });
+    }
+
+    if (v.airborne || v.speed < 7) {
+      if (isPlayer) this.skidLast = [null, null];
+      return;
+    }
+
+    const slip = Math.abs(v.slip);
+    const sliding = slip > 6.5 || (braking && v.speed > 22);
+    const loose = v.surface !== "asphalt";
+    if (!sliding && !(loose && v.speed > 13)) {
+      if (isPlayer) this.skidLast = [null, null];
+      return;
+    }
+
+    const DUST: Record<string, [number, number, number]> = {
+      dirt: [0.5, 0.4, 0.28], gravel: [0.46, 0.44, 0.42],
+      grass: [0.34, 0.4, 0.24], mud: [0.32, 0.26, 0.2], asphalt: [0.5, 0.5, 0.52],
+    };
+    const [dr, dg, db] = DUST[v.surface] ?? DUST.asphalt;
+    const strength = sliding ? 1 : Math.min(1, (v.speed - 13) / 30) * 0.45;
+
+    // Rear wheels, where the story happens.
+    for (let side = 0; side < 2; side++) {
+      const sx = side === 0 ? -1 : 1;
+      const lx = sx * halfW * 0.85;
+      const lz = -halfL * 0.6;
+      const wx = v.x + cosH * lx + sinH * lz;
+      const wz = v.z - sinH * lx + cosH * lz;
+
+      this.fxCarry += dt * (sliding ? 26 : 12) * strength * 0.5;
+      while (this.fxCarry >= 1) {
+        this.fxCarry -= 1;
+        fx.spawn({
+          x: wx, y: v.y + 0.25, z: wz,
+          vx: (Math.random() - 0.5) * 2 - sinH * 2, vy: 0.8 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 2 - cosH * 2,
+          life: 0.55 + Math.random() * 0.5, size0: 0.6, size1: sliding ? 2.6 : 1.8,
+          r: dr, g: dg, b: db, alpha: v.surface === "asphalt" ? 0.3 : 0.42, drag: 2.2,
+        });
+      }
+
+      // Skid ribbons: player only, and only where rubber meets sealed road.
+      if (isPlayer && v.surface === "asphalt" && sliding) {
+        const gy = this.world.terrain.heightAt(wx, wz) + 0.06;
+        const last = this.skidLast[side];
+        if (last) fx.mark(last.x, gy, last.z, wx, gy, wz, 0.34, 0.5 + slip * 0.04);
+        this.skidLast[side] = { x: wx, z: wz };
+      } else if (isPlayer) {
+        this.skidLast[side] = null;
+      }
+    }
+  }
 
   private updateHud(dt: number): void {
 

@@ -26,6 +26,7 @@ import {
   torusGeometry,
   type Geometry,
 } from "./primitives";
+import type { EffectsField } from "./particles";
 import {
   DEPTH_FRAG,
   DEPTH_VERT,
@@ -231,6 +232,8 @@ export class Renderer {
   exposure = 1.0;
   /** Point lights for this frame. Push during update; render() consumes and clears. */
   readonly lights: PointLight[] = [];
+  /** The game's particle and skid field, drawn inside the blended phase. */
+  particles: EffectsField | null = null;
   /** Side length of the shadow map. Halve it on weak devices. */
   shadowSize = 2048;
   /** World radius the shadow map covers around the action. */
@@ -891,6 +894,20 @@ export class Renderer {
       return bd - ad;
     });
     for (const mesh of blended) this.drawMesh(mesh);
+
+    // Particles and skid marks: still depth-tested against the world, never
+    // writing depth, sorted only by pass - soft discs forgive a lot.
+    if (this.particles) {
+      this.particles.draw(
+        gl,
+        this.viewProj,
+        [v[0], v[4], v[8]],
+        [v[1], v[5], v[9]],
+        [this.camera.position.x, this.camera.position.y, this.camera.position.z],
+        this.fogRange,
+        this.fogColor,
+      );
+    }
     gl.depthMask(true);
     gl.disable(gl.BLEND);
 

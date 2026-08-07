@@ -14,6 +14,7 @@
 import { Node3D, type Mesh, type Renderer } from "../gfx/renderer";
 
 import { CONFIG } from "../config";
+import { FX } from "../gfx/particles";
 import { clamp, forwardOf } from "../math";
 import { obbVsOBB } from "../physics/collision";
 import type { CollisionWorld } from "../physics/collisionWorld";
@@ -283,6 +284,38 @@ export class RocketSystem {
     const cfg = CONFIG.player.rocket;
     this.live = false;
     this.mesh.setEnabled(false);
+
+    /*
+     * The particle layers ride on top of the mesh fireball and shockwave:
+     * a white-hot flash, an ember ring with gravity, and a column of slow
+     * smoke that outlives the fire the way smoke does.
+     */
+    const fx = FX.field;
+    const blastY = this.mesh.position.y;
+    if (fx) {
+      fx.spawn({ x: this.x, y: blastY + 1.2, z: this.z, life: 0.14, size0: 7, size1: 12, r: 1.4, g: 1.25, b: 1.0, additive: true });
+      for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2 + Math.random() * 0.5;
+        const sp = 10 + Math.random() * 24;
+        fx.spawn({
+          x: this.x, y: blastY + 1 + Math.random() * 1.5, z: this.z,
+          vx: Math.sin(a) * sp, vy: 6 + Math.random() * 14, vz: Math.cos(a) * sp,
+          life: 0.5 + Math.random() * 0.5, size0: 0.55, size1: 0.12,
+          r: 1.3, g: 0.7 + Math.random() * 0.3, b: 0.25, additive: true,
+          gravity: -34, drag: 1.2,
+        });
+      }
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 2 + Math.random() * 5;
+        fx.spawn({
+          x: this.x + Math.sin(a) * 1.5, y: blastY + 1.5 + Math.random() * 2, z: this.z + Math.cos(a) * 1.5,
+          vx: Math.sin(a) * sp, vy: 4.5 + Math.random() * 4, vz: Math.cos(a) * sp,
+          life: 1.3 + Math.random() * 0.9, size0: 2.2, size1: 6.5,
+          r: 0.16, g: 0.15, b: 0.15, alpha: 0.5, drag: 1.4,
+        });
+      }
+    }
 
     let destroyed = 0;
     let thrown = 0;

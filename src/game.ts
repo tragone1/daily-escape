@@ -89,12 +89,22 @@ export class Game {
     this.renderer = new Renderer(canvas);
     // Night palette: cool sky bounce, lifted ground bounce so faces turned away from the
     // sun stay readable, and fog to hide the far end of a very long course.
+    /*
+     * The hour is just before sunset, and everything follows from that: a low
+     * warm sun for long shadows and modelled form, a violet zenith falling to
+     * an amber horizon, fog that hands geometry off to the sky's own haze
+     * colour so the world dissolves into atmosphere instead of into a wall.
+     */
     this.renderer.clearColor = [0.03, 0.04, 0.07];
-    this.renderer.fogColor = [0.04, 0.05, 0.09];
-    this.renderer.fogRange = [190, 620];
-    this.renderer.sky = [0.62, 0.64, 0.72];
-    this.renderer.ground = [0.2, 0.21, 0.28];
-    this.renderer.lightDir = [-0.42, -0.84, 0.29];
+    this.renderer.lightDir = [-0.5, -0.55, 0.33];
+    this.renderer.sunColor = [1.18, 0.94, 0.68];
+    this.renderer.sky = [0.36, 0.38, 0.5];
+    this.renderer.ground = [0.3, 0.25, 0.26];
+    this.renderer.zenith = [0.07, 0.1, 0.22];
+    this.renderer.horizon = [1.0, 0.55, 0.3];
+    this.renderer.horizonAway = [0.3, 0.3, 0.44];
+    this.renderer.fogColor = [0.33, 0.31, 0.44];
+    this.renderer.fogRange = [170, 580];
 
     /*
      * The world is streamed, not built once.

@@ -136,6 +136,66 @@ export function perspective(out: Mat4, fovY: number, aspect: number, near: numbe
   return out;
 }
 
+/**
+ * Left-handed orthographic projection, for the shadow pass.
+ *
+ * Maps x∈[-w,w], y∈[-h,h], z∈[near,far] onto clip space with +z forward,
+ * matching the game's left-handed convention exactly as `perspective` does.
+ */
+export function ortho(out: Mat4, halfW: number, halfH: number, near: number, far: number): Mat4 {
+  out.fill(0);
+  out[0] = 1 / halfW;
+  out[5] = 1 / halfH;
+  out[10] = 2 / (far - near);
+  out[14] = -(far + near) / (far - near);
+  out[15] = 1;
+  return out;
+}
+
+/**
+ * Left-handed view matrix with an arbitrary up vector.
+ *
+ * The camera never needed roll until it did: a degree or two of lean into a
+ * fast corner is one of the cheapest speed cues there is, and it can only be
+ * expressed through the up vector.
+ */
+export function lookAtUp(out: Mat4, eye: Vec3, target: Vec3, ux: number, uy: number, uz: number): Mat4 {
+  let zx = target.x - eye.x;
+  let zy = target.y - eye.y;
+  let zz = target.z - eye.z;
+  let len = Math.hypot(zx, zy, zz) || 1;
+  zx /= len;
+  zy /= len;
+  zz /= len;
+
+  let xx = uy * zz - uz * zy;
+  let xy = uz * zx - ux * zz;
+  let xz = ux * zy - uy * zx;
+  len = Math.hypot(xx, xy, xz);
+  if (len < 1e-6) {
+    xx = 1;
+    xy = 0;
+    xz = 0;
+  } else {
+    xx /= len;
+    xy /= len;
+    xz /= len;
+  }
+
+  const yx = zy * xz - zz * xy;
+  const yy = zz * xx - zx * xz;
+  const yz = zx * xy - zy * xx;
+
+  out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+  out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+  out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+  out[12] = -(xx * eye.x + xy * eye.y + xz * eye.z);
+  out[13] = -(yx * eye.x + yy * eye.y + yz * eye.z);
+  out[14] = -(zx * eye.x + zy * eye.y + zz * eye.z);
+  out[15] = 1;
+  return out;
+}
+
 /** Left-handed view matrix, matching the projection above. */
 export function lookAt(out: Mat4, eye: Vec3, target: Vec3, upY = 1): Mat4 {
   // Forward, not backward: the left-handed z axis points from the eye toward the target.

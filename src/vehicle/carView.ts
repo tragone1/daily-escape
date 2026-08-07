@@ -69,6 +69,8 @@ interface WheelRig {
 export class CarView {
   private root: Node3D;
   private body: Node3D;
+  private detail: Node3D;
+  private detailOn = true;
   private kit: BodyKit;
   private lightRed?: Mesh;
   private lightBlue?: Mesh;
@@ -103,6 +105,15 @@ export class CarView {
     this.root = r.createNode();
     this.body = r.createNode();
     this.body.parent = this.root;
+    /*
+     * Everything below gameplay-reading size hangs off this node, and it
+     * switches off past 130 units. A car there is fifteen pixels tall: the
+     * shell, the glass and the flashing bar say everything a frame needs,
+     * and the other two dozen meshes were pure draw-call tax. The tax scaled
+     * with the escalation - seven cars was fine, twenty-two was a slideshow.
+     */
+    this.detail = r.createNode();
+    this.detail.parent = this.body;
 
     const panel = (mesh: Mesh, color: Rgb): Mesh => {
       this.paint.push({ mesh, color, emissive: mesh.emissive });
@@ -124,9 +135,9 @@ export class CarView {
 
     const trim = r.createMesh(
       { kind: "custom", geometry: kit.trim },
-      { color: [...TRIM], emissive: 0.16, specular: 0.12, gloss: 10 },
+      { color: [...TRIM], emissive: 0.16, specular: 0.12, gloss: 10, noShadow: true },
     );
-    trim.parent = this.body;
+    trim.parent = this.detail;
     panel(trim, TRIM);
 
     /*
@@ -138,17 +149,17 @@ export class CarView {
     if (style.police && style.variant !== "rig") {
       const roofPanel = r.createMesh(
         { kind: "box", width: halfWidth * 1.1, height: 0.05, depth: halfLength * 0.5 },
-        { color: [...style.accent], emissive: 0.3, specular: 0.4, gloss: 30 },
+        { color: [...style.accent], emissive: 0.3, specular: 0.4, gloss: 30, noShadow: true },
       );
-      roofPanel.parent = this.body;
+      roofPanel.parent = this.detail;
       roofPanel.position.set(0, kit.barY - 0.08, kit.barZ);
       panel(roofPanel, style.accent);
       // Accent doors: a thin band along the belt so the livery reads side-on.
       const band = r.createMesh(
         { kind: "box", width: halfWidth * 1.96, height: 0.12, depth: halfLength * 0.72 },
-        { color: [...style.accent], emissive: 0.24, specular: 0.3, gloss: 24 },
+        { color: [...style.accent], emissive: 0.24, specular: 0.3, gloss: 24, noShadow: true },
       );
-      band.parent = this.body;
+      band.parent = this.detail;
       band.position.set(0, 0.88, 0.1);
       panel(band, style.accent);
     } else if (!style.police) {
@@ -161,26 +172,26 @@ export class CarView {
       for (const sx of [-1, 1]) {
         const skirt = r.createMesh(
           { kind: "box", width: 0.07, height: 0.14, depth: halfLength * 1.1 },
-          { color: [...style.accent], emissive: 0.2, specular: 0.4, gloss: 40 },
+          { color: [...style.accent], emissive: 0.2, specular: 0.4, gloss: 40, noShadow: true },
         );
-        skirt.parent = this.body;
+        skirt.parent = this.detail;
         skirt.position.set(sx * (halfWidth * 1.0), kit.floorY + 0.04, 0);
         panel(skirt, style.accent);
       }
       // Fastback spoiler, seated on the actual tail deck.
       const spoiler = r.createMesh(
         { kind: "box", width: halfWidth * 1.72, height: 0.06, depth: 0.34 },
-        { color: [...style.accent], emissive: 0.2, specular: 0.4, gloss: 40 },
+        { color: [...style.accent], emissive: 0.2, specular: 0.4, gloss: 40, noShadow: true },
       );
-      spoiler.parent = this.body;
+      spoiler.parent = this.detail;
       spoiler.position.set(0, kit.tailTopY + 0.1, -halfLength + 0.2);
       panel(spoiler, style.accent);
       for (const sx of [-1, 1]) {
         const post = r.createMesh(
           { kind: "box", width: 0.08, height: 0.14, depth: 0.1 },
-          { color: [...TRIM], emissive: 0.16 },
+          { color: [...TRIM], emissive: 0.16, noShadow: true },
         );
-        post.parent = this.body;
+        post.parent = this.detail;
         post.position.set(sx * halfWidth * 0.62, kit.tailTopY + 0.02, -halfLength + 0.2);
       }
     }
@@ -192,7 +203,7 @@ export class CarView {
         { kind: "box", width: 0.34, height: 0.14, depth: 0.06 },
         { color: [1, 0.95, 0.75], emissive: 0.9, specular: 0.6, gloss: 40, noShadow: true },
       );
-      head.parent = this.body;
+      head.parent = this.detail;
       head.position.set(sx * hx, hy, hz);
     }
     const [tx, ty, tz] = kit.taillight;
@@ -201,7 +212,7 @@ export class CarView {
         { kind: "box", width: 0.34, height: 0.13, depth: 0.07 },
         { color: [0.85, 0.06, 0.05], emissive: 0.35, noShadow: true },
       );
-      tail.parent = this.body;
+      tail.parent = this.detail;
       tail.position.set(sx * tx, ty, tz);
       this.brakes.push(tail);
     }
@@ -209,19 +220,19 @@ export class CarView {
     // --- Wheels -----------------------------------------------------------
     kit.wheels.forEach(([wx, wy, wz], i) => {
       const steer = r.createNode();
-      steer.parent = this.body;
+      steer.parent = this.detail;
       steer.position.set(wx, wy, wz);
       const spin = r.createNode();
       spin.parent = steer;
       spin.rotation.z = Math.PI / 2;
       const tire = r.createMesh(
         { kind: "cylinder", diameterTop: kit.wheelRadius * 2, diameterBottom: kit.wheelRadius * 2, height: kit.wheelWidth, tessellation: 14 },
-        { color: [0.07, 0.07, 0.08], emissive: 0.12, specular: 0.08, gloss: 8 },
+        { color: [0.07, 0.07, 0.08], emissive: 0.12, specular: 0.08, gloss: 8, noShadow: true },
       );
       tire.parent = spin;
       const rim = r.createMesh(
         { kind: "cylinder", diameterTop: kit.wheelRadius * 1.06, diameterBottom: kit.wheelRadius * 1.06, height: kit.wheelWidth + 0.05, tessellation: 10 },
-        { color: [0.5, 0.51, 0.55], emissive: 0.2, specular: 0.85, gloss: 48 },
+        { color: [0.5, 0.51, 0.55], emissive: 0.2, specular: 0.85, gloss: 48, noShadow: true },
       );
       rim.parent = spin;
       this.wheels.push({
@@ -240,9 +251,9 @@ export class CarView {
     if (style.police) {
       const barBase = r.createMesh(
         { kind: "box", width: halfWidth * 1.1, height: 0.12, depth: 0.4 },
-        { color: [...TRIM], emissive: 0.16 },
+        { color: [...TRIM], emissive: 0.16, noShadow: true },
       );
-      barBase.parent = this.body;
+      barBase.parent = this.detail;
       barBase.position.set(0, kit.barY, kit.barZ);
       panel(barBase, TRIM);
 
@@ -328,6 +339,17 @@ export class CarView {
     this.groundRoll += (targetRoll - this.groundRoll) * kGround;
     this.root.rotation.x = this.groundPitch;
     this.root.rotation.z = this.groundRoll;
+
+    // Detail LOD: the small meshes only exist near the camera.
+    const cam = this.r.camera.position;
+    const d2 = (vehicle.x - cam.x) ** 2 + (vehicle.z - cam.z) ** 2;
+    if (this.detailOn && d2 > 140 * 140) {
+      this.detailOn = false;
+      this.detail.setEnabled(false);
+    } else if (!this.detailOn && d2 < 120 * 120) {
+      this.detailOn = true;
+      this.detail.setEnabled(true);
+    }
 
     // The contact shadow stays on the ground when the car leaves it, and lies
     // on the slope by inheriting the root's attitude.

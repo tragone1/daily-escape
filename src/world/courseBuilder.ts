@@ -2802,7 +2802,10 @@ function buildEnvironment(
 
   const pine = (x: number, y: number, z: number, h: number): void => {
     const s = 0.8 + h * 0.7;
-    mk({ kind: "box", width: 0.5, height: 1.7, depth: 0.5 }, [0.3, 0.22, 0.15], 0.2, x, y + 0.8 * s, z, h * 6, s, s, s);
+    // The trunk is three times the visible height and mostly buried: flora
+    // stands on sloping berm ground this pass only estimates, and a rooted
+    // tree with a hidden foot forgives every estimate a floating one punishes.
+    mk({ kind: "box", width: 0.5, height: 5.4, depth: 0.5 }, [0.3, 0.22, 0.15], 0.2, x, y - 1.0 * s, z, h * 6, s, s, s);
     mk({ kind: "cylinder", diameterTop: 0, diameterBottom: 3.4, height: 3.6, tessellation: 7 },
       [0.16 + h * 0.08, 0.3 + h * 0.1, 0.16], 0.22, x, y + 3.3 * s, z, h * 6, s, s, s);
     mk({ kind: "cylinder", diameterTop: 0, diameterBottom: 2.2, height: 2.6, tessellation: 7 },
@@ -2832,8 +2835,10 @@ function buildEnvironment(
       x + (h - 0.5) * 2, y + 2.4, z + (h - 0.7), h * 9);
   };
   const lamp = (x: number, y: number, z: number, toward: number): void => {
-    mk({ kind: "cylinder", diameterTop: 0.16, diameterBottom: 0.22, height: 6.2, tessellation: 6 },
-      [0.2, 0.21, 0.24], 0.2, x, y + 3.1, z);
+    // The pole runs an extra three units DOWN: a lamp on the berm slope is
+    // planted in it, never floating over it.
+    mk({ kind: "cylinder", diameterTop: 0.16, diameterBottom: 0.26, height: 9.2, tessellation: 6 },
+      [0.2, 0.21, 0.24], 0.2, x, y + 1.6, z);
     const ax = Math.sin(toward) * 1.4;
     const az = Math.cos(toward) * 1.4;
     mk({ kind: "box", width: 0.14, height: 0.14, depth: 1.6 }, [0.2, 0.21, 0.24], 0.2, x + ax * 0.5, y + 6.1, z + az * 0.5, toward);
@@ -2847,25 +2852,54 @@ function buildEnvironment(
       [0.28, 0.3, 0.33], 0.2, x + s * 1.9, y + 1.1, z);
   };
 
-  /** What each theme scatters, and how eagerly. */
-  const FLORA: Partial<Record<SectionId, { density: number; place: (x: number, y: number, z: number, h: number, toward: number) => void }>> = {
-    hills: { density: 0.75, place: (x, y, z, h) => (h > 0.6 ? pine(x, y, z, h) : h > 0.25 ? bush(x, y, z, h) : boulder(x, y, z, h)) },
-    offroad: { density: 0.6, place: (x, y, z, h) => (h > 0.55 ? boulder(x, y, z, h) : h > 0.3 ? bush(x, y, z, h) : pine(x, y, z, h)) },
-    construction: { density: 0.55, place: (x, y, z, h) => (h > 0.6 ? barrel(x, y, z, h) : h > 0.3 ? crates(x, y, z, h) : cone(x, y, z)) },
-    industrial: { density: 0.5, place: (x, y, z, h, toward) => (h > 0.72 ? tank(x, y, z, h) : h > 0.35 ? crates(x, y, z, h) : lamp(x, y, z, toward)) },
-    final: { density: 0.45, place: (x, y, z, h, toward) => (h > 0.5 ? lamp(x, y, z, toward) : cone(x, y, z)) },
+  /** What each theme scatters, and how eagerly. Street lamps are NOT here:
+   * infrastructure arrives on a regular march below, because nothing says
+   * "randomly generated" louder than lamp posts with irregular spacing. */
+  const FLORA: Partial<Record<SectionId, { density: number; spread: number; place: (x: number, y: number, z: number, h: number, toward: number) => void }>> = {
+    hills: { density: 0.75, spread: 7, place: (x, y, z, h) => (h > 0.6 ? pine(x, y, z, h) : h > 0.25 ? bush(x, y, z, h) : boulder(x, y, z, h)) },
+    offroad: { density: 0.6, spread: 7, place: (x, y, z, h) => (h > 0.55 ? boulder(x, y, z, h) : h > 0.3 ? bush(x, y, z, h) : pine(x, y, z, h)) },
+    construction: { density: 0.55, spread: 2.5, place: (x, y, z, h) => (h > 0.6 ? barrel(x, y, z, h) : h > 0.3 ? crates(x, y, z, h) : cone(x, y, z)) },
+    industrial: { density: 0.5, spread: 3, place: (x, y, z, h) => (h > 0.6 ? tank(x, y, z, h) : crates(x, y, z, h)) },
+    final: { density: 0.3, spread: 2.5, place: (x, y, z, h) => (h > 0.5 ? barrel(x, y, z, h) : cone(x, y, z)) },
   };
+  /** Which themes light their road, and how far apart the posts stand. */
+  const LAMPS: Partial<Record<SectionId, number>> = { industrial: 46, final: 42 };
 
   let arc = 0;
   let nextDecor = 9;
   let nextRidge = 20;
+  let nextLamp = 15;
+  let lampCount = 0;
   for (const seg of spine) {
     const end = arc + seg.length;
     if (!scope.wants(seg)) {
       while (nextDecor <= end) nextDecor += 11;
       while (nextRidge <= end) nextRidge += 34;
+      while (nextLamp <= end) { nextLamp += LAMPS[seg.section] ?? 44; lampCount++; }
       arc = end;
       continue;
+    }
+
+    /*
+     * Street lamps: a metronome, not a dice roll. Fixed arc spacing per
+     * theme, alternating sides in strict order, planted just past the wall
+     * line - the one piece of roadside that must read as engineered.
+     */
+    while (nextLamp <= end) {
+      const t = (nextLamp - arc) / seg.length;
+      const spacing = LAMPS[seg.section];
+      nextLamp += spacing ?? 44;
+      lampCount++;
+      if (!spacing) continue;
+      const px = seg.ax + (seg.bx - seg.ax) * t;
+      const pz = seg.az + (seg.bz - seg.az) * t;
+      const py = seg.ay + seg.grade * seg.length * t;
+      const side = lampCount % 2 === 0 ? 1 : -1;
+      const wallT = seg.wall !== "none" ? WALL_STYLE[seg.wall as Exclude<WallStyle, "none">].thickness : 0;
+      const out = seg.halfWidth + seg.shoulder + wallT + 1.6;
+      const x = px + seg.dz * out * side;
+      const z = pz - seg.dx * out * side;
+      lamp(x, py - 0.6, z, Math.atan2(px - x, pz - z));
     }
 
     while (nextDecor <= end) {
@@ -2887,10 +2921,18 @@ function buildEnvironment(
        */
       const wallT = seg.wall !== "none" ? WALL_STYLE[seg.wall as Exclude<WallStyle, "none">].thickness : 0;
       const base = seg.halfWidth + seg.shoulder + wallT + 2.2;
-      const out = base + hash2(px * 2.1, pz * 0.9) * 7;
+      const reach = hash2(px * 2.1, pz * 0.9) * flora.spread;
+      const out = base + reach;
       const x = px + seg.dz * out * side;
       const z = pz - seg.dx * out * side;
-      const y = py - 0.4;
+      /*
+       * Follow the berm DOWN. The ground beyond the road edge falls away,
+       * and flora pinned to road height stood on air out there - the
+       * further from the wall, the higher it floated. Half a unit of drop
+       * per unit of reach tracks the berm's slope closely enough that the
+       * hidden roots absorb the rest.
+       */
+      const y = py - 0.4 - reach * 0.5;
       const toward = Math.atan2(px - x, pz - z);
       flora.place(x, y, z, hash2(x * 1.7, z * 0.5), toward);
       // A second smaller neighbour half the time, so scatter reads as growth.
@@ -2922,11 +2964,20 @@ function buildEnvironment(
         const x = px + seg.dz * dist * rside;
         const z = pz - seg.dx * dist * rside;
         const w = 70 + h * 90;
-        const ht = 10 + h * 22;
+        /*
+         * Rooted in the void floor, not hung at road height. On a high pass
+         * the road can stand forty units over the valley, and a hill pinned
+         * to the road floated in the air beside it - the peak is what tracks
+         * the course, the base always reaches the floor at -8.
+         */
+        const peak = py + 4 + h * 22;
+        const baseY = -9;
+        const ht = peak - baseY;
+        if (ht < 6) continue;
         mk(
           { kind: "cylinder", diameterTop: w * 0.25, diameterBottom: w, height: ht, tessellation: 8 },
           [0.3 + h * 0.06, 0.29 + h * 0.05, 0.38], 0.3,
-          x, py - 6 + ht / 2, z, h * 6,
+          x, baseY + ht / 2, z, h * 6,
         );
       }
     }
